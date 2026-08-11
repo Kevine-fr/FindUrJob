@@ -1,0 +1,146 @@
+# Nom du projet Docker : fixé ici pour ne pas dépendre du nom du dossier.
+# Il préfixe les images, les réseaux et les volumes (findurjob_mongo_data).
+name: findurjob
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: findurjob-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    expose:
+      - "27017"
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 })']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+        - web
+
+  ai:
+    build:
+      context: ./ai
+      # Étage "dev" : rechargement à chaud + pytest embarqué.
+      # En production, viser l'étage "runtime".
+      target: dev
+    container_name: findurjob-ai
+    restart: unless-stopped
+    # Clés et réglages : copier ai/.env.example en ai/.env (ignoré par git).
+    # Sans fichier .env, le moteur démarre en mode déterministe hors-ligne.
+    env_file:
+      - path: ./ai/.env
+        required: false
+    expose:
+      - "8000"
+    volumes:
+      - ./ai:/app
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=3).status == 200 else 1)',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+        - web
+
+  bot:
+    build: ./bot
+    container_name: findurjob-bot
+    restart: unless-stopped
+    # Chromium épuise le /dev/shm par défaut (64 Mo) dès qu'une page est lourde.
+    shm_size: '1gb'
+    environment:
+      - PORT=8100
+      - BOT_PROFILE_DIR=/data/profiles
+    volumes:
+      # Les sessions des plateformes survivent au conteneur : c'est tout
+      # l'intérêt de se connecter une fois plutôt qu'à chaque candidature.
+      - bot_profiles:/data/profiles
+      # Les sélecteurs des plateformes changent souvent : on veut pouvoir les
+      # corriger sans reconstruire l'image (Chromium vit dans /ms-playwright,
+      # hors de /app, il n'est donc pas masqué par ce montage).
+      - ./bot:/app
+      - /app/node_modules
+    expose:
+      - "8100"
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://127.0.0.1:8100/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+        - web
+
+  server:
+    build: ./server
+    container_name: findurjob-server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+      bot:
+        condition: service_healthy
+    environment:
+      - PORT=4000
+      - MONGO_URI=mongodb://mongo:27017/findurjob
+      - PYTHON_AI_URL=http://ai:8000
+      - BOT_URL=http://bot:8100
+      # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
+      # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
+      - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
+      # Les événements de fichiers ne traversent pas le montage Windows → Linux :
+      # sans scrutation, nodemon ne redémarre jamais après une modification.
+      - CHOKIDAR_USEPOLLING=true
+    expose:
+      - "4000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+        - web
+
+  web:
+    build: ./web
+    container_name: findurjob-web
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      - VITE_API_TARGET=http://server:4000
+      - CHOKIDAR_USEPOLLING=true
+    expose:
+      - "5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+        - web
+  
+
+networks:
+  web:
+    external: true
+
+volumes:
+  mongo_data:
+  bot_profiles:

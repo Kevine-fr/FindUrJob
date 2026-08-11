@@ -89,7 +89,7 @@ services:
 
   server:
     build: ./server
-    container_name: findurjob-server
+    container_name: findurjob-api
     restart: unless-stopped
     depends_on:
       mongo:

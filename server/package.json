@@ -1,5 +1,5 @@
 {
-  "name": "findurjob-server",
+  "name": "findurjob-api",
   "version": "0.1.0",
   "description": "API + persistance (Express/Mongo) pour FindUrJob — copilote de candidatures.",
   "type": "module",

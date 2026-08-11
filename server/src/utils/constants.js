@@ -7,6 +7,8 @@ export const SOURCES = [
   'francetravail',
   'apec',
   'welcometothejungle',
+  'adzuna',
+  'remotive',
   'autre',
 ];
 

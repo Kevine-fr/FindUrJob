@@ -1,0 +1,67 @@
+{
+  "offer": {
+    "_id": "665f1a2b3c4d5e6f70000001",
+    "title": "Développeur Full Stack Node.js / React (H/F)",
+    "company": "Atelier Numérique",
+    "location": "Nantes",
+    "source": "welcometothejungle",
+    "sourceUrl": "https://example.com/offres/123",
+    "description": "Nous renforçons notre équipe produit avec un développeur full stack. La stack : Node.js, React, MongoDB et Docker. Vous participerez à l'intégration continue (GitLab CI) et au déploiement sur nos serveurs Linux. Tests unitaires et revue de code au quotidien. 3 ans d'expérience minimum sur un poste équivalent. Une première expérience de Kubernetes est un plus.",
+    "contractType": "cdi",
+    "remote": "hybride",
+    "salary": "45 - 52 k€",
+    "keywords": [],
+    "createdAt": "2026-01-05T10:00:00.000Z",
+    "updatedAt": "2026-01-05T10:00:00.000Z",
+    "__v": 0
+  },
+  "profile": {
+    "_id": "665f1a2b3c4d5e6f70000002",
+    "fullName": "Camille Dupont",
+    "headline": "Développeuse Full Stack / DevOps",
+    "email": "camille.dupont@example.com",
+    "phone": "+33 6 12 34 56 78",
+    "location": "Nantes",
+    "summary": "Développeuse full stack, à l'aise du front React jusqu'au déploiement des conteneurs en production.",
+    "skills": [
+      "Node.js",
+      "React",
+      "MongoDB",
+      "PostgreSQL",
+      "Docker",
+      "GitLab CI",
+      "Linux",
+      "Tests unitaires",
+      "Figma"
+    ],
+    "experiences": [
+      {
+        "role": "Développeuse Full Stack",
+        "company": "Studio Katana",
+        "period": "2021 - aujourd'hui",
+        "description": "Développement d'une application Node.js / React, mise en place de l'intégration continue GitLab CI et des déploiements Docker sur VPS Linux."
+      },
+      {
+        "role": "Développeuse back-end",
+        "company": "Coopérative Bleuet",
+        "period": "2019 - 2021",
+        "description": "API REST Node.js et MongoDB, revue de code et tests unitaires."
+      }
+    ],
+    "education": [
+      {
+        "degree": "Master Informatique",
+        "school": "Université de Nantes",
+        "period": "2017 - 2019"
+      }
+    ],
+    "links": {
+      "github": "https://github.com/camille-dupont",
+      "linkedin": "https://linkedin.com/in/camille-dupont"
+    },
+    "masterCv": "Développeuse full stack (Node.js, React) avec une forte sensibilité DevOps.",
+    "createdAt": "2026-01-02T09:00:00.000Z",
+    "updatedAt": "2026-01-04T09:00:00.000Z",
+    "__v": 0
+  }
+}

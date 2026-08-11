@@ -1,0 +1,7 @@
+# Ne jamais committer de clé : .env est local, .env.example est la référence.
+.env
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

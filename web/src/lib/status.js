@@ -29,6 +29,8 @@ export const SOURCE_LABELS = {
   francetravail: 'France Travail',
   apec: 'APEC',
   welcometothejungle: 'WTTJ',
+  adzuna: 'Adzuna',
+  remotive: 'Remotive',
   autre: 'Autre',
 };
 

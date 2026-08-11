@@ -1,7 +1,11 @@
+# Nom du projet Docker : fixé ici pour ne pas dépendre du nom du dossier.
+# Il préfixe les images, les réseaux et les volumes (findurjob_mongo_data).
+name: findurjob
+
 services:
   mongo:
     image: mongo:7
-    container_name: filo-mongo
+    container_name: findurjob-mongo
     restart: unless-stopped
     volumes:
       - mongo_data:/data/db
@@ -13,17 +17,53 @@ services:
       timeout: 5s
       retries: 5
 
+  ai:
+    build:
+      context: ./ai
+      # Étage "dev" : rechargement à chaud + pytest embarqué.
+      # En production, viser l'étage "runtime".
+      target: dev
+    container_name: findurjob-ai
+    restart: unless-stopped
+    # Clés et réglages : copier ai/.env.example en ai/.env (ignoré par git).
+    # Sans fichier .env, le moteur démarre en mode déterministe hors-ligne.
+    env_file:
+      - path: ./ai/.env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ai:/app
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=3).status == 200 else 1)',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
   server:
     build: ./server
-    container_name: filo-server
+    container_name: findurjob-server
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
+      ai:
+        condition: service_healthy
     environment:
       - PORT=4000
-      - MONGO_URI=mongodb://mongo:27017/filo
-      # - PYTHON_AI_URL=http://ai:8000   # à activer quand le moteur Python sera prêt
+      - MONGO_URI=mongodb://mongo:27017/findurjob
+      - PYTHON_AI_URL=http://ai:8000
+      # Les événements de fichiers ne traversent pas le montage Windows → Linux :
+      # sans scrutation, nodemon ne redémarre jamais après une modification.
+      - CHOKIDAR_USEPOLLING=true
     ports:
       - "4000:4000"
     volumes:
@@ -33,12 +73,13 @@ services:
 
   web:
     build: ./web
-    container_name: filo-web
+    container_name: findurjob-web
     restart: unless-stopped
     depends_on:
       - server
     environment:
       - VITE_API_TARGET=http://server:4000
+      - CHOKIDAR_USEPOLLING=true
     ports:
       - "5173:5173"
     volumes:

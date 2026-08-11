@@ -3,12 +3,12 @@ import { createApp } from './app.js';
 import { connectDb } from './config/db.js';
 
 const PORT = process.env.PORT || 4000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/filo';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/findurjob';
 
 connectDb(MONGO_URI);
 
 const app = createApp();
 app.listen(PORT, () => {
-  console.log(`✓ API Filo sur http://localhost:${PORT}`);
+  console.log(`✓ API FindUrJob sur http://localhost:${PORT}`);
   console.log(`  Santé : http://localhost:${PORT}/api/health`);
 });

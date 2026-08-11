@@ -389,3 +389,192 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Dépôt du CV ---------------------------------------------------- */
+.dropzone {
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 26px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dropzone.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  border-style: solid;
+}
+.dropzone.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+.dropzone-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+}
+.dropzone-hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.dropzone-warnings {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--warn);
+}
+
+/* --- Filtres d'offres ------------------------------------------------ */
+.filters {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+}
+.filter-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.filter-row .input {
+  flex: 1;
+}
+.filter-group {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.filter-label {
+  min-width: 92px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.filter-chip {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.filter-chip:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.filter-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 720px) {
+  .filter-row {
+    flex-direction: column;
+  }
+  .filter-row .input {
+    max-width: none !important;
+  }
+  .filter-group {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .filter-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* --- Historique ------------------------------------------------------ */
+.history-day {
+  margin-bottom: 18px;
+}
+.history-item {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.history-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.history-time {
+  min-width: 52px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+.history-body {
+  flex: 1;
+  min-width: 0;
+}
+.history-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+}
+.history-meta {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.history-note {
+  font-size: 13px;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--ink-soft);
+}
+.filter-hint {
+  display: block;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* --- Constructeur de CV ---------------------------------------------- */
+.builder-block {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.builder-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 12px;
+  background: var(--paper);
+}
+.builder-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}

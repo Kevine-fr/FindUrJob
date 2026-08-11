@@ -24,7 +24,14 @@ const profileSchema = new mongoose.Schema(
     experiences: { type: [experienceSchema], default: [] },
     education: { type: [educationSchema], default: [] },
     links: { type: Map, of: String, default: {} }, // github, linkedin, portfolio…
-    masterCv: { type: String, default: '' }, // CV maître (base du reciblage)
+    masterCv: { type: String, default: '' }, // CV maître : texte réécrit par offre
+
+    // Métadonnées du CV déposé (le fichier n'est pas conservé, seul son texte l'est)
+    cvFileName: { type: String, default: '' },
+    cvUploadedAt: { type: Date },
+    cvChars: { type: Number, default: 0 },
+    cvPages: { type: Number, default: 0 },
+    cvWarnings: { type: [String], default: [] },
   },
   { timestamps: true }
 );

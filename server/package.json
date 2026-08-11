@@ -1,7 +1,7 @@
 {
-  "name": "filo-server",
+  "name": "findurjob-server",
   "version": "0.1.0",
-  "description": "API + persistance (Express/Mongo) pour Filo — copilote de candidatures.",
+  "description": "API + persistance (Express/Mongo) pour FindUrJob — copilote de candidatures.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

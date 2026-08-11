@@ -4,7 +4,7 @@ import JobOffer from './models/JobOffer.js';
 import Application from './models/Application.js';
 import Profile from './models/Profile.js';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/filo';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/findurjob';
 
 const sampleOffers = [
   {

@@ -1,19 +1,17 @@
-# Filo — copilote de candidatures
+# FindUrJob — copilote de candidatures
 
-_Nom provisoire, à renommer librement._
+FindUrJob fait le gros du travail de candidature : agrégation d'offres,
+**réécriture du CV pour chaque offre**, lettre, filtres, suivi et historique.
+Les envois partent depuis ta propre session navigateur — pas de mot de passe
+stocké, pas de contournement d'anti-bot : voir « Principe de conception ».
 
-Filo prépare le gros du travail de candidature (agrégation d'offres, CV reciblé
-par offre, lettre, suivi), **tu gardes la main sur l'envoi**. Pas de coffre à
-mots de passe, pas de contournement d'anti-bot : voir « Principe de conception ».
-
-Cette ossature contient le **backend Node/Express + Mongo** et le **front
-React/Vite**. Le **moteur IA (Python)** se branchera ensuite sur une couture
-unique déjà prévue.
+Trois briques : le **backend Node/Express + Mongo**, le **front React/Vite**, et
+le **moteur IA (Python/FastAPI)** branché sur une couture unique.
 
 ## Arborescence
 
 ```
-filo/
+findurjob/
 ├── docker-compose.yml
 ├── server/                 # API Express + Mongoose
 │   ├── src/
@@ -27,6 +25,17 @@ filo/
 │   │   ├── services/       # tailoringService = couture du moteur IA
 │   │   ├── utils/          # enums partagés
 │   │   └── seed.js         # données de démo
+│   └── Dockerfile
+├── ai/                     # Moteur IA de reciblage (FastAPI)
+│   ├── app/
+│   │   ├── main.py         # POST /tailor, GET /health
+│   │   ├── keywords.py     # extraction déterministe
+│   │   ├── scoring.py      # score 0–100 explicable
+│   │   ├── prompts.py      # prompts FR, règle anti-invention
+│   │   ├── guards.py       # relecture automatique de la sortie
+│   │   ├── rendering.py    # rendu déterministe (hors-ligne + repli)
+│   │   └── providers/      # anthropic | offline
+│   ├── tests/              # pytest, sans appel réseau
 │   └── Dockerfile
 └── web/                    # React + Vite
     └── src/
@@ -45,14 +54,20 @@ docker compose up --build
 
 - Front : http://localhost:5173
 - API : http://localhost:4000/api/health
+- Moteur IA : http://localhost:8000/health
 - Données de démo (optionnel) :
   ```bash
   docker compose exec server npm run seed
   ```
 
+Pour brancher un vrai LLM, copier `ai/.env.example` en `ai/.env` et y mettre la
+clé API. Sans clé, le moteur tourne en mode déterministe hors-ligne : tout
+fonctionne de bout en bout, les brouillons sont simplement réorganisés plutôt
+que rédigés.
+
 ## Démarrage — local (sans Docker)
 
-Nécessite un MongoDB accessible (par défaut `mongodb://localhost:27017/filo`).
+Nécessite un MongoDB accessible (par défaut `mongodb://localhost:27017/findurjob`).
 
 ```bash
 # Terminal 1 — API
@@ -73,8 +88,12 @@ npm run dev
 | Variable        | Défaut                              | Rôle                                   |
 | --------------- | ----------------------------------- | -------------------------------------- |
 | `PORT`          | `4000`                              | Port de l'API                          |
-| `MONGO_URI`     | `mongodb://localhost:27017/filo`    | Connexion MongoDB                      |
+| `MONGO_URI`     | `mongodb://localhost:27017/findurjob`    | Connexion MongoDB                      |
 | `PYTHON_AI_URL` | _(vide)_                            | URL du moteur IA. Vide = mode stub.    |
+
+Sous Docker Compose, `PYTHON_AI_URL` vaut `http://ai:8000` : le serveur attend
+que le moteur soit *healthy* avant de démarrer. Les variables du moteur IA
+(fournisseur, clé, modèle) sont documentées dans [`ai/README.md`](ai/README.md).
 
 ## API
 
@@ -94,7 +113,14 @@ npm run dev
 | POST    | `/api/applications/:id/tailor`    | Génère CV ciblé + lettre (via IA)      |
 | DELETE  | `/api/applications/:id`           | Supprime                               |
 | GET     | `/api/cv-versions`                | Liste des CV (`?kind=`)                |
-| GET/PUT | `/api/profile`                    | CV maître (singleton)                  |
+| GET/PUT | `/api/profile`                    | Profil (singleton)                     |
+| POST    | `/api/profile/cv`                 | Dépôt du CV (PDF/DOCX/TXT/MD)          |
+| DELETE  | `/api/profile/cv`                 | Retire le CV déposé                    |
+| GET/PUT | `/api/preferences`                | Préférences de recherche (singleton)   |
+| GET     | `/api/history`                    | Historique (`?type=`, `?status=`, `?from=`, `?to=`) |
+
+`GET /api/offers` accepte `?q=`, `?location=`, et des listes séparées par des
+virgules : `?contractType=cdi,alternance&remote=teletravail,hybride&source=linkedin`.
 
 ## Où se branche l'IA
 
@@ -102,15 +128,20 @@ Tout passe par `server/src/services/tailoringService.js`. Tant que
 `PYTHON_AI_URL` est vide, une version « stub » déterministe est renvoyée pour
 que l'ossature tourne de bout en bout.
 
-Quand le moteur Python sera prêt, il devra exposer :
+Le moteur Python expose exactement ce contrat :
 
 ```
 POST {PYTHON_AI_URL}/tailor
   entrée : { offer, profile }
   sortie : { content, coverLetter, score, keywords }
+
+POST {PYTHON_AI_URL}/extract-cv        (multipart : le fichier déposé)
+  sortie : { text, chars, pages, filename, warnings }
 ```
 
-Aucun autre fichier n'a besoin de changer.
+Aucun autre fichier n'a eu besoin de changer. Le moteur ajoute un champ `meta`
+(fournisseur, avertissements de relecture, détail du score) que le serveur
+ignore. Détail du fonctionnement : [`ai/README.md`](ai/README.md).
 
 ## Modèle de données
 
@@ -121,14 +152,21 @@ Aucun autre fichier n'a besoin de changer.
 
 ## Principe de conception
 
-Filo est un **copilote**, pas un robot de masse. Il ne stocke pas d'identifiants
-de plateformes et ne cherche pas à contourner les protections anti-robot : ces
-approches font surtout bannir les comptes en pleine recherche, et l'envoi
-quasi-identique en masse convertit mal. La valeur est ailleurs : agréger,
-recibler finement, suivre — et te laisser valider chaque envoi.
+FindUrJob automatise les candidatures **sans jamais stocker de mot de passe**.
+
+Le modèle retenu est la *session persistante* : tu te connectes toi-même une
+fois par plateforme (2FA comprise) dans un navigateur piloté ; la session reste
+ouverte et l'outil enchaîne ensuite les candidatures selon tes filtres et ton
+quota. Aucun identifiant en base, aucune protection anti-robot contournée —
+c'est ta vraie session, dans un vrai navigateur, à cadence humaine.
+
+Le quota quotidien n'est pas une limitation technique mais un choix : un volume
+raisonnable passe inaperçu et convertit mieux qu'un envoi de masse identique.
 
 ## Suite
 
-1. Moteur Python de reciblage CV + score de matching (`/tailor`).
-2. Extraction auto d'une offre depuis son URL.
-3. (Option) extension navigateur pour pré-remplir les formulaires pendant que tu es présent.
+1. ~~Moteur Python de reciblage CV + score de matching (`/tailor`).~~ ✅
+2. ~~Dépôt du CV (PDF/DOCX) et réécriture par offre.~~ ✅
+3. ~~Filtres, préférences de recherche, historique.~~ ✅
+4. Agrégation : API France Travail / Adzuna + import d'une offre depuis son URL.
+5. Campagnes de candidature : session persistante Playwright + suivi en direct.

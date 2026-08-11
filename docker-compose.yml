@@ -1,0 +1,50 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: filo-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 })']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: ./server
+    container_name: filo-server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      - PORT=4000
+      - MONGO_URI=mongodb://mongo:27017/filo
+      # - PYTHON_AI_URL=http://ai:8000   # à activer quand le moteur Python sera prêt
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+
+  web:
+    build: ./web
+    container_name: filo-web
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      - VITE_API_TARGET=http://server:4000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  mongo_data:

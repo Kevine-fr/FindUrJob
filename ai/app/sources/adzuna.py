@@ -9,7 +9,10 @@ import httpx
 
 from .base import NormalizedOffer, SearchQuery, clean_html, guess_contract, guess_remote
 
-SEARCH_URL = "https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+SEARCH_URL = "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
+
+# Plafond imposé par l'API : au-delà, elle ignore le paramètre.
+PER_PAGE = 50
 
 
 class AdzunaSource:
@@ -29,7 +32,7 @@ class AdzunaSource:
         params: dict[str, str | int] = {
             "app_id": self._app_id,
             "app_key": self._app_key,
-            "results_per_page": max(1, min(query.limit, 50)),
+            "results_per_page": PER_PAGE,
             "content-type": "application/json",
         }
         if query.text:
@@ -41,15 +44,27 @@ class AdzunaSource:
         elif "cdi" in query.contract_types:
             params["contract_type"] = "permanent"
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(
-                SEARCH_URL.format(country=self._country),
-                params=params,
-                headers={"Accept": "application/json"},
-            )
-            response.raise_for_status()
-            results = response.json().get("results", [])
+        wanted = max(1, query.limit)
+        results: list[dict] = []
 
+        # L'API pagine par tranches de 50 : sans cette boucle, demander 200
+        # offres en rend silencieusement 50.
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            for page in range(1, (wanted // PER_PAGE) + 2):
+                response = await client.get(
+                    SEARCH_URL.format(country=self._country, page=page),
+                    params=params,
+                    headers={"Accept": "application/json"},
+                )
+                response.raise_for_status()
+                batch = response.json().get("results", [])
+                results.extend(batch)
+
+                # Page incomplète = fin des résultats, inutile d'en demander une autre.
+                if len(batch) < PER_PAGE or len(results) >= wanted:
+                    break
+
+        results = results[:wanted]
         offers: list[NormalizedOffer] = []
         for item in results:
             description = clean_html(item.get("description", ""))

@@ -44,7 +44,7 @@ def inspect(content: str, cover_letter: str, profile: ProfileIn) -> list[str]:
         if name_tokens and not any(f" {token} " in haystack for token in name_tokens):
             warnings.append("Le nom du candidat n'apparaît pas dans le CV généré.")
 
-    if not profile.skills and not profile.experiences and not profile.masterCv:
+    if not profile.all_skills and not profile.experiences and not profile.masterCv:
         warnings.append(
             "Profil quasi vide : le brouillon reste générique tant que le Profil "
             "n'est pas renseigné."

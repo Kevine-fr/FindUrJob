@@ -1,47 +1,154 @@
-import { NavLink, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import OffersPage from './pages/OffersPage.jsx';
 import ApplicationsPage from './pages/ApplicationsPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PreferencesPage from './pages/PreferencesPage.jsx';
 import CvBuilderPage from './pages/CvBuilderPage.jsx';
+import AccountsPage from './pages/AccountsPage.jsx';
 
-const navClass = ({ isActive }) => 'nav-link' + (isActive ? ' active' : '');
+const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' };
+
+const NAV = [
+  {
+    to: '/offres',
+    label: 'Offres',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <rect x="3" y="7" width="18" height="13" rx="2" />
+        <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18" />
+      </svg>
+    ),
+  },
+  {
+    to: '/candidatures',
+    label: 'Candidatures',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+        <path d="M14 3v5h5M8.5 14.5l2 2 4-4.5" />
+      </svg>
+    ),
+  },
+  {
+    to: '/historique',
+    label: 'Historique',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3.5 2" />
+      </svg>
+    ),
+  },
+  {
+    to: '/preferences',
+    label: 'Préférences',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+        <circle cx="16" cy="7" r="2.2" />
+        <circle cx="8" cy="17" r="2.2" />
+      </svg>
+    ),
+  },
+  {
+    to: '/comptes',
+    label: 'Comptes',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <rect x="3" y="10" width="18" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3M12 15v2" />
+      </svg>
+    ),
+  },
+  {
+    to: '/mon-cv',
+    label: 'Mon CV',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h4M8 12h8M8 16h8" />
+      </svg>
+    ),
+  },
+];
 
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  // Changer de page ferme le tiroir : sinon il masque la page qu'on vient d'ouvrir.
+  useEffect(() => setMenuOpen(false), [pathname]);
+
+  // Échap ferme le tiroir, et le fond ne défile plus derrière lui.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (event) => event.key === 'Escape' && setMenuOpen(false);
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [menuOpen]);
+
+  const brand = (
+    <div className="brand">
+      FindUr<span>Job</span>
+    </div>
+  );
+
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          FindUr<span>Job</span>
-        </div>
-        <NavLink to="/offres" className={navClass}>
-          Offres
-        </NavLink>
-        <NavLink to="/candidatures" className={navClass}>
-          Candidatures
-        </NavLink>
-        <NavLink to="/historique" className={navClass}>
-          Historique
-        </NavLink>
-        <NavLink to="/preferences" className={navClass}>
-          Préférences
-        </NavLink>
-        <NavLink to="/mon-cv" className={navClass}>
-          Mon CV
-        </NavLink>
+      <header className="topbar">
+        <button
+          className="burger"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Ouvrir le menu"
+          aria-expanded={menuOpen}
+        >
+          <svg viewBox="0 0 24 24" {...stroke}>
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+        {brand}
+      </header>
+
+      {menuOpen && (
+        <button className="scrim" onClick={() => setMenuOpen(false)} aria-label="Fermer le menu" />
+      )}
+
+      <aside className={`sidebar${menuOpen ? ' is-open' : ''}`}>
+        {brand}
+        {NAV.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+          >
+            {item.icon}
+            {item.label}
+          </NavLink>
+        ))}
+        <div className="nav-spacer" />
+        <div className="nav-foot">Copilote de candidatures</div>
       </aside>
 
       <main className="main">
-        <Routes>
-          <Route path="/" element={<Navigate to="/offres" replace />} />
-          <Route path="/offres" element={<OffersPage />} />
-          <Route path="/candidatures" element={<ApplicationsPage />} />
-          <Route path="/historique" element={<HistoryPage />} />
-          <Route path="/preferences" element={<PreferencesPage />} />
-          <Route path="/mon-cv" element={<CvBuilderPage />} />
-          {/* Ancienne adresse du profil : on redirige plutôt que de casser un signet. */}
-          <Route path="/profil" element={<Navigate to="/mon-cv" replace />} />
-        </Routes>
+        {/* La clé sur la route rejoue l'animation d'entrée à chaque changement de page. */}
+        <div key={pathname} className="animate-in">
+          <Routes>
+            <Route path="/" element={<Navigate to="/offres" replace />} />
+            <Route path="/offres" element={<OffersPage />} />
+            <Route path="/candidatures" element={<ApplicationsPage />} />
+            <Route path="/historique" element={<HistoryPage />} />
+            <Route path="/preferences" element={<PreferencesPage />} />
+            <Route path="/comptes" element={<AccountsPage />} />
+            <Route path="/mon-cv" element={<CvBuilderPage />} />
+            {/* Ancienne adresse du profil : on redirige plutôt que de casser un signet. */}
+            <Route path="/profil" element={<Navigate to="/mon-cv" replace />} />
+          </Routes>
+        </div>
       </main>
     </div>
   );

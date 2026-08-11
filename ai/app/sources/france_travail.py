@@ -17,6 +17,9 @@ TOKEN_URL = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
 SEARCH_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
 SCOPE = "api_offresdemploiv2 o2dsoffre"
 
+# L'API refuse une plage de plus de 150 offres par appel.
+PER_CALL = 150
+
 # typeContrat de l'API → vocabulaire FindUrJob
 _CONTRACT_MAP = {
     "CDI": "cdi",
@@ -69,8 +72,9 @@ class FranceTravailSource:
         self._token_expires_at = time.monotonic() + float(payload.get("expires_in", 1400)) - 60
         return self._token
 
-    def _params(self, query: SearchQuery) -> dict:
-        params: dict[str, str] = {"range": f"0-{max(0, min(query.limit, 150) - 1)}"}
+    def _params(self, query: SearchQuery, start: int = 0) -> dict:
+        end = start + min(query.limit - start, PER_CALL) - 1
+        params: dict[str, str] = {"range": f"{start}-{max(start, end)}"}
         if query.text:
             params["motsCles"] = query.text
         if query.location:
@@ -95,19 +99,29 @@ class FranceTravailSource:
         return params
 
     async def search(self, query: SearchQuery) -> list[NormalizedOffer]:
+        results: list[dict] = []
+
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             token = await self._access_token(client)
-            response = await client.get(
-                SEARCH_URL,
-                params=self._params(query),
-                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            )
-            # 204 = aucun résultat pour cette recherche.
-            if response.status_code == 204:
-                return []
-            response.raise_for_status()
-            results = response.json().get("resultats", [])
 
+            # Au-delà de 150 offres, il faut enchaîner les plages.
+            for start in range(0, max(1, query.limit), PER_CALL):
+                response = await client.get(
+                    SEARCH_URL,
+                    params=self._params(query, start),
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                )
+                # 204 = aucun résultat ; 206 = plage partielle, donc la dernière.
+                if response.status_code == 204:
+                    break
+                response.raise_for_status()
+
+                batch = response.json().get("resultats", [])
+                results.extend(batch)
+                if len(batch) < PER_CALL:
+                    break
+
+        results = results[: max(1, query.limit)]
         offers: list[NormalizedOffer] = []
         for item in results:
             description = clean_html(item.get("description", ""))

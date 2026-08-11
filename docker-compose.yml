@@ -48,6 +48,39 @@ services:
       start_period: 15s
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  bot:
+    build: ./bot
+    container_name: findurjob-bot
+    restart: unless-stopped
+    # Chromium épuise le /dev/shm par défaut (64 Mo) dès qu'une page est lourde.
+    shm_size: '1gb'
+    environment:
+      - PORT=8100
+      - BOT_PROFILE_DIR=/data/profiles
+    volumes:
+      # Les sessions des plateformes survivent au conteneur : c'est tout
+      # l'intérêt de se connecter une fois plutôt qu'à chaque candidature.
+      - bot_profiles:/data/profiles
+      # Les sélecteurs des plateformes changent souvent : on veut pouvoir les
+      # corriger sans reconstruire l'image (Chromium vit dans /ms-playwright,
+      # hors de /app, il n'est donc pas masqué par ce montage).
+      - ./bot:/app
+      - /app/node_modules
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://127.0.0.1:8100/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   server:
     build: ./server
     container_name: findurjob-server
@@ -57,10 +90,16 @@ services:
         condition: service_healthy
       ai:
         condition: service_healthy
+      bot:
+        condition: service_healthy
     environment:
       - PORT=4000
       - MONGO_URI=mongodb://mongo:27017/findurjob
       - PYTHON_AI_URL=http://ai:8000
+      - BOT_URL=http://bot:8100
+      # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
+      # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
+      - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
       # Les événements de fichiers ne traversent pas le montage Windows → Linux :
       # sans scrutation, nodemon ne redémarre jamais après une modification.
       - CHOKIDAR_USEPOLLING=true
@@ -89,3 +128,4 @@ services:
 
 volumes:
   mongo_data:
+  bot_profiles:

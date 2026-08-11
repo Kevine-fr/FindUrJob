@@ -1,0 +1,95 @@
+/**
+ * Couture du navigateur piloté (service `bot`).
+ *
+ * Même principe que `tailoringService` pour le moteur IA : tout ce qui parle au
+ * bot passe par ici. Sans `BOT_URL`, les fonctions échouent avec un message
+ * explicite plutôt que de laisser croire à une panne.
+ */
+
+const botUrl = () => process.env.BOT_URL;
+
+function unavailable() {
+  const err = new Error(
+    'Navigateur piloté indisponible : démarre le service `bot` (docker compose up bot).'
+  );
+  err.status = 503;
+  return err;
+}
+
+async function call(path, { method = 'POST', body, timeout = 180_000 } = {}) {
+  const base = botUrl();
+  if (!base) throw unavailable();
+
+  // Une recherche sur trois plateformes peut durer : on borne haut, mais on borne.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  let response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const err = new Error('Le navigateur piloté met trop de temps à répondre.');
+      err.status = 504;
+      throw err;
+    }
+    throw unavailable();
+  } finally {
+    clearTimeout(timer);
+  }
+
+  return response;
+}
+
+async function json(path, options) {
+  const response = await call(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(data.error || `Navigateur piloté : ${response.status}`);
+    err.status = response.status === 409 ? 409 : 502;
+    throw err;
+  }
+  return data;
+}
+
+/** HTML → PDF. Renvoie le binaire et ce que l'ajustement a dû faire. */
+export async function renderCvPdf(html) {
+  const response = await call('/pdf', { body: { html }, timeout: 60_000 });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const err = new Error(data.error || `Rendu PDF : ${response.status}`);
+    err.status = 502;
+    throw err;
+  }
+
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    fit: {
+      density: Number(response.headers.get('X-Cv-Density')) || 1,
+      trimmed: Number(response.headers.get('X-Cv-Trimmed')) || 0,
+      overflow: response.headers.get('X-Cv-Overflow') === 'true',
+      fill: Number(response.headers.get('X-Cv-Fill')) || 0,
+    },
+  };
+}
+
+export const botSessions = () => json('/sessions', { method: 'GET' });
+
+export const botLogin = (platform, email, password) =>
+  json('/login', { body: { platform, email, password }, timeout: 120_000 });
+
+export const botSearch = (platform, query) => json('/search', { body: { platform, ...query } });
+
+export const botApply = (platform, offer, cvPath) =>
+  json('/apply', { body: { platform, offer, cvPath } });
+
+export const botForget = (platform, purge = false) =>
+  call(`/sessions/${platform}${purge ? '?purge=1' : ''}`, { method: 'DELETE', timeout: 30_000 });
+
+export const botConfigured = () => Boolean(botUrl());

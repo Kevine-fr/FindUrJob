@@ -1,0 +1,88 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Production VPS
+        run: |
+          ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} bash -s << 'DEPLOY'
+          set -e
+
+          REPO_URL="git@github.com:Kevine-fr/FindUrJob.git"
+
+          echo "Preparation du depot..."
+          mkdir -p ${{ secrets.PATH_DIR }}
+          cd ${{ secrets.PATH_DIR }}
+
+          if [ ! -d .git ]; then
+            echo "Premier deploiement : initialisation du depot git..."
+            git init -q
+            git remote add origin "$REPO_URL" 2>/dev/null || git remote set-url origin "$REPO_URL"
+          else
+            git remote set-url origin "$REPO_URL"
+          fi
+
+          echo "Mise a jour du code..."
+          git fetch origin --prune
+          git reset --hard origin/main
+
+          echo "Calcul de la version..."
+          BASE_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
+          [ -n "$BASE_VERSION" ] || BASE_VERSION="1.0"
+          PATCH=$(git rev-list --count HEAD)
+          APP_VERSION="${BASE_VERSION}.${PATCH}"
+          APP_COMMIT=$(git rev-parse --short HEAD)
+          echo "Version : ${APP_VERSION} (${APP_COMMIT})"
+
+          echo "Generation du .env..."
+
+          cat > .env << 'ENVEOF'
+
+          CREDENTIALS_KEY=${{ secrets.CREDENTIALS_KEY }}
+
+          ENVEOF
+
+          # Version calculee plus haut : ajoutee hors du heredoc (qui est quote
+          # et n'expanserait pas les variables shell).
+          {
+            echo "APP_VERSION=${APP_VERSION}"
+            echo "APP_COMMIT=${APP_COMMIT}"
+          } >> .env
+
+          echo "Demarrage des conteneurs..."
+          docker compose build --no-cache
+          docker compose up -d --build
+
+          docker exec nginx nginx -s reload || true
+
+          echo "Deploiement termine."
+          DEPLOY
+
+      - name: Resume
+        run: |
+          echo "## Production deployee" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | https://${{ secrets.APP_DOMAIN }} |" >> $GITHUB_STEP_SUMMARY

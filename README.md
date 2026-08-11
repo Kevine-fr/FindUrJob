@@ -1,12 +1,12 @@
 # FindUrJob — copilote de candidatures
 
 FindUrJob fait le gros du travail de candidature : agrégation d'offres,
-**réécriture du CV pour chaque offre**, lettre, filtres, suivi et historique.
-Les envois partent depuis ta propre session navigateur — pas de mot de passe
-stocké, pas de contournement d'anti-bot : voir « Principe de conception ».
+**réécriture du CV pour chaque offre**, **export d'un CV PDF tenant sur une
+page**, lettre, filtres, suivi et historique.
 
-Trois briques : le **backend Node/Express + Mongo**, le **front React/Vite**, et
-le **moteur IA (Python/FastAPI)** branché sur une couture unique.
+Quatre briques : le **backend Node/Express + Mongo**, le **front React/Vite**,
+le **moteur IA (Python/FastAPI)** branché sur une couture unique, et le
+**navigateur piloté (Node/Playwright)** pour tout ce qui n'a pas d'API.
 
 ## Arborescence
 
@@ -37,12 +37,19 @@ findurjob/
 │   │   └── providers/      # anthropic | offline
 │   ├── tests/              # pytest, sans appel réseau
 │   └── Dockerfile
+├── bot/                    # Navigateur piloté (Playwright)
+│   ├── src/
+│   │   ├── app.js          # /pdf, /search, /login, /apply, /sessions
+│   │   ├── browser.js      # contextes persistants = sessions qui durent
+│   │   ├── pdf.js          # HTML → PDF A4 une page
+│   │   └── platforms/      # linkedin, indeed, hellowork
+│   └── Dockerfile
 └── web/                    # React + Vite
     └── src/
-        ├── pages/          # Offres, Candidatures, Profil
-        ├── components/     # AddOfferForm, ApplicationDetail
+        ├── pages/          # Offres, Candidatures, Historique, Comptes, Mon CV
+        ├── components/     # Toast, CvPreview, CvFields, filtres…
+        ├── lib/cvTemplate.js # le CV en document HTML autonome
         ├── api/client.js   # wrapper fetch
-        ├── lib/status.js   # libellés + couleurs
         └── styles/tokens.css
 ```
 
@@ -55,6 +62,10 @@ docker compose up --build
 - Front : http://localhost:5173
 - API : http://localhost:4000/api/health
 - Moteur IA : http://localhost:8000/health
+- Navigateur piloté : http://localhost:8100/health
+
+> La première construction du service `bot` télécharge Chromium (~1 Go) : compter
+> quelques minutes. Les suivantes sont en cache.
 - Données de démo (optionnel) :
   ```bash
   docker compose exec server npm run seed
@@ -85,15 +96,25 @@ npm run dev
 
 ## Variables d'environnement (serveur)
 
-| Variable        | Défaut                              | Rôle                                   |
-| --------------- | ----------------------------------- | -------------------------------------- |
-| `PORT`          | `4000`                              | Port de l'API                          |
-| `MONGO_URI`     | `mongodb://localhost:27017/findurjob`    | Connexion MongoDB                      |
-| `PYTHON_AI_URL` | _(vide)_                            | URL du moteur IA. Vide = mode stub.    |
+| Variable           | Défaut                                | Rôle                                   |
+| ------------------ | ------------------------------------- | -------------------------------------- |
+| `PORT`             | `4000`                                | Port de l'API                          |
+| `MONGO_URI`        | `mongodb://localhost:27017/findurjob` | Connexion MongoDB                      |
+| `PYTHON_AI_URL`    | _(vide)_                              | URL du moteur IA. Vide = mode stub.    |
+| `BOT_URL`          | _(vide)_                              | URL du navigateur piloté. Vide = PDF et scraping désactivés. |
+| `CREDENTIALS_KEY`  | _(vide)_                              | Clé AES-256 du coffre d'identifiants. Vide = aucun mot de passe stockable. |
 
-Sous Docker Compose, `PYTHON_AI_URL` vaut `http://ai:8000` : le serveur attend
-que le moteur soit *healthy* avant de démarrer. Les variables du moteur IA
-(fournisseur, clé, modèle) sont documentées dans [`ai/README.md`](ai/README.md).
+Sous Docker Compose, `PYTHON_AI_URL` vaut `http://ai:8000` et `BOT_URL`
+`http://bot:8100` : le serveur attend que les deux soient *healthy* avant de
+démarrer. Les variables du moteur IA (fournisseur, clé, modèle, **sources
+d'offres**) sont documentées dans [`ai/README.md`](ai/README.md).
+
+La clé de chiffrement se génère une fois et se met dans un `.env` à la racine
+(ignoré par git) :
+
+```bash
+echo "CREDENTIALS_KEY=$(openssl rand -hex 32)" >> .env
+```
 
 ## API
 
@@ -118,9 +139,19 @@ que le moteur soit *healthy* avant de démarrer. Les variables du moteur IA
 | DELETE  | `/api/profile/cv`                 | Retire le CV déposé                    |
 | GET/PUT | `/api/preferences`                | Préférences de recherche (singleton)   |
 | GET     | `/api/history`                    | Historique (`?type=`, `?status=`, `?from=`, `?to=`) |
+| POST    | `/api/cv/pdf`                     | Document HTML → PDF A4 une page        |
+| GET     | `/api/accounts`                   | Comptes de plateformes + état des sessions |
+| PUT     | `/api/accounts/:platform`         | Enregistre e-mail + mot de passe (chiffré) |
+| POST    | `/api/accounts/:platform/login`   | Ouvre la session sur la plateforme     |
+| POST    | `/api/accounts/:platform/logout`  | Ferme la session, garde les identifiants |
+| DELETE  | `/api/accounts/:platform`         | Oublie identifiants et session         |
 
 `GET /api/offers` accepte `?q=`, `?location=`, et des listes séparées par des
 virgules : `?contractType=cdi,alternance&remote=teletravail,hybride&source=linkedin`.
+
+Il est **paginé** (`?page=`, `?limit=`, 60 par défaut, 200 au maximum) et
+renvoie `{ offers, total, page, pages, limit }` — sans le total, l'interface ne
+peut pas distinguer « 60 offres en base » de « 60 affichées sur 400 ».
 
 ## Où se branche l'IA
 
@@ -150,23 +181,77 @@ ignore. Détail du fonctionnement : [`ai/README.md`](ai/README.md).
 - **CVVersion** : CV maître ou déclinaison ciblée par offre.
 - **Profile** : profil unique = matière première du reciblage.
 
-## Principe de conception
+## D'où viennent les offres
 
-FindUrJob automatise les candidatures **sans jamais stocker de mot de passe**.
+Deux chemins, selon que la plateforme expose une API ou non.
 
-Le modèle retenu est la *session persistante* : tu te connectes toi-même une
-fois par plateforme (2FA comprise) dans un navigateur piloté ; la session reste
-ouverte et l'outil enchaîne ensuite les candidatures selon tes filtres et ton
-quota. Aucun identifiant en base, aucune protection anti-robot contournée —
-c'est ta vraie session, dans un vrai navigateur, à cadence humaine.
+| Source | Voie | Ce qu'il faut |
+| ------ | ---- | ------------- |
+| France Travail | API officielle | `FRANCE_TRAVAIL_CLIENT_ID` / `_SECRET` dans `ai/.env` |
+| Adzuna | API officielle | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` dans `ai/.env` |
+| Remotive | API publique | rien |
+| LinkedIn | navigateur piloté | rien pour lire ; une session pour candidater |
+| HelloWork | navigateur piloté | rien pour lire ; une session pour candidater |
+| Indeed | navigateur piloté | une session ouverte (Cloudflare bloque sinon) |
 
-Le quota quotidien n'est pas une limitation technique mais un choix : un volume
-raisonnable passe inaperçu et convertit mieux qu'un envoi de masse identique.
+> **Une source sans identifiants est ignorée en silence.** C'est la cause la
+> plus fréquente d'un « je ne vois aucune offre France Travail » : le code est
+> là, la clé manque. Le détail par source est affiché après chaque recherche.
+
+`limit` s'entend **par source** : demander 50 sur quatre sources branchées peut
+rapporter jusqu'à 200 offres en une passe.
+
+## Le CV en PDF, sur une page
+
+Le gabarit vit dans [`web/src/lib/cvTemplate.js`](web/src/lib/cvTemplate.js) et
+produit un **document HTML autonome** — styles et photo compris, aucune requête
+sortante. Ce document sert deux fois : l'aperçu le charge dans une iframe, et
+Chromium l'imprime. L'aperçu affiché *est* le PDF, pas une approximation.
+
+L'ajustement à une page est embarqué dans le document lui-même, parce que
+l'aperçu et le conteneur n'ont pas les mêmes polices, donc pas les mêmes
+hauteurs de ligne. Chacun mesure chez lui, avec le même algorithme :
+
+1. tout est exprimé en `em`, donc relatif à une variable `--k` unique ;
+2. recherche dichotomique de la plus grande densité qui tienne (jusqu'à 0,74) ;
+3. si ça ne suffit toujours pas, retrait des éléments les moins utiles selon une
+   échelle explicite (`TRIM`) : la 9ᵉ techno d'une famille d'abord, une
+   expérience entière en tout dernier recours — et jamais les deux premières.
+
+Le PDF garde une **couche texte réelle** (pas une image) : un ATS le lit. La
+césure automatique est volontairement désactivée — elle insérerait un U+2010
+dans le texte extrait, et « microservice » y deviendrait « mi-croservice ».
+
+## Comptes de plateformes et candidatures
+
+LinkedIn, Indeed et HelloWork n'ont pas d'API : FindUrJob s'y connecte dans un
+vrai navigateur, avec tes identifiants, depuis l'onglet **Comptes**.
+
+- Les mots de passe sont chiffrés en **AES-256-GCM** avant d'atteindre la base
+  ([`server/src/utils/vault.js`](server/src/utils/vault.js)). La clé vit dans
+  l'environnement, pas en base : une copie de Mongo seule ne donne rien.
+- Ils ne sont **jamais renvoyés** au front, et ne sont déchiffrés qu'au moment
+  de remplir le formulaire de connexion.
+- Sans `CREDENTIALS_KEY`, le serveur **refuse** d'enregistrer un mot de passe
+  plutôt que de le stocker en clair.
+- La session ouverte est conservée sur disque (volume `bot_profiles`) : on se
+  connecte une fois, pas à chaque candidature.
+
+**Ce que l'outil ne fait pas** : franchir une 2FA ou un captcha. Quand la
+plateforme en présente un, la candidature s'arrête et te rend la main — c'est
+une limite assumée, pas un manque. Un login automatisé sur LinkedIn ou Indeed
+déclenche d'ailleurs souvent une vérification : c'est normal, valide-la une
+fois et la session tient ensuite des semaines.
+
+Le quota quotidien par plateforme n'est pas une limitation technique mais un
+choix : un volume raisonnable convertit mieux qu'un envoi de masse identique.
 
 ## Suite
 
 1. ~~Moteur Python de reciblage CV + score de matching (`/tailor`).~~ ✅
 2. ~~Dépôt du CV (PDF/DOCX) et réécriture par offre.~~ ✅
 3. ~~Filtres, préférences de recherche, historique.~~ ✅
-4. Agrégation : API France Travail / Adzuna + import d'une offre depuis son URL.
-5. Campagnes de candidature : session persistante Playwright + suivi en direct.
+4. ~~Agrégation : France Travail / Adzuna / Remotive + LinkedIn, Indeed, HelloWork.~~ ✅
+5. ~~Constructeur de CV et export PDF une page.~~ ✅
+6. Campagnes de candidature : file d'attente, quota et suivi en direct.
+7. Import d'une offre depuis son URL.

@@ -13,7 +13,10 @@ export default function ApplicationsPage() {
     setLoading(true);
     api.applications
       .list()
-      .then(setApps)
+      .then((list) => {
+        setApps(list);
+        setError(null);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -44,19 +47,32 @@ export default function ApplicationsPage() {
       </div>
 
       {loading ? (
-        <p className="muted">Chargement…</p>
+        <div className="grid grid-cards">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="skeleton skeleton-card" />
+          ))}
+        </div>
       ) : error ? (
-        <div className="empty">Erreur : {error}</div>
+        <div className="empty">
+          <strong>Candidatures indisponibles</strong>
+          {error}
+        </div>
       ) : apps.length === 0 ? (
         <div className="empty">
-          Aucune candidature. Va dans « Offres » et clique sur « Suivre cette offre ».
+          <strong>Aucune candidature</strong>
+          Va dans « Offres » et clique sur « Suivre cette offre ».
         </div>
       ) : (
-        <div className="grid grid-cards">
-          {apps.map((a) => {
+        <div className="grid grid-cards stagger">
+          {apps.map((a, index) => {
             const meta = STATUS_META[a.status] || { label: a.status, color: '#62667a' };
             return (
-              <div key={a._id} className="card clickable" onClick={() => setSelected(a)}>
+              <div
+                key={a._id}
+                className="card clickable"
+                style={{ '--i': index % 12 }}
+                onClick={() => setSelected(a)}
+              >
                 <div className="inline">
                   <span
                     className="badge dot"

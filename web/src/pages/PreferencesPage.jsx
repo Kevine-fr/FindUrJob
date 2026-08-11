@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { CONTRACT_LABELS, REMOTE_LABELS, SOURCE_LABELS } from '../lib/status.js';
+import { useToast } from '../components/Toast.jsx';
 
 function ChipGroup({ label, hint, options, selected, onToggle }) {
   return (
@@ -26,22 +27,31 @@ function ChipGroup({ label, hint, options, selected, onToggle }) {
 }
 
 export default function PreferencesPage() {
+  const toast = useToast();
   const [prefs, setPrefs] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     api.preferences
       .get()
       .then(setPrefs)
-      .catch((e) => {
-        setError(e.message);
+      .catch((error) => {
+        toast.error(`Préférences illisibles : ${error.message}`);
         setPrefs({});
       });
+    // Au montage seulement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!prefs) return <p className="muted">Chargement…</p>;
+  if (!prefs) {
+    return (
+      <>
+        <div className="skeleton skeleton-line" style={{ width: '35%', height: 28 }} />
+        <div className="skeleton skeleton-card" style={{ marginTop: 20, height: 420 }} />
+      </>
+    );
+  }
 
   const toggle = (key) => (value) => {
     const current = prefs[key] || [];
@@ -72,12 +82,12 @@ export default function PreferencesPage() {
 
   const save = async () => {
     setSaving(true);
-    setError(null);
     try {
       setPrefs(await api.preferences.update(prefs));
       setSaved(true);
-    } catch (e) {
-      setError(e.message);
+      toast.success('Préférences enregistrées.');
+    } catch (error) {
+      toast.error(`Enregistrement impossible : ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -90,12 +100,14 @@ export default function PreferencesPage() {
           <h1>Préférences</h1>
           <p>Ce que tu cherches. Sert de filtre par défaut et cadre les campagnes de candidature.</p>
         </div>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Enregistrement…' : saved ? 'Enregistré ✓' : 'Enregistrer'}
+        <button
+          className={`btn btn-primary${saving ? ' is-busy' : ''}`}
+          onClick={save}
+          disabled={saving}
+        >
+          {saved ? 'Enregistré ✓' : 'Enregistrer'}
         </button>
       </div>
-
-      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
       <div className="panel" style={{ maxWidth: 780 }}>
         <div className="field">

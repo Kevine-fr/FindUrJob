@@ -32,13 +32,15 @@ def profile_corpus(profile: ProfileIn) -> str:
     parts: list[str] = [
         profile.headline,
         profile.summary,
-        " ".join(profile.skills),
+        " ".join(profile.all_skills),
         profile.masterCv,
     ]
-    for exp in profile.experiences:
-        parts.extend([exp.role, exp.company, exp.description])
+    for entry in [*profile.experiences, *profile.projects]:
+        parts.extend([entry.role, entry.company, *entry.facts])
     for edu in profile.education:
-        parts.extend([edu.degree, edu.school])
+        parts.extend([edu.degree, edu.school, edu.detail])
+    for cert in profile.certifications:
+        parts.extend([cert.name, cert.issuer])
     return "\n".join(part for part in parts if part)
 
 

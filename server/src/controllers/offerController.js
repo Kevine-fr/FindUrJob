@@ -2,7 +2,8 @@ import JobOffer from '../models/JobOffer.js';
 import SearchPreference from '../models/SearchPreference.js';
 import { asyncHandler } from '../middleware.js';
 import { searchOffers } from '../services/tailoringService.js';
-import { SOURCES, CONTRACT_TYPES, REMOTE } from '../utils/constants.js';
+import { botSearch, botConfigured } from '../services/botService.js';
+import { SOURCES, CONTRACT_TYPES, REMOTE, BOT_PLATFORMS } from '../utils/constants.js';
 
 // Les filtres arrivent en valeurs multiples séparées par des virgules :
 //   ?contractType=cdi,alternance&remote=teletravail,hybride
@@ -18,6 +19,16 @@ const asList = (value) =>
 // Sans échappement, « C++ » ou « (H/F) » fait tomber la requête en 500.
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const DEFAULT_PAGE_SIZE = 60;
+const MAX_PAGE_SIZE = 200;
+
+/**
+ * GET /offers — liste paginée.
+ *
+ * La réponse est un objet `{ offers, total, page, pages }` : sans le total, le
+ * front ne peut pas distinguer « 60 offres en base » de « 60 offres affichées
+ * sur 400 », qui est exactement la confusion à éviter ici.
+ */
 export const listOffers = asyncHandler(async (req, res) => {
   const { q, location } = req.query;
   const filter = {};
@@ -41,8 +52,18 @@ export const listOffers = asyncHandler(async (req, res) => {
     ];
   }
 
-  const offers = await JobOffer.find(filter).sort({ createdAt: -1 });
-  res.json(offers);
+  const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+
+  const [offers, total] = await Promise.all([
+    JobOffer.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    JobOffer.countDocuments(filter),
+  ]);
+
+  res.json({ offers, total, page, pages: Math.max(1, Math.ceil(total / limit)), limit });
 });
 
 export const getOffer = asyncHandler(async (req, res) => {
@@ -87,6 +108,55 @@ const sanitize = (offer) => ({
 });
 
 /**
+ * Interroge les deux moteurs en parallèle.
+ *
+ * - le moteur Python pour les sources à API (France Travail, Adzuna, Remotive) ;
+ * - le bot pour celles qui n'en ont pas (LinkedIn, Indeed, HelloWork).
+ *
+ * `limit` s'entend **par source** : demander 50 sur cinq sources branchées peut
+ * donc rapporter 250 offres. C'est l'intérêt d'agréger.
+ */
+async function gather(criteria, wantedSources) {
+  const apiSources = wantedSources.filter((source) => !BOT_PLATFORMS.includes(source));
+  const botPlatforms = wantedSources.filter((source) => BOT_PLATFORMS.includes(source));
+
+  const tasks = [];
+
+  // Aucune source d'API explicitement demandée = on les prend toutes.
+  if (!wantedSources.length || apiSources.length) {
+    tasks.push(
+      searchOffers({ ...criteria, sources: apiSources }).then(
+        (result) => ({ offers: result.offers || [], report: result.sources || {} }),
+        (error) => ({ offers: [], report: { 'moteur IA': `échec (${error.message})` } })
+      )
+    );
+  }
+
+  if (botConfigured()) {
+    const platforms = botPlatforms.length ? botPlatforms : !wantedSources.length ? BOT_PLATFORMS : [];
+    for (const platform of platforms) {
+      tasks.push(
+        botSearch(platform, criteria).then(
+          (result) => ({
+            offers: result.offers || [],
+            report: { [platform]: `${result.total || 0} offre(s)` },
+          }),
+          // Une plateforme bloquée ne doit pas faire échouer la recherche entière,
+          // mais son échec doit rester visible.
+          (error) => ({ offers: [], report: { [platform]: `échec (${error.message})` } })
+        )
+      );
+    }
+  }
+
+  const results = await Promise.all(tasks);
+  return {
+    offers: results.flatMap((result) => result.offers),
+    report: Object.assign({}, ...results.map((result) => result.report)),
+  };
+}
+
+/**
  * POST /offers/sync — va chercher des offres et les enregistre.
  *
  * Sans corps, la recherche reprend les préférences enregistrées. Les offres
@@ -101,18 +171,19 @@ export const syncOffers = asyncHandler(async (req, res) => {
     location: body.location ?? (prefs.locations || [])[0] ?? '',
     contractTypes: body.contractTypes ?? prefs.contractTypes ?? [],
     remotes: body.remotes ?? prefs.remotes ?? [],
-    sources: body.sources ?? [],
-    limit: Math.min(Number(body.limit) || 25, 50),
+    limit: Math.min(Math.max(Number(body.limit) || 50, 1), MAX_PAGE_SIZE),
   };
 
-  const result = await searchOffers(criteria);
+  const wantedSources = (body.sources ?? []).filter((source) => SOURCES.includes(source));
+  const { offers: found, report } = await gather(criteria, wantedSources);
+
   const excluded = (prefs.excludedKeywords || []).map((word) => word.toLowerCase()).filter(Boolean);
 
   let imported = 0;
   let updated = 0;
   let skipped = 0;
 
-  for (const raw of result.offers || []) {
+  for (const raw of found) {
     const offer = sanitize(raw);
     if (!offer.title) {
       skipped += 1;
@@ -145,8 +216,8 @@ export const syncOffers = asyncHandler(async (req, res) => {
     imported,
     updated,
     skipped,
-    found: result.total || 0,
-    sources: result.sources || {},
-    criteria,
+    found: found.length,
+    sources: report,
+    criteria: { ...criteria, sources: wantedSources },
   });
 });

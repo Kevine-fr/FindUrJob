@@ -33,12 +33,6 @@ def _as_text_list(value: Any) -> list[str]:
     return []
 
 
-def _as_text_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): _as_text(val) for key, val in value.items() if _as_text(val)}
-
-
 def _as_object(value: Any) -> Any:
     """`null` ou scalaire → objet vide, pour que les défauts s'appliquent."""
     return value if isinstance(value, (dict, BaseModel)) else {}
@@ -52,7 +46,6 @@ def _as_object_list(value: Any) -> list[Any]:
 
 Text = Annotated[str, BeforeValidator(_as_text)]
 TextList = Annotated[list[str], BeforeValidator(_as_text_list)]
-TextMap = Annotated[dict[str, str], BeforeValidator(_as_text_map)]
 
 
 class _Lenient(BaseModel):
@@ -62,17 +55,74 @@ class _Lenient(BaseModel):
 # --- Entrée -------------------------------------------------------------
 
 
-class ExperienceIn(_Lenient):
+def _as_links(value: Any) -> list[Any]:
+    """Accepte la forme historique {github: url} comme la forme actuelle [{type, url}]."""
+    if isinstance(value, dict):
+        return [{"type": key, "url": url} for key, url in value.items() if _as_text(url)]
+    return _as_object_list(value)
+
+
+class _WithFacts(_Lenient):
+    """Une entrée de parcours : ce qu'elle raconte tient dans ses puces."""
+
+    bullets: TextList = []
+    description: Text = ""
+
+    @property
+    def facts(self) -> list[str]:
+        """Les puces, ou à défaut le paragraphe découpé ligne à ligne."""
+        if self.bullets:
+            return self.bullets
+        return [
+            line.strip(" -•\t") for line in self.description.splitlines() if line.strip(" -•\t")
+        ]
+
+
+class ExperienceIn(_WithFacts):
     role: Text = ""
     company: Text = ""
+    location: Text = ""
     period: Text = ""
-    description: Text = ""
 
 
 class EducationIn(_Lenient):
     degree: Text = ""
     school: Text = ""
+    location: Text = ""
     period: Text = ""
+    detail: Text = ""
+
+
+class ProjectIn(_WithFacts):
+    name: Text = ""
+    role: Text = ""
+    company: Text = ""
+    location: Text = ""
+    period: Text = ""
+    url: Text = ""
+
+
+class CertificationIn(_Lenient):
+    name: Text = ""
+    issuer: Text = ""
+    date: Text = ""
+    url: Text = ""
+
+
+class LanguageIn(_Lenient):
+    name: Text = ""
+    level: Text = ""
+
+
+class LinkIn(_Lenient):
+    type: Text = "autre"
+    url: Text = ""
+    label: Text = ""
+
+
+class SkillGroupIn(_Lenient):
+    label: Text = ""
+    items: TextList = []
 
 
 class ProfileIn(_Lenient):
@@ -83,10 +133,26 @@ class ProfileIn(_Lenient):
     location: Text = ""
     summary: Text = ""
     skills: TextList = []
+    skillGroups: Annotated[list[SkillGroupIn], BeforeValidator(_as_object_list)] = []
     experiences: Annotated[list[ExperienceIn], BeforeValidator(_as_object_list)] = []
     education: Annotated[list[EducationIn], BeforeValidator(_as_object_list)] = []
-    links: TextMap = {}
+    projects: Annotated[list[ProjectIn], BeforeValidator(_as_object_list)] = []
+    certifications: Annotated[list[CertificationIn], BeforeValidator(_as_object_list)] = []
+    languages: Annotated[list[LanguageIn], BeforeValidator(_as_object_list)] = []
+    links: Annotated[list[LinkIn], BeforeValidator(_as_links)] = []
     masterCv: Text = ""
+
+    @property
+    def all_skills(self) -> list[str]:
+        """Liste à plat : compétences groupées d'abord, puis la liste simple."""
+        merged: list[str] = []
+        seen: set[str] = set()
+        for skill in [item for group in self.skillGroups for item in group.items] + self.skills:
+            key = skill.casefold()
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(skill)
+        return merged
 
 
 class OfferIn(_Lenient):

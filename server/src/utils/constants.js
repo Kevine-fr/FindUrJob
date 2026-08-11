@@ -12,6 +12,12 @@ export const SOURCES = [
   'autre',
 ];
 
+// Les plateformes pilotées au navigateur : celles qui n'ont pas d'API ouverte,
+// et sur lesquelles on peut donc aussi candidater depuis le compte de la
+// personne. Les autres sources (France Travail, Adzuna, Remotive) passent par
+// le moteur Python et leurs API officielles.
+export const BOT_PLATFORMS = ['linkedin', 'indeed', 'hellowork'];
+
 export const CONTRACT_TYPES = ['cdi', 'cdd', 'stage', 'alternance', 'freelance', 'autre'];
 
 export const REMOTE = ['sur_site', 'hybride', 'teletravail', 'non_precise'];

@@ -94,23 +94,42 @@ def build_profile_payload(profile: ProfileIn) -> dict:
             "telephone": profile.phone,
             "localisation": profile.location,
             "resume": profile.summary,
-            "competences": profile.skills,
+            "competences": profile.all_skills,
             "experiences": [
                 _compact(
                     {
                         "poste": exp.role,
                         "entreprise": exp.company,
+                        "lieu": exp.location,
                         "periode": exp.period,
-                        "description": exp.description,
+                        "faits": exp.facts,
                     }
                 )
                 for exp in profile.experiences
+            ],
+            "projets": [
+                _compact(
+                    {
+                        "nom": project.name or project.role,
+                        "periode": project.period,
+                        "faits": project.facts,
+                    }
+                )
+                for project in profile.projects
             ],
             "formation": [
                 _compact({"diplome": edu.degree, "ecole": edu.school, "periode": edu.period})
                 for edu in profile.education
             ],
-            "liens": profile.links,
+            "certifications": [
+                _compact({"nom": cert.name, "organisme": cert.issuer, "date": cert.date})
+                for cert in profile.certifications
+            ],
+            "langues": [
+                _compact({"langue": lang.name, "niveau": lang.level})
+                for lang in profile.languages
+            ],
+            "liens": {link.type or "lien": link.url for link in profile.links if link.url},
         }
     )
 

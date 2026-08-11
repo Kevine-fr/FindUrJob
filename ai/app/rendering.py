@@ -39,7 +39,7 @@ def split_skills(profile: ProfileIn, keywords: list[Keyword]) -> tuple[list[str]
     targeted: list[str] = []
     others: list[str] = []
 
-    for skill in profile.skills:
+    for skill in profile.all_skills:
         haystack = padded(stem_text(skill))
         if any(contains_term(haystack, kw.norm) for kw in wanted):
             targeted.append(skill)
@@ -49,8 +49,27 @@ def split_skills(profile: ProfileIn, keywords: list[Keyword]) -> tuple[list[str]
 
 
 def _contact_line(profile: ProfileIn) -> str:
-    bits = [profile.email, profile.phone, *profile.links.values()]
+    bits = [profile.email, profile.phone, *(link.url for link in profile.links)]
     return " · ".join(bit for bit in bits if bit)
+
+
+def _experience_block(entry) -> list[str]:
+    """Un poste (ou un projet) en Markdown : titre, période, puis les faits en puces."""
+    title = getattr(entry, "name", "") or entry.role
+    heading = " — ".join(bit for bit in (title, entry.company) if bit) or "Expérience"
+    lines = ["", f"### {heading}"]
+
+    context = " · ".join(bit for bit in (entry.period, entry.location) if bit)
+    if context:
+        lines.append(f"_{context}_")
+
+    facts = entry.facts if hasattr(entry, "facts") else []
+    if facts:
+        lines.append("")
+        lines += [f"- {fact}" for fact in facts]
+    elif entry.description:
+        lines += ["", entry.description]
+    return lines
 
 
 def render_cv(
@@ -92,12 +111,12 @@ def render_cv(
     if profile.experiences:
         lines += ["", "## Expériences"]
         for exp in profile.experiences:
-            heading = " — ".join(bit for bit in (exp.role, exp.company) if bit) or "Expérience"
-            lines += ["", f"### {heading}"]
-            if exp.period:
-                lines.append(f"_{exp.period}_")
-            if exp.description:
-                lines += ["", exp.description]
+            lines += _experience_block(exp)
+
+    if profile.projects:
+        lines += ["", "## Projets"]
+        for project in profile.projects:
+            lines += _experience_block(project)
 
     if profile.education:
         lines += ["", "## Formation"]
@@ -107,11 +126,29 @@ def render_cv(
             if label:
                 lines.append(f"- {label}{period}")
 
+    if profile.certifications:
+        lines += ["", "## Certifications"]
+        for cert in profile.certifications:
+            label = " — ".join(bit for bit in (cert.name, cert.issuer) if bit)
+            date = f" ({cert.date})" if cert.date else ""
+            if label:
+                lines.append(f"- {label}{date}")
+
+    if profile.languages:
+        lines += ["", "## Langues", ""]
+        lines.append(
+            ", ".join(
+                " : ".join(bit for bit in (lang.name, lang.level) if bit)
+                for lang in profile.languages
+                if lang.name
+            )
+        )
+
     # Hors-ligne, on ne réécrit pas : on rattache le CV déposé tel quel, sauf si
     # les expériences structurées le rendent redondant.
     if profile.masterCv and not profile.experiences:
         lines += ["", "## Parcours", "", profile.masterCv]
-    elif not (profile.summary or profile.skills or profile.experiences or profile.masterCv):
+    elif not (profile.summary or profile.all_skills or profile.experiences or profile.masterCv):
         lines += [
             "",
             "> Le profil est vide : dépose ton CV dans l'onglet Profil pour "
@@ -141,18 +178,26 @@ def render_master_cv(profile: ProfileIn) -> str:
     if profile.summary:
         lines += ["", "## En bref", "", profile.summary]
 
-    if profile.skills:
-        lines += ["", "## Compétences", "", ", ".join(profile.skills)]
+    # Les familles de compétences sont conservées : elles portent du sens que
+    # la liste à plat perd (« Cloud & DevOps : AWS, GCP » ≠ « AWS, GCP »).
+    if profile.skillGroups or profile.skills:
+        lines += ["", "## Compétences", ""]
+        for group in profile.skillGroups:
+            if group.items:
+                label = f"**{group.label}** : " if group.label else ""
+                lines.append(f"- {label}{', '.join(group.items)}")
+        if profile.skills:
+            lines.append(f"- {', '.join(profile.skills)}")
 
     if profile.experiences:
         lines += ["", "## Expériences"]
         for exp in profile.experiences:
-            heading = " — ".join(bit for bit in (exp.role, exp.company) if bit) or "Expérience"
-            lines += ["", f"### {heading}"]
-            if exp.period:
-                lines.append(f"_{exp.period}_")
-            if exp.description:
-                lines += ["", exp.description]
+            lines += _experience_block(exp)
+
+    if profile.projects:
+        lines += ["", "## Projets"]
+        for project in profile.projects:
+            lines += _experience_block(project)
 
     if profile.education:
         lines += ["", "## Formation", ""]
@@ -162,10 +207,25 @@ def render_master_cv(profile: ProfileIn) -> str:
             if label:
                 lines.append(f"- {label}{period}")
 
+    if profile.certifications:
+        lines += ["", "## Certifications", ""]
+        for cert in profile.certifications:
+            label = " — ".join(bit for bit in (cert.name, cert.issuer) if bit)
+            date = f" ({cert.date})" if cert.date else ""
+            if label:
+                lines.append(f"- {label}{date}")
+
+    if profile.languages:
+        lines += ["", "## Langues", ""]
+        for lang in profile.languages:
+            if lang.name:
+                lines.append(f"- {lang.name}" + (f" : {lang.level}" if lang.level else ""))
+
     if profile.links:
         lines += ["", "## Liens", ""]
-        for label, url in profile.links.items():
-            lines.append(f"- {label} : {url}")
+        for link in profile.links:
+            if link.url:
+                lines.append(f"- {link.label or link.type} : {link.url}")
 
     return "\n".join(lines).strip() + "\n"
 

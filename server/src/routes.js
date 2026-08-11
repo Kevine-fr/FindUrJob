@@ -5,6 +5,8 @@ import * as cv from './controllers/cvController.js';
 import * as profile from './controllers/profileController.js';
 import * as preferences from './controllers/preferenceController.js';
 import * as history from './controllers/historyController.js';
+import * as accounts from './controllers/accountController.js';
+import * as cvExport from './controllers/cvExportController.js';
 
 const router = Router();
 
@@ -28,6 +30,16 @@ router.patch('/applications/:id', applications.updateApplication);
 router.patch('/applications/:id/status', applications.updateStatus);
 router.post('/applications/:id/tailor', applications.tailorApplication);
 router.delete('/applications/:id', applications.deleteApplication);
+
+// Export PDF du CV : le front envoie le document, Chromium l'imprime.
+router.post('/cv/pdf', cvExport.exportCvPdf);
+
+// Comptes de plateformes : identifiants chiffrés + sessions du navigateur piloté
+router.get('/accounts', accounts.listAccounts);
+router.put('/accounts/:platform', accounts.saveAccount);
+router.delete('/accounts/:platform', accounts.deleteAccount);
+router.post('/accounts/:platform/login', accounts.loginAccount);
+router.post('/accounts/:platform/logout', accounts.logoutAccount);
 
 // Versions de CV
 router.get('/cv-versions', cv.listCvVersions);

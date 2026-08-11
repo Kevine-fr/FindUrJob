@@ -27,10 +27,41 @@ async function upload(path, file) {
   return data;
 }
 
+/**
+ * Récupère un PDF.
+ *
+ * Le corps est binaire, mais les en-têtes disent ce que l'ajustement à une page
+ * a coûté (densité, puces retirées) : on rend les deux, sinon l'appelant ne
+ * peut pas prévenir l'utilisateur que son CV a été compacté.
+ */
+async function pdf(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erreur ${res.status}`);
+  }
+
+  return {
+    blob: await res.blob(),
+    fit: {
+      density: Number(res.headers.get('X-Cv-Density')) || 1,
+      trimmed: Number(res.headers.get('X-Cv-Trimmed')) || 0,
+      overflow: res.headers.get('X-Cv-Overflow') === 'true',
+      fill: Number(res.headers.get('X-Cv-Fill')) || 0,
+    },
+  };
+}
+
 export const api = {
   health: () => req('/health'),
 
   offers: {
+    // Réponse paginée : { offers, total, page, pages, limit }
     list: (query = '') => req(`/offers${query}`),
     sync: (body = {}) => req('/offers/sync', { method: 'POST', body: JSON.stringify(body) }),
     get: (id) => req(`/offers/${id}`),
@@ -69,5 +100,22 @@ export const api = {
     uploadCv: (file) => upload('/profile/cv', file),
     removeCv: () => req('/profile/cv', { method: 'DELETE' }),
     composeCv: (fields) => req('/profile/compose', { method: 'POST', body: JSON.stringify(fields) }),
+  },
+
+  cv: {
+    pdf: (html, filename) => pdf('/cv/pdf', { html, filename }),
+  },
+
+  accounts: {
+    list: () => req('/accounts'),
+    save: (platform, body) =>
+      req(`/accounts/${platform}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (platform) => req(`/accounts/${platform}`, { method: 'DELETE' }),
+    login: (platform, password) =>
+      req(`/accounts/${platform}/login`, {
+        method: 'POST',
+        body: JSON.stringify(password ? { password } : {}),
+      }),
+    logout: (platform) => req(`/accounts/${platform}/logout`, { method: 'POST' }),
   },
 };

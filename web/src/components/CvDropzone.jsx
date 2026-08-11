@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../api/client.js';
+import { useToast } from './Toast.jsx';
 
 const ACCEPTED = '.pdf,.docx,.txt,.md';
 const MAX_MB = 5;
@@ -13,31 +14,36 @@ function formatDate(value) {
 }
 
 export default function CvDropzone({ profile, onChange }) {
+  const toast = useToast();
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
 
   const hasCv = Boolean(profile?.masterCv);
 
   const send = async (file) => {
     if (!file) return;
-    setError(null);
 
     if (!/\.(pdf|docx|txt|md|markdown)$/i.test(file.name)) {
-      setError('Format non accepté. Dépose un PDF, un DOCX, un TXT ou un MD.');
+      toast.error('Format non accepté. Dépose un PDF, un DOCX, un TXT ou un MD.');
       return;
     }
     if (file.size > MAX_MB * 1024 * 1024) {
-      setError(`Fichier trop lourd (${MAX_MB} Mo maximum).`);
+      toast.error(`Fichier trop lourd (${MAX_MB} Mo maximum).`);
       return;
     }
 
     setBusy(true);
     try {
-      onChange?.(await api.profile.uploadCv(file));
-    } catch (e) {
-      setError(e.message);
+      const updated = await toast.promise(api.profile.uploadCv(file), {
+        loading: `Lecture de ${file.name}…`,
+        success: (result) =>
+          `CV importé (${(result.cvChars || 0).toLocaleString('fr-FR')} caractères).`,
+        error: (error) => `Import impossible : ${error.message}`,
+      });
+      onChange?.(updated);
+    } catch {
+      /* déjà signalé par le toast */
     } finally {
       setBusy(false);
     }
@@ -45,11 +51,11 @@ export default function CvDropzone({ profile, onChange }) {
 
   const remove = async () => {
     setBusy(true);
-    setError(null);
     try {
       onChange?.(await api.profile.removeCv());
-    } catch (e) {
-      setError(e.message);
+      toast.success('CV retiré.');
+    } catch (error) {
+      toast.error(error.message);
     } finally {
       setBusy(false);
     }
@@ -111,8 +117,6 @@ export default function CvDropzone({ profile, onChange }) {
           </>
         )}
       </div>
-
-      {error && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{error}</p>}
 
       {profile?.cvWarnings?.length > 0 && (
         <ul className="dropzone-warnings">

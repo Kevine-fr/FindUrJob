@@ -1,0 +1,17 @@
+{
+  "name": "findurjob-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Navigateur piloté : rendu PDF du CV, lecture des offres et candidatures sur les plateformes qui n'ont pas d'API.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "playwright": "^1.49.0"
+  }
+}

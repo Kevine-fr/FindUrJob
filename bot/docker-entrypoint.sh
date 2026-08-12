@@ -27,4 +27,9 @@ x11vnc -display "$DISPLAY" -forever -shared -nopw -quiet -rfbport 5900 -bg
 
 websockify --web=/usr/share/novnc "${VNC_PORT:-6080}" 127.0.0.1:5900 &
 
+# Le volume des profils survit au conteneur, et Chromium y laisse un verrou
+# désignant un processus d'une machine qui n'existe plus. Au démarrage, aucun
+# navigateur ne tourne encore : tout verrou présent est donc périmé.
+find "${BOT_PROFILE_DIR:-/data/profiles}" -maxdepth 2 -name 'Singleton*' -exec rm -rf {} + 2>/dev/null || true
+
 exec node src/index.js

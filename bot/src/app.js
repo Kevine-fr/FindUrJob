@@ -58,21 +58,27 @@ export function createApp() {
     '/sessions',
     asyncHandler(async (_req, res) => {
       const known = await knownProfiles();
-      const sessions = await Promise.all(
-        PLATFORM_NAMES.map(async (name) => {
-          if (!known.includes(name)) return { platform: name, state: 'absente' };
-          try {
-            const platform = getPlatform(name);
-            const context = await getContext(name);
-            return {
-              platform: name,
-              state: (await platform.isLoggedIn(context)) ? 'connectee' : 'expiree',
-            };
-          } catch (error) {
-            return { platform: name, state: 'erreur', message: error.message };
-          }
-        })
-      );
+
+      // Séquentiel, et non `Promise.all` : chaque vérification ouvre un
+      // Chromium complet. Les lancer tous d'un coup fait un pic mémoire de
+      // plusieurs centaines de mégaoctets à chaque affichage de la page.
+      const sessions = [];
+      for (const name of PLATFORM_NAMES) {
+        if (!known.includes(name)) {
+          sessions.push({ platform: name, state: 'absente' });
+          continue;
+        }
+        try {
+          const platform = getPlatform(name);
+          const context = await getContext(name);
+          sessions.push({
+            platform: name,
+            state: (await platform.isLoggedIn(context)) ? 'connectee' : 'expiree',
+          });
+        } catch (error) {
+          sessions.push({ platform: name, state: 'erreur', message: error.message });
+        }
+      }
       res.json({ sessions });
     })
   );

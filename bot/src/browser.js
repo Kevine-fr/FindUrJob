@@ -27,7 +27,10 @@ const CONTEXT_OPTIONS = {
 };
 
 let renderBrowser = null;
-const contexts = new Map(); // plateforme → BrowserContext persistant
+// plateforme → Promise<BrowserContext>. La promesse, et non le contexte résolu :
+// voir `getContext` — c'est ce qui empêche deux lancements concurrents sur le
+// même profil.
+const contexts = new Map();
 
 /** Navigateur partagé pour le rendu (pas de cookies, pas d'état). */
 export async function getRenderBrowser() {
@@ -50,44 +53,85 @@ export async function getRenderBrowser() {
  * Effet de bord bienvenu : un Chrome complet passe des contrôles anti-robot
  * qu'un navigateur sans interface échoue systématiquement.
  */
-export async function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
+/**
+ * Retire le verrou laissé par une exécution précédente.
+ *
+ * Chromium marque un profil comme « ouvert » par un lien `SingletonLock` qui
+ * pointe vers `<nom-machine>-<pid>`. Le volume des profils survivant au
+ * conteneur, ce verrou désigne après un redémarrage un processus et une machine
+ * qui n'existent plus — et Chromium refuse alors d'ouvrir le profil.
+ *
+ * On ne les supprime qu'au moment où aucun contexte n'est ouvert de notre côté
+ * (garanti par le cache ci-dessous) : le verrou ne peut donc être que périmé.
+ */
+async function clearStaleLocks(dir) {
+  await Promise.all(
+    ['SingletonLock', 'SingletonSocket', 'SingletonCookie'].map((name) =>
+      fs.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => {})
+    )
+  );
+}
+
+export function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
   const existing = contexts.get(platform);
   if (existing) return existing;
 
-  const dir = path.join(PROFILE_ROOT, platform);
-  await fs.mkdir(dir, { recursive: true });
+  const launching = (async () => {
+    const dir = path.join(PROFILE_ROOT, platform);
+    await fs.mkdir(dir, { recursive: true });
+    await clearStaleLocks(dir);
 
-  const context = await chromium.launchPersistentContext(dir, {
-    headless,
-    args: [
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-blink-features=AutomationControlled',
-      // Une seule fenêtre à l'écran : sans ça les profils s'empilent en cascade
-      // et l'utilisateur ne sait plus laquelle il pilote.
-      '--start-maximized',
-    ],
-    ...CONTEXT_OPTIONS,
-  });
+    const context = await chromium.launchPersistentContext(dir, {
+      headless,
+      args: [
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        // Une seule fenêtre à l'écran : sans ça les profils s'empilent en cascade
+        // et l'utilisateur ne sait plus laquelle il pilote.
+        '--start-maximized',
+      ],
+      ...CONTEXT_OPTIONS,
+    });
 
-  // `navigator.webdriver` est le drapeau que tout le monde teste en premier.
-  // On l'efface pour que la session se comporte comme le navigateur qu'elle est.
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
+    // `navigator.webdriver` est le drapeau que tout le monde teste en premier.
+    // On l'efface pour que la session se comporte comme le navigateur qu'elle est.
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
 
-  context.setDefaultTimeout(30_000);
-  context.on('close', () => contexts.delete(platform));
-  contexts.set(platform, context);
-  return context;
+    context.setDefaultTimeout(30_000);
+    context.on('close', () => contexts.delete(platform));
+    return context;
+  })();
+
+  /*
+   * On met en cache la *promesse*, pas le contexte résolu.
+   *
+   * La page Comptes interroge les trois plateformes en parallèle : avec un
+   * cache renseigné seulement après le lancement, deux appels simultanés sur
+   * la même plateforme lançaient deux Chromium sur le même dossier de profil,
+   * et le second échouait sur le verrou.
+   */
+  contexts.set(platform, launching);
+
+  // Un lancement raté ne doit pas rester en cache, sinon la plateforme est
+  // définitivement cassée jusqu'au redémarrage du service.
+  launching.catch(() => contexts.delete(platform));
+
+  return launching;
 }
 
 /** Ferme la session d'une plateforme sans effacer ses cookies. */
 export async function closeContext(platform) {
-  const context = contexts.get(platform);
-  if (!context) return false;
+  const pending = contexts.get(platform);
+  if (!pending) return false;
   contexts.delete(platform);
-  await context.close().catch(() => {});
+
+  // `pending` est une promesse : un lancement en cours doit aboutir avant
+  // d'être fermé, sinon le navigateur survit au retrait du cache.
+  const context = await pending.catch(() => null);
+  if (context) await context.close().catch(() => {});
   return true;
 }
 

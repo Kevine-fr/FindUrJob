@@ -1,4 +1,4 @@
-import { normalize, humanPause, jsonLdJobs } from './common.js';
+import { normalize, humanPause, jsonLdJobs, dismissConsent } from './common.js';
 
 /**
  * HelloWork.
@@ -12,7 +12,10 @@ import { normalize, humanPause, jsonLdJobs } from './common.js';
 const PER_PAGE = 20;
 
 export const name = 'hellowork';
-export const loginUrl = 'https://www.hellowork.com/fr-fr/connexion.html';
+// La même page porte l'inscription et la connexion ; c'est le fragment
+// #connexion qui sélectionne le bon onglet.
+export const loginUrl =
+  'https://www.hellowork.com/fr-fr/candidat/connexion-inscription.html#connexion';
 export const needsSessionToSearch = false;
 
 const CONTRACT_FILTER = {
@@ -148,17 +151,50 @@ export async function login(context, { email, password }) {
   const page = await context.newPage();
   try {
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
-    await page.fill('input[type="email"], input[name="Email"]', email);
-    await humanPause(300, 800);
-    await page.fill('input[type="password"], input[name="Password"]', password);
-    await humanPause(300, 800);
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
 
-    if (/connexion/.test(page.url())) {
+    // Le rideau de consentement recouvre le formulaire : tant qu'il est là, les
+    // champs existent mais restent inaccessibles.
+    await dismissConsent(page);
+
+    // La page contient *deux* formulaires : inscription (email/password) et
+    // connexion (email2/password2). Cibler les champs visibles plutôt que leurs
+    // noms évite de dépendre de cette numérotation, et de savoir lequel des
+    // deux onglets est actif.
+    const emailField = page.locator('input[type="email"]:visible').first();
+    const passwordField = page.locator('input[type="password"]:visible').first();
+
+    try {
+      await emailField.waitFor({ state: 'visible', timeout: 15_000 });
+    } catch {
       return {
         status: 'verification',
-        message: 'HelloWork n\'a pas validé la connexion : vérifie les identifiants ou termine à la main.',
+        message:
+          "Le formulaire de connexion HelloWork n'est pas accessible (bandeau de " +
+          'consentement ou page modifiée). Termine la connexion à la main.',
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+        url: page.url(),
+      };
+    }
+
+    await emailField.fill(email);
+    await humanPause(300, 800);
+    await passwordField.fill(password);
+    await humanPause(300, 800);
+
+    // Bouton propre au formulaire de connexion : « submit » tout court
+    // attraperait aussi ceux du bandeau de cookies.
+    const submit = page.getByRole('button', { name: /je me connecte|connexion/i }).first();
+    if (await submit.count()) await submit.click();
+    else await passwordField.press('Enter');
+
+    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+
+    if (/connexion-inscription/.test(page.url())) {
+      return {
+        status: 'verification',
+        message:
+          "HelloWork n'a pas validé la connexion : vérifie les identifiants, ou " +
+          'termine la vérification à la main.',
         screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
         url: page.url(),
       };

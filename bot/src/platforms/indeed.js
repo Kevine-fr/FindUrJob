@@ -1,4 +1,4 @@
-import { normalize, humanPause } from './common.js';
+import { normalize, humanPause, dismissConsent } from './common.js';
 
 /**
  * Indeed.
@@ -149,6 +149,7 @@ export async function login(context, { email, password }) {
   const page = await context.newPage();
   try {
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+    await dismissConsent(page);
     await page.fill('input[type="email"], #ifl-InputFormField-3', email);
     await humanPause(400, 900);
     await page.click('button[type="submit"]');

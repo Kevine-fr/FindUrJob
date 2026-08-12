@@ -1,4 +1,4 @@
-import { normalize, cleanHtml, humanPause } from './common.js';
+import { normalize, cleanHtml, humanPause, dismissConsent } from './common.js';
 
 /**
  * LinkedIn.
@@ -151,6 +151,7 @@ export async function login(context, { email, password }) {
   const page = await context.newPage();
   try {
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+    await dismissConsent(page);
     await page.fill('#username', email);
     await humanPause(300, 800);
     await page.fill('#password', password);

@@ -131,6 +131,49 @@ export const textFrom = (root, selectors) => {
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Écarte la bannière de consentement (RGPD).
+ *
+ * Sans ça, l'overlay recouvre le formulaire : le champ existe dans le DOM mais
+ * n'est pas cliquable, et Playwright attend en vain jusqu'au délai maximal —
+ * l'erreur ressemble alors à un mauvais sélecteur, alors que c'est un rideau.
+ *
+ * On refuse le pistage quand le site le propose : c'est le choix le plus sobre,
+ * et il suffit pour accéder au formulaire.
+ */
+export async function dismissConsent(page) {
+  const choices = [
+    'Continuer sans accepter',
+    'Tout refuser',
+    'Refuser',
+    'Continue without accepting',
+    'Reject all',
+    'Tout accepter', // en dernier : certains sites n'offrent pas le refus
+    'Accept all',
+    "J'accepte",
+  ];
+
+  // Une seule attente, le temps que la bannière s'affiche. Les contrôles qui
+  // suivent sont immédiats (`isVisible()` sans option n'attend pas) : sur une
+  // page sans bandeau, la fonction rend la main tout de suite au lieu de
+  // cumuler un délai par libellé.
+  await sleep(900);
+
+  for (const label of choices) {
+    const button = page.getByRole('button', { name: label, exact: false }).first();
+    try {
+      if (await button.isVisible()) {
+        await button.click({ timeout: 3000 });
+        await sleep(700);
+        return label;
+      }
+    } catch {
+      // Bannière absente ou déjà fermée : on passe au libellé suivant.
+    }
+  }
+  return null;
+}
+
+/**
  * Cadence humaine entre deux actions.
  *
  * Ce n'est pas un contournement : c'est la contrepartie du choix assumé de

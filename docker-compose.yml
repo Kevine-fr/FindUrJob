@@ -111,7 +111,11 @@ services:
     command: npm run dev
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      # Étage "dev" : serveur Vite et rechargement à chaud.
+      # En production, c'est l'étage "runtime" (nginx) qui sert le build.
+      target: dev
     container_name: findurjob-web
     restart: unless-stopped
     depends_on:

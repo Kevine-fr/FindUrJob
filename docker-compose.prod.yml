@@ -22,9 +22,8 @@ services:
   ai:
     build:
       context: ./ai
-      # Étage "dev" : rechargement à chaud + pytest embarqué.
-      # En production, viser l'étage "runtime".
-      target: dev
+      # Étage "runtime" : sans pytest ni rechargement à chaud.
+      target: runtime
     container_name: findurjob-ai
     restart: unless-stopped
     # Clés et réglages : copier ai/.env.example en ai/.env (ignoré par git).
@@ -34,8 +33,6 @@ services:
         required: false
     expose:
       - "8000"
-    volumes:
-      - ./ai:/app
     healthcheck:
       test:
         [
@@ -48,7 +45,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
         - web
 
@@ -65,11 +61,9 @@ services:
       # Les sessions des plateformes survivent au conteneur : c'est tout
       # l'intérêt de se connecter une fois plutôt qu'à chaque candidature.
       - bot_profiles:/data/profiles
-      # Les sélecteurs des plateformes changent souvent : on veut pouvoir les
-      # corriger sans reconstruire l'image (Chromium vit dans /ms-playwright,
-      # hors de /app, il n'est donc pas masqué par ce montage).
-      - ./bot:/app
-      - /app/node_modules
+    # Pas de montage des sources ici, contrairement au compose de développement :
+    # le volume anonyme /app/node_modules ne se met jamais à jour une fois créé,
+    # et une nouvelle dépendance manquerait silencieusement au démarrage.
     expose:
       - "8100"
     healthcheck:
@@ -106,36 +100,32 @@ services:
       # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
       # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
-      # Les événements de fichiers ne traversent pas le montage Windows → Linux :
-      # sans scrutation, nodemon ne redémarre jamais après une modification.
-      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=production
     expose:
       - "4000"
-    volumes:
-      - ./server:/app
-      - /app/node_modules
-    command: npm run dev
+    # `npm start` (node) et non `npm run dev` (nodemon) : en production, rien ne
+    # doit surveiller les fichiers ni redémarrer le processus tout seul.
+    command: npm start
     networks:
         - web
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      # Étage "runtime" : le build statique servi par nginx. Le serveur Vite
+      # refuse les noms d'hôte qu'il ne connaît pas — c'est lui qui rejetait le
+      # domaine du VPS. Il n'a de toute façon pas sa place en production.
+      target: runtime
     container_name: findurjob-web
     restart: unless-stopped
     depends_on:
       - server
-    environment:
-      - VITE_API_TARGET=http://server:4000
-      - CHOKIDAR_USEPOLLING=true
     expose:
       - "5173"
-    volumes:
-      - ./web:/app
-      - /app/node_modules
-    command: npm run dev
+    # Ni montage de sources ni `command` : l'image contient le site compilé.
     networks:
         - web
-  
+
 
 networks:
   web:

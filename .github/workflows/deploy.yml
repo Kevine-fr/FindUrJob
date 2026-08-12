@@ -58,12 +58,10 @@ jobs:
           APP_COMMIT=$(git rev-parse --short HEAD)
           echo "Version : ${APP_VERSION} (${APP_COMMIT})"
 
-          echo "Generation du .env..."
+          echo "Generation du .env racine (lu par docker compose)..."
 
           cat > .env << 'ENVEOF'
-
           CREDENTIALS_KEY=${{ secrets.CREDENTIALS_KEY }}
-
           ENVEOF
 
           # Version calculee plus haut : ajoutee hors du heredoc (qui est quote
@@ -73,11 +71,49 @@ jobs:
             echo "APP_COMMIT=${APP_COMMIT}"
           } >> .env
 
+          # Le moteur IA lit ses cles dans ai/.env (env_file du compose), pas
+          # dans le .env racine. Sans ce fichier il demarre en mode hors-ligne,
+          # et France Travail comme Adzuna sont ignorees en silence.
+          echo "Generation du ai/.env..."
+
+          cat > ai/.env << 'AIENVEOF'
+          AI_PROVIDER=auto
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          AI_MODEL=claude-opus-5
+          AI_EFFORT=medium
+
+          FRANCE_TRAVAIL_CLIENT_ID=${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
+          FRANCE_TRAVAIL_CLIENT_SECRET=${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
+
+          ADZUNA_APP_ID=${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY=${{ secrets.ADZUNA_APP_KEY }}
+          ADZUNA_COUNTRY=fr
+
+          LOG_LEVEL=info
+          AIENVEOF
+
+          # Le reseau est declare `external` : compose ne le cree pas lui-meme.
+          docker network inspect web >/dev/null 2>&1 || docker network create web
+
           echo "Demarrage des conteneurs..."
-          docker compose build --no-cache
-          docker compose -f docker-compose.prod.yml up -d --build
+          # Un seul build, sur le compose de production. `--no-cache` global
+          # retelechargeait Chromium (~1 Go) a chaque deploiement.
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+          echo "Verification de la sante des services..."
+          for i in $(seq 1 30); do
+            if docker exec findurjob-api node -e 'fetch("http://127.0.0.1:4000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' 2>/dev/null; then
+              echo "API en ligne."
+              break
+            fi
+            [ "$i" = "30" ] && { echo "L'API ne repond pas :"; docker compose -f docker-compose.prod.yml logs --tail=40 server; exit 1; }
+            sleep 2
+          done
 
           docker exec nginx nginx -s reload || true
+
+          # Les anciennes images s'accumulent vite avec Chromium dans le lot.
+          docker image prune -f >/dev/null 2>&1 || true
 
           echo "Deploiement termine."
           DEPLOY

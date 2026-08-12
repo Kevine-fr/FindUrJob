@@ -62,7 +62,15 @@ def _as_links(value: Any) -> list[Any]:
     return _as_object_list(value)
 
 
-class _WithFacts(_Lenient):
+class _Shipped(_Lenient):
+    """Une réalisation publiée : son lien, et sa présence sur les magasins."""
+
+    appUrl: Text = ""
+    onAppStore: bool = False
+    onPlayStore: bool = False
+
+
+class _WithFacts(_Shipped):
     """Une entrée de parcours : ce qu'elle raconte tient dans ses puces."""
 
     bullets: TextList = []
@@ -85,7 +93,7 @@ class ExperienceIn(_WithFacts):
     period: Text = ""
 
 
-class EducationIn(_Lenient):
+class EducationIn(_Shipped):
     degree: Text = ""
     school: Text = ""
     location: Text = ""
@@ -139,6 +147,7 @@ class ProfileIn(_Lenient):
     projects: Annotated[list[ProjectIn], BeforeValidator(_as_object_list)] = []
     certifications: Annotated[list[CertificationIn], BeforeValidator(_as_object_list)] = []
     languages: Annotated[list[LanguageIn], BeforeValidator(_as_object_list)] = []
+    interests: TextList = []
     links: Annotated[list[LinkIn], BeforeValidator(_as_links)] = []
     masterCv: Text = ""
 

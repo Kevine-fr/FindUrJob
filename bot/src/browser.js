@@ -40,11 +40,17 @@ export async function getRenderBrowser() {
 }
 
 /**
- * Contexte persistant d'une plateforme. `headless: false` n'a de sens que si un
- * serveur X est branché — en conteneur, on reste en headless et l'utilisateur
- * reprend la main via les captures d'écran de `/login`.
+ * Contexte persistant d'une plateforme.
+ *
+ * Volontairement *visible* (`headless: false`) : il tourne sur l'écran virtuel
+ * du conteneur, que l'utilisateur peut reprendre à la souris via noVNC quand
+ * une connexion bute sur une 2FA ou un captcha. La session qu'il obtient est
+ * alors dans le même profil que celui réutilisé ensuite par le robot.
+ *
+ * Effet de bord bienvenu : un Chrome complet passe des contrôles anti-robot
+ * qu'un navigateur sans interface échoue systématiquement.
  */
-export async function getContext(platform, { headless = true } = {}) {
+export async function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
   const existing = contexts.get(platform);
   if (existing) return existing;
 
@@ -53,7 +59,14 @@ export async function getContext(platform, { headless = true } = {}) {
 
   const context = await chromium.launchPersistentContext(dir, {
     headless,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      // Une seule fenêtre à l'écran : sans ça les profils s'empilent en cascade
+      // et l'utilisateur ne sait plus laquelle il pilote.
+      '--start-maximized',
+    ],
     ...CONTEXT_OPTIONS,
   });
 

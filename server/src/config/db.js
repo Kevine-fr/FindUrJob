@@ -10,6 +10,9 @@ export async function connectDb(uri) {
   } catch (err) {
     console.error('✗ MongoDB indisponible :', err.message);
     console.error('  Nouvelle tentative dans 5 s…');
-    setTimeout(() => connectDb(uri), 5000);
+    // On attend la reconnexion avant de résoudre : ce qui suit (le
+    // planificateur de campagnes) lit la base, et démarrerait dans le vide.
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    return connectDb(uri);
   }
 }

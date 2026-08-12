@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
+import ManualLogin from '../components/ManualLogin.jsx';
 
 const PLATFORMS = {
   linkedin: { label: 'LinkedIn', color: '#0a66c2', short: 'in' },
@@ -16,7 +17,7 @@ const STATE_LABELS = {
   absente: 'Pas de session',
 };
 
-function AccountCard({ account, onSaved, onChanged }) {
+function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
   const toast = useToast();
   const meta = PLATFORMS[account.platform];
 
@@ -54,10 +55,19 @@ function AccountCard({ account, onSaved, onChanged }) {
 
       if (result.status === 'connected') {
         toast.success(result.message || `Session ${meta.label} ouverte.`);
-      } else if (result.status === 'verification') {
-        toast.info(result.message, { title: `${meta.label} — vérification`, duration: 12000 });
-      } else {
-        toast.error(result.message || 'Connexion refusée.');
+        return;
+      }
+
+      // La connexion automatique n'a pas abouti. Plutôt que de s'acharner, on
+      // propose de terminer à la main — c'est le seul moyen sûr face à une 2FA.
+      toast.error(result.message || 'Connexion refusée.');
+      if (manualLogin) {
+        const proceed = window.confirm(
+          `${meta.label} n'a pas validé la connexion automatique.\n\n` +
+            `${result.message || ''}\n\n` +
+            'Veux-tu terminer la connexion toi-même dans le navigateur piloté ?'
+        );
+        if (proceed) onManual();
       }
     });
 
@@ -137,6 +147,11 @@ function AccountCard({ account, onSaved, onChanged }) {
         >
           Ouvrir la session
         </button>
+        {manualLogin && (
+          <button className="btn btn-sm" onClick={onManual} disabled={busy}>
+            Connexion manuelle
+          </button>
+        )}
         {account.sessionState === 'connectee' && (
           <button className="btn btn-sm" onClick={disconnect} disabled={busy}>
             Fermer
@@ -155,6 +170,7 @@ function AccountCard({ account, onSaved, onChanged }) {
 export default function AccountsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [manual, setManual] = useState(null); // plateforme en reprise en main
 
   const load = useCallback(() => {
     api.accounts
@@ -241,10 +257,29 @@ export default function AccountsPage() {
       <div className="grid grid-cards stagger">
         {data.accounts.map((account, index) => (
           <div key={account.platform} style={{ '--i': index }}>
-            <AccountCard account={account} onSaved={patchAccount} onChanged={load} />
+            <AccountCard
+              account={account}
+              onSaved={patchAccount}
+              onChanged={load}
+              manualLogin={data.manualLogin && Boolean(data.vncUrl)}
+              onManual={() => setManual(account.platform)}
+            />
           </div>
         ))}
       </div>
+
+      {manual && (
+        <ManualLogin
+          platform={manual}
+          label={PLATFORMS[manual].label}
+          vncUrl={data.vncUrl}
+          onClose={() => setManual(null)}
+          onDone={() => {
+            setManual(null);
+            load();
+          }}
+        />
+      )}
     </>
   );
 }

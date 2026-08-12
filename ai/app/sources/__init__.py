@@ -7,6 +7,8 @@ fonctionne avec ce qui est disponible, et la réponse dit ce qui a été utilis�
 import asyncio
 import logging
 
+import httpx
+
 from ..config import Settings
 from .adzuna import AdzunaSource
 from .base import NormalizedOffer, SearchQuery, Source
@@ -37,6 +39,32 @@ def build_sources(settings: Settings) -> list[Source]:
     return [source for source in candidates if source.configured]
 
 
+def describe_failure(error: Exception) -> str:
+    """Traduit une panne de source en phrase actionnable.
+
+    « échec (HTTPStatusError) » n'apprend rien à personne : le code HTTP dit
+    presque toujours quoi corriger, et c'est presque toujours une clé.
+    """
+    if isinstance(error, httpx.HTTPStatusError):
+        status = error.response.status_code
+        hints = {
+            400: "requête refusée — identifiants probablement invalides ou intervertis",
+            401: "identifiants refusés",
+            403: "accès refusé — l'abonnement à l'API est-il bien souscrit ?",
+            429: "quota atteint, réessaie plus tard",
+        }
+        hint = hints.get(status, "réponse inattendue")
+        return f"échec (HTTP {status} — {hint})"
+
+    if isinstance(error, httpx.TimeoutException):
+        return "échec (délai dépassé)"
+    if isinstance(error, httpx.HTTPError):
+        return f"échec (réseau : {type(error).__name__})"
+
+    message = str(error).strip()
+    return f"échec ({message[:180]})" if message else f"échec ({type(error).__name__})"
+
+
 async def search_all(
     sources: list[Source],
     query: SearchQuery,
@@ -56,8 +84,8 @@ async def search_all(
     report: dict[str, str] = {}
     for source, result in zip(selected, results):
         if isinstance(result, Exception):
-            logger.warning("source %s en échec : %s", source.name, result)
-            report[source.name] = f"échec ({type(result).__name__})"
+            logger.warning("source %s en échec : %s", source.name, result, exc_info=result)
+            report[source.name] = describe_failure(result)
             continue
         report[source.name] = f"{len(result)} offre(s)"
         offers.extend(result)

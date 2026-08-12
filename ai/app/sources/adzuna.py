@@ -56,7 +56,15 @@ class AdzunaSource:
                     params=params,
                     headers={"Accept": "application/json"},
                 )
-                response.raise_for_status()
+
+                # Une page suivante en erreur ne doit pas effacer ce qui est déjà
+                # collecté : au-delà du dernier résultat, l'API répond parfois en
+                # 4xx plutôt que par une liste vide. On rend ce qu'on a.
+                if response.status_code >= 400:
+                    if results:
+                        break
+                    response.raise_for_status()
+
                 batch = response.json().get("results", [])
                 results.extend(batch)
 

@@ -146,6 +146,43 @@ export function BulletList({ bullets = [], onChange }) {
 }
 
 /**
+ * Le lien de l'application produite, et sa présence sur les magasins.
+ *
+ * Facultatif : il ne concerne que les entrées qui ont abouti à une application
+ * publiée, et rien n'est rendu dans le CV tant que rien n'est renseigné.
+ */
+export function ShippedAppFields({ entry, patch }) {
+  return (
+    <>
+      <Field
+        label="Lien de l'application (facultatif)"
+        value={entry.appUrl}
+        onChange={(value) => patch('appUrl', value)}
+        placeholder="https://mon-application.fr"
+      />
+      <div className="inline" style={{ gap: 18, marginBottom: 14 }}>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={Boolean(entry.onAppStore)}
+            onChange={(event) => patch('onAppStore', event.target.checked)}
+          />
+          Disponible sur l'App Store
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={Boolean(entry.onPlayStore)}
+            onChange={(event) => patch('onPlayStore', event.target.checked)}
+          />
+          Disponible sur le Play Store
+        </label>
+      </div>
+    </>
+  );
+}
+
+/**
  * Liste d'entrées identiques (expériences, formations, certifications…).
  *
  * L'ordre compte dans un CV — et il compte doublement ici : c'est lui qui

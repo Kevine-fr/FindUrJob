@@ -96,14 +96,29 @@ export function ToastProvider({ children }) {
        */
       async promise(promise, { loading, success, error }) {
         const id = push('loading', loading);
+
+        // Mettre en forme un message ne doit jamais pouvoir faire échouer
+        // l'opération : sans ce garde-fou, une erreur dans le libellé de succès
+        // était rattrapée plus bas et affichait « échec » sur une action réussie.
+        const format = (formatter, value, fallback) => {
+          if (typeof formatter !== 'function') return formatter || fallback;
+          try {
+            return formatter(value);
+          } catch {
+            return fallback;
+          }
+        };
+
+        let value;
         try {
-          const value = await promise;
-          update(id, 'success', typeof success === 'function' ? success(value) : success);
-          return value;
+          value = await promise;
         } catch (err) {
-          update(id, 'error', typeof error === 'function' ? error(err) : error || err.message);
+          update(id, 'error', format(error, err, err.message));
           throw err;
         }
+
+        update(id, 'success', format(success, value, 'Terminé.'));
+        return value;
       },
     };
     return api;

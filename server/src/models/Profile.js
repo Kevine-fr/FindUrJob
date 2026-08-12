@@ -3,6 +3,15 @@ import mongoose from 'mongoose';
 // Un poste : dans un CV, ce qui compte n'est pas le paragraphe mais la liste
 // de faits. `bullets` est la forme de référence ; `description` reste accepté
 // (CV importés, anciens profils) et se découpe en puces à la lecture.
+// Une réalisation publiée : le lien de l'application et, le cas échéant, sa
+// présence sur les magasins. Facultatif partout, et rendu seulement s'il y a
+// quelque chose à montrer.
+const shippedApp = {
+  appUrl: { type: String, default: '' },
+  onAppStore: { type: Boolean, default: false },
+  onPlayStore: { type: Boolean, default: false },
+};
+
 const experienceSchema = new mongoose.Schema(
   {
     role: String,
@@ -12,12 +21,20 @@ const experienceSchema = new mongoose.Schema(
     current: { type: Boolean, default: false },
     bullets: { type: [String], default: [] },
     description: String,
+    ...shippedApp,
   },
   { _id: false }
 );
 
 const educationSchema = new mongoose.Schema(
-  { degree: String, school: String, location: String, period: String, detail: String },
+  {
+    degree: String,
+    school: String,
+    location: String,
+    period: String,
+    detail: String,
+    ...shippedApp,
+  },
   { _id: false }
 );
 
@@ -33,6 +50,7 @@ const projectSchema = new mongoose.Schema(
     url: String,
     bullets: { type: [String], default: [] },
     description: String,
+    ...shippedApp,
   },
   { _id: false }
 );
@@ -68,6 +86,9 @@ const cvOptionsSchema = new mongoose.Schema(
     template: { type: String, default: 'sidebar' }, // sidebar | classique
     accent: { type: String, default: '#2d5bff' },
     showPhoto: { type: Boolean, default: true },
+    // Corps de texte de référence, en points. L'ajustement à une page part de
+    // cette valeur et ne peut que la réduire — jamais l'augmenter.
+    fontSize: { type: Number, default: 10.3 },
     // Densité de base ; l'ajustement automatique à une page part de là.
     density: { type: Number, default: 1 },
     // Rubriques masquées à l'export, sans les effacer du profil.
@@ -96,6 +117,7 @@ const profileSchema = new mongoose.Schema(
     projects: { type: [projectSchema], default: [] },
     certifications: { type: [certificationSchema], default: [] },
     languages: { type: [languageSchema], default: [] },
+    interests: { type: [String], default: [] },
     links: { type: [linkSchema], default: [] },
 
     cvOptions: { type: cvOptionsSchema, default: () => ({}) },

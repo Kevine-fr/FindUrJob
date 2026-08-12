@@ -20,6 +20,8 @@ export function createApp() {
       service: 'findurjob-bot',
       platforms: PLATFORM_NAMES,
       sessions: await knownProfiles(),
+      // Sans écran virtuel, la reprise en main n'est pas proposée côté interface.
+      manualLogin: Boolean(process.env.DISPLAY),
       time: new Date().toISOString(),
     });
   });
@@ -98,6 +100,56 @@ export function createApp() {
       }
 
       res.json(await platform.login(context, { email, password }));
+    })
+  );
+
+  /**
+   * POST /manual — { platform }
+   *
+   * Ouvre la page de connexion de la plateforme sur l'écran virtuel et rend la
+   * main : c'est l'utilisateur qui termine, à la souris, via noVNC. On ne
+   * cherche rien à automatiser ici — c'est précisément le point.
+   */
+  app.post(
+    '/manual',
+    asyncHandler(async (req, res) => {
+      const { platform: platformName } = req.body || {};
+      const platform = getPlatform(platformName);
+
+      if (!process.env.DISPLAY) {
+        return res.status(503).json({
+          error:
+            "Aucun écran virtuel dans ce conteneur : la reprise en main n'est pas " +
+            'disponible. Reconstruis l\'image du service `bot`.',
+        });
+      }
+
+      const context = await getContext(platformName);
+      const page = context.pages()[0] || (await context.newPage());
+      await page.bringToFront();
+      await page.goto(platform.loginUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+
+      res.json({
+        status: 'ouvert',
+        platform: platformName,
+        loginUrl: platform.loginUrl,
+        message: 'Page de connexion ouverte. Termine la connexion dans la fenêtre.',
+      });
+    })
+  );
+
+  /**
+   * GET /manual/:platform — la session est-elle ouverte ?
+   * Appelé quand l'utilisateur déclare avoir terminé : c'est la plateforme qui
+   * tranche, pas lui.
+   */
+  app.get(
+    '/manual/:platform',
+    asyncHandler(async (req, res) => {
+      const platform = getPlatform(req.params.platform);
+      const context = await getContext(req.params.platform);
+      const connected = await platform.isLoggedIn(context);
+      res.json({ platform: req.params.platform, connected });
     })
   );
 

@@ -57,6 +57,8 @@ services:
     environment:
       - PORT=8100
       - BOT_PROFILE_DIR=/data/profiles
+      - DISPLAY=:99
+      - VNC_PORT=6080
     volumes:
       # Les sessions des plateformes survivent au conteneur : c'est tout
       # l'intérêt de se connecter une fois plutôt qu'à chaque candidature.
@@ -97,6 +99,8 @@ services:
       - MONGO_URI=mongodb://mongo:27017/findurjob
       - PYTHON_AI_URL=http://ai:8000
       - BOT_URL=http://bot:8100
+      # En production, l ecran passe par le proxy du front (websocket compris).
+      - BOT_VNC_URL=/vnc
       # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
       # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}

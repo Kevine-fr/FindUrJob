@@ -3,15 +3,26 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import CvDropzone from '../components/CvDropzone.jsx';
 import CvPreview from '../components/CvPreview.jsx';
-import { Accordion, Field, TagsField, BulletList, Repeatable } from '../components/CvFields.jsx';
+import {
+  Accordion,
+  Field,
+  TagsField,
+  BulletList,
+  Repeatable,
+  ShippedAppFields,
+} from '../components/CvFields.jsx';
 import { buildCvDocument } from '../lib/cvTemplate.js';
 
 const ACCENTS = ['#2d5bff', '#0f766e', '#b4530a', '#7c3aed', '#be123c', '#15803d', '#1f2937'];
 
+// Les entrées de parcours peuvent porter une application publiée : le lien et
+// les magasins restent vides tant qu'on ne les renseigne pas.
+const SHIPPED = { appUrl: '', onAppStore: false, onPlayStore: false };
+
 const EMPTY = {
-  experience: { role: '', company: '', location: '', period: '', bullets: [] },
-  education: { degree: '', school: '', location: '', period: '', detail: '' },
-  project: { name: '', period: '', url: '', bullets: [] },
+  experience: { role: '', company: '', location: '', period: '', bullets: [], ...SHIPPED },
+  education: { degree: '', school: '', location: '', period: '', detail: '', ...SHIPPED },
+  project: { name: '', period: '', url: '', bullets: [], ...SHIPPED },
   certification: { name: '', issuer: '', date: '' },
   language: { name: '', level: '' },
   link: { type: 'linkedin', url: '', label: '' },
@@ -70,11 +81,20 @@ export default function CvBuilderPage() {
 
   const set = useCallback((key) => (value) => setProfile((p) => ({ ...p, [key]: value })), []);
 
+  // `setProfile` ne renvoie rien : l'enchaîner directement ferait résoudre la
+  // promesse sur `undefined`, et le message de succès n'aurait plus de profil
+  // à lire. On garde la valeur.
+  const keep = useCallback((updated) => {
+    setProfile(updated);
+    return updated;
+  }, []);
+
   const options = useMemo(
     () => ({
       accent: profile?.cvOptions?.accent || ACCENTS[0],
       showPhoto: profile?.cvOptions?.showPhoto !== false,
       autoTrim: profile?.cvOptions?.autoTrim !== false,
+      fontSize: Number(profile?.cvOptions?.fontSize) || 10.3,
     }),
     [profile?.cvOptions]
   );
@@ -98,7 +118,7 @@ export default function CvBuilderPage() {
   const save = async () => {
     setBusy(true);
     try {
-      await toast.promise(api.profile.update(profile).then(setProfile), {
+      await toast.promise(api.profile.update(profile).then(keep), {
         loading: 'Enregistrement…',
         success: 'Profil enregistré.',
         error: (error) => `Enregistrement impossible : ${error.message}`,
@@ -114,7 +134,7 @@ export default function CvBuilderPage() {
   const composeMaster = async () => {
     setBusy(true);
     try {
-      await toast.promise(api.profile.composeCv(profile).then(setProfile), {
+      await toast.promise(api.profile.composeCv(profile).then(keep), {
         loading: 'Composition du CV source…',
         success: (updated) =>
           `CV source régénéré (${(updated.cvChars || 0).toLocaleString('fr-FR')} caractères).`,
@@ -315,6 +335,7 @@ export default function CvBuilderPage() {
                     />
                   </div>
                   <BulletList bullets={item.bullets || []} onChange={(v) => patch('bullets', v)} />
+                  <ShippedAppFields entry={item} patch={patch} />
                 </>
               )}
             />
@@ -334,6 +355,7 @@ export default function CvBuilderPage() {
                     <Field label="Période" value={item.period} onChange={(v) => patch('period', v)} />
                   </div>
                   <BulletList bullets={item.bullets || []} onChange={(v) => patch('bullets', v)} />
+                  <ShippedAppFields entry={item} patch={patch} />
                 </>
               )}
             />
@@ -362,6 +384,7 @@ export default function CvBuilderPage() {
                     onChange={(v) => patch('detail', v)}
                     placeholder="Titre RNCP niveau 7"
                   />
+                  <ShippedAppFields entry={item} patch={patch} />
                 </>
               )}
             />
@@ -408,6 +431,16 @@ export default function CvBuilderPage() {
                   />
                 </div>
               )}
+            />
+          </Accordion>
+
+          <Accordion title="Centres d'intérêt" count={(profile.interests || []).length}>
+            <TagsField
+              label="Centres d'intérêt"
+              hint="Séparés par des virgules — affichés dans la colonne de gauche du CV."
+              value={profile.interests || []}
+              onChange={set('interests')}
+              placeholder="Course à pied, photographie, échecs"
             />
           </Accordion>
 
@@ -502,22 +535,47 @@ export default function CvBuilderPage() {
 
             <CvPreview profile={profile} options={options} onFit={setFit} />
 
-            <div className="inline" style={{ marginTop: 12, justifyContent: 'space-between' }}>
-              <label className="inline" style={{ fontSize: 13, gap: 7 }}>
+            <div className="sheet-controls">
+              <label className="size-control">
+                <span>Taille du texte</span>
                 <input
-                  type="checkbox"
-                  checked={options.autoTrim}
-                  onChange={(event) => setOption('autoTrim')(event.target.checked)}
+                  type="range"
+                  min="8.5"
+                  max="13"
+                  step="0.1"
+                  value={options.fontSize}
+                  onChange={(event) => setOption('fontSize')(Number(event.target.value))}
                 />
-                Compacter pour tenir sur une page
+                <output>{options.fontSize.toFixed(1)} pt</output>
               </label>
-              <span className="muted" style={{ fontSize: 12.5 }}>
-                {fit?.trimmed > 0
-                  ? `${fit.trimmed} puce(s) masquée(s)`
-                  : fit
-                    ? `densité ${fit.density}`
-                    : ''}
-              </span>
+
+              <div className="inline" style={{ justifyContent: 'space-between' }}>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={options.autoTrim}
+                    onChange={(event) => setOption('autoTrim')(event.target.checked)}
+                  />
+                  Compacter pour tenir sur une page
+                </label>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {fit?.trimmed > 0
+                    ? `${fit.trimmed} élément(s) masqué(s)`
+                    : fit
+                      ? `densité ${fit.density}`
+                      : ''}
+                </span>
+              </div>
+
+              {/* L'ajustement ne peut que réduire : sans ce rappel, remonter le
+                  curseur sur un CV déjà plein donne l'impression d'un réglage mort. */}
+              {fit && fit.density < 0.995 && (
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                  Le CV est plein : la taille choisie est réduite de{' '}
+                  {Math.round((1 - fit.density) * 100)} % pour tenir sur une page. Allège une
+                  rubrique pour en profiter pleinement.
+                </p>
+              )}
             </div>
           </div>
         </div>

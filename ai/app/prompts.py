@@ -129,6 +129,7 @@ def build_profile_payload(profile: ProfileIn) -> dict:
                 _compact({"langue": lang.name, "niveau": lang.level})
                 for lang in profile.languages
             ],
+            "centres_interet": profile.interests,
             "liens": {link.type or "lien": link.url for link in profile.links if link.url},
         }
     )

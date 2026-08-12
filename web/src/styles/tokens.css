@@ -42,6 +42,16 @@
 
   --sidebar-w: 244px;
   --topbar-h: 58px;
+
+  /* Zones sûres de l'appareil (encoche, barre d'accueil, bords arrondis).
+     `viewport-fit=cover` étend la page sous ces zones : sans ces marges, le
+     titre passe derrière l'encoche et les boutons du bas sous la barre
+     d'accueil, une fois l'application installée. Les valeurs valent 0 dans un
+     navigateur classique — le repli est là pour les moteurs sans `env()`. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -212,7 +222,8 @@ img {
 
 .sidebar {
   border-right: 1px solid var(--line);
-  padding: 22px 14px;
+  padding: calc(22px + var(--safe-t)) 14px calc(22px + var(--safe-b));
+  padding-left: calc(14px + var(--safe-l));
   background: var(--card);
   display: flex;
   flex-direction: column;
@@ -295,7 +306,8 @@ img {
    qui ont besoin d'une ligne courte pour rester lisibles (formulaires, textes
    d'introduction) posent leur propre limite, plutôt que de la subir ici. */
 .main {
-  padding: 30px 38px 64px;
+  padding: 30px calc(38px + var(--safe-r)) calc(64px + var(--safe-b))
+    calc(38px + var(--safe-l));
   width: 100%;
   min-width: 0;
 }
@@ -763,8 +775,8 @@ img {
 .toast-stack {
   position: fixed;
   z-index: 90;
-  right: 18px;
-  bottom: 18px;
+  right: calc(18px + var(--safe-r));
+  bottom: calc(18px + var(--safe-b));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1171,6 +1183,43 @@ img {
   background: var(--danger);
 }
 
+/* Réglages sous la feuille */
+.sheet-controls {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.size-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.size-control span {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.size-control input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.size-control output {
+  flex: 0 0 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* Nuancier d'accent */
 .swatches {
   display: flex;
@@ -1354,8 +1403,10 @@ img {
     display: flex;
     align-items: center;
     gap: 12px;
-    height: var(--topbar-h);
-    padding: 0 14px;
+    /* La barre descend sous l'encoche : sa hauteur l'intègre, et son contenu
+       est repoussé dessous par le remplissage haut. */
+    height: calc(var(--topbar-h) + var(--safe-t));
+    padding: var(--safe-t) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l));
     position: sticky;
     top: 0;
     z-index: 40;
@@ -1395,7 +1446,8 @@ img {
   }
 
   .main {
-    padding: 20px 16px 56px;
+    padding: 20px calc(16px + var(--safe-r)) calc(56px + var(--safe-b))
+      calc(16px + var(--safe-l));
   }
   .detail,
   .grid-2,
@@ -1433,9 +1485,9 @@ img {
     grid-template-columns: 1fr;
   }
   .toast-stack {
-    right: 10px;
-    left: 10px;
-    bottom: 10px;
+    right: calc(10px + var(--safe-r));
+    left: calc(10px + var(--safe-l));
+    bottom: calc(10px + var(--safe-b));
     width: auto;
   }
   .history-item {

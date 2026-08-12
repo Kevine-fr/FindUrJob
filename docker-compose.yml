@@ -57,6 +57,10 @@ services:
     environment:
       - PORT=8100
       - BOT_PROFILE_DIR=/data/profiles
+      # Écran virtuel : les navigateurs des plateformes y tournent en mode
+      # visible, ce qui permet la reprise en main via noVNC.
+      - DISPLAY=:99
+      - VNC_PORT=6080
     volumes:
       # Les sessions des plateformes survivent au conteneur : c'est tout
       # l'intérêt de se connecter une fois plutôt qu'à chaque candidature.
@@ -68,6 +72,9 @@ services:
       - /app/node_modules
     ports:
       - "8100:8100"
+      # Écran du navigateur piloté (noVNC). À ne pas exposer sur Internet :
+      # il n'y a pas de mot de passe, l'accès passe par l'application.
+      - "127.0.0.1:6080:6080"
     healthcheck:
       test:
         [
@@ -97,6 +104,9 @@ services:
       - MONGO_URI=mongodb://mongo:27017/findurjob
       - PYTHON_AI_URL=http://ai:8000
       - BOT_URL=http://bot:8100
+      # Adresse de l'écran noVNC telle que le NAVIGATEUR de l'utilisateur la
+      # joint — pas le nom de service Docker, que lui ne sait pas résoudre.
+      - BOT_VNC_URL=http://localhost:6080
       # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
       # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}

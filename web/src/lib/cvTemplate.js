@@ -45,6 +45,12 @@ const ICON = {
   award: '<circle cx="8" cy="6" r="3.5"/><path d="M5.8 9.2 5 14l3-1.6L11 14l-.8-4.8"/>',
   globe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c3 3.5 3 7.5 0 11-3-3.5-3-7.5 0-11z"/>',
   code: '<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3"/>',
+  heart: '<path d="M8 13.2S2.6 10 2.6 6.3A2.9 2.9 0 0 1 8 4.8a2.9 2.9 0 0 1 5.4 1.5C13.4 10 8 13.2 8 13.2z"/>',
+  // Marques des magasins, réduites à leur silhouette : à 1 em, un logo détaillé
+  // devient une tache. Dessinées en trait pour suivre la couleur d'accent.
+  apple:
+    '<path d="M11 8.4c0-1.5 1.2-2.2 1.3-2.3-.7-1-1.8-1.2-2.2-1.2-.9-.1-1.8.5-2.3.5s-1.2-.5-2-.5c-1 0-2 .6-2.5 1.5-1.1 1.9-.3 4.6.8 6.1.5.7 1.1 1.5 1.9 1.5.8 0 1-.5 1.9-.5s1.1.5 1.9.5 1.3-.7 1.8-1.4c.6-.8.8-1.6.8-1.6s-1.4-.6-1.4-2.6z"/><path d="M9.6 3.8c.4-.5.7-1.2.6-1.9-.6 0-1.4.4-1.8 1-.4.5-.7 1.2-.6 1.9.7 0 1.4-.4 1.8-1z"/>',
+  play: '<path d="M3.2 2.3 11 8l-7.8 5.7z"/><path d="M3.2 2.3 8.4 8l-5.2 5.7z"/>',
 };
 
 const icon = (name) =>
@@ -96,6 +102,7 @@ function skillFamilies(profile) {
  */
 const TRIM = {
   skillOverflow: 300, // compétences au-delà de la 8e d'une famille
+  interest: 250, // centres d'intérêt au-delà du 4e
   deepBullet: 200, // puces au-delà de la 3e
   extraCert: 150, // certifications au-delà de la 2e
   eduDetail: 140,
@@ -167,6 +174,20 @@ function linksBlock(profile) {
     .join('')}</ul>`;
 }
 
+function interestsBlock(profile) {
+  const interests = (profile.interests || []).map((item) => String(item).trim()).filter(Boolean);
+  if (!interests.length) return '';
+
+  // Mêmes pastilles que les compétences : un centre d'intérêt est une étiquette
+  // courte, pas une phrase. Les dernières sont sacrifiables si la page déborde.
+  return `<div class="chips">${interests
+    .map((item, index) => {
+      const trim = index >= 4 ? ` data-trim="${TRIM.interest + index}"` : '';
+      return `<span class="chip"${trim}>${esc(item)}</span>`;
+    })
+    .join('')}</div>`;
+}
+
 function languagesBlock(profile) {
   const languages = (profile.languages || []).filter((lang) => lang?.name);
   if (!languages.length) return '';
@@ -195,6 +216,29 @@ function certificationsBlock(profile) {
       );
     })
     .join('')}</ul>`;
+}
+
+/**
+ * Le lien de l'application produite pendant une expérience, une formation ou un
+ * projet, et les magasins où on la trouve.
+ *
+ * Rendu seulement s'il y a quelque chose à montrer : une entrée sans
+ * application ne gagne pas une ligne vide.
+ */
+function shippedAppLine(entry) {
+  const href = safeHref(entry?.appUrl);
+  const stores = [
+    entry?.onAppStore && `${icon('apple')}<span>App Store</span>`,
+    entry?.onPlayStore && `${icon('play')}<span>Play Store</span>`,
+  ].filter(Boolean);
+
+  if (!href && !stores.length) return '';
+
+  const link = href
+    ? `<a class="app-link" href="${esc(href)}">${icon('link')}<span>${esc(prettyUrl(href))}</span></a>`
+    : '';
+
+  return `<div class="shipped">${link}${stores.map((store) => `<span class="store">${store}</span>`).join('')}</div>`;
 }
 
 /**
@@ -234,6 +278,7 @@ function entryBlock(entry, rank, { titleKey = 'role', kind = 'experience' } = {}
     (title ? `<h3 class="xp-role">${esc(title)}</h3>` : '') +
     (meta.length ? `<div class="xp-meta">${meta.join('')}</div>` : '') +
     (bullets ? `<ul class="xp-facts">${bullets}</ul>` : '') +
+    shippedAppLine(entry) +
     `</article>`
   );
 }
@@ -255,6 +300,7 @@ function educationBlock(profile) {
         (edu.degree ? `<h3 class="xp-role">${esc(edu.degree)}</h3>` : '') +
         (meta.length ? `<div class="xp-meta">${meta.join('')}</div>` : '') +
         (edu.detail ? `<p class="xp-note" data-trim="${TRIM.eduDetail}">${esc(edu.detail)}</p>` : '') +
+        shippedAppLine(edu) +
         `</article>`
       );
     })
@@ -334,6 +380,10 @@ html,body{margin:0;padding:0;background:#fff}
 
 .page{
   --k:1;
+  /* Corps de texte de référence, réglable depuis l'éditeur. Tout le document
+     s'exprime en em, donc changer cette valeur redimensionne le CV entier :
+     titres, marges et pastilles comprises. */
+  --base:10.3pt;
   --accent:#2d5bff;
   --side-w:64mm;
   --ink:#15161c;
@@ -343,7 +393,7 @@ html,body{margin:0;padding:0;background:#fff}
   position:relative;
   width:210mm;height:297mm;overflow:hidden;
   font-family:Inter,'Helvetica Neue',Helvetica,Arial,'Liberation Sans',sans-serif;
-  font-size:calc(10.3pt * var(--k));
+  font-size:calc(var(--base) * var(--k));
   line-height:1.42;color:var(--ink);
   background:linear-gradient(to right,var(--side-bg) 0,var(--side-bg) var(--side-w),#fff var(--side-w),#fff 100%);
   -webkit-print-color-adjust:exact;print-color-adjust:exact;
@@ -408,6 +458,16 @@ html,body{margin:0;padding:0;background:#fff}
 .xp-facts li::before{content:'';position:absolute;left:0;top:.52em;
   width:.28em;height:.28em;border-radius:50%;background:var(--accent)}
 .xp-note{margin:.15em 0 0;font-size:.82em;color:var(--soft)}
+
+/* Application publiée : lien et magasins, sur une ligne discrète. */
+.shipped{display:flex;flex-wrap:wrap;align-items:center;gap:.25em .8em;margin-top:.28em;
+  font-size:.74em;color:var(--soft)}
+.shipped .ic{width:.95em;height:.95em;flex-basis:.95em;margin-top:0}
+.app-link,.store{display:inline-flex;align-items:center;gap:.3em}
+.app-link{color:var(--accent);text-decoration:none;font-weight:600}
+.store{font-weight:600;padding:.05em .5em;border:1px solid var(--line);border-radius:.5em;
+  background:#fff}
+.store .ic{color:var(--ink)}
 `;
 
 // --- Document -----------------------------------------------------------
@@ -420,6 +480,7 @@ export const A4 = { widthMm: 210, heightMm: 297 };
  * @param {object} profile  Le profil (modèle `Profile` du serveur).
  * @param {object} [options]
  * @param {string} [options.accent]     Couleur d'accent (hex).
+ * @param {number} [options.fontSize]   Corps de texte en points (8,5 à 13).
  * @param {number} [options.density]    Densité de départ ; l'ajustement part de là.
  * @param {boolean} [options.showPhoto] Afficher la photo si le profil en a une.
  * @param {boolean} [options.autoTrim]  Autoriser le retrait de puces si le CV déborde.
@@ -430,6 +491,9 @@ export function buildCvDocument(profile = {}, options = {}) {
   const opts = { ...(profile.cvOptions || {}), ...options };
   const accent = /^#[0-9a-f]{3,8}$/i.test(opts.accent || '') ? opts.accent : '#2d5bff';
   const density = Math.min(1.15, Math.max(0.74, Number(opts.density) || 1));
+  // Bornes de lisibilité : en dessous de 8,5 pt un CV imprimé devient pénible,
+  // au-delà de 13 pt il ne reste plus de place pour le contenu.
+  const fontSize = Math.min(13, Math.max(8.5, Number(opts.fontSize) || 10.3));
   const hidden = new Set(opts.hidden || []);
   const autoTrim = opts.autoTrim !== false;
 
@@ -446,6 +510,7 @@ export function buildCvDocument(profile = {}, options = {}) {
     hidden.has('links') ? '' : sideSection('Liens', linksBlock(profile)),
     hidden.has('languages') ? '' : sideSection('Langues', languagesBlock(profile)),
     hidden.has('certifications') ? '' : sideSection('Certifications', certificationsBlock(profile)),
+    hidden.has('interests') ? '' : sideSection("Centres d'intérêt", interestsBlock(profile)),
   ]
     .filter(Boolean)
     .join('');
@@ -483,7 +548,7 @@ export function buildCvDocument(profile = {}, options = {}) {
 <style>${styles}</style>
 </head>
 <body>
-<div class="page" style="--accent:${esc(accent)}" data-density="${density}" data-autotrim="${
+<div class="page" style="--accent:${esc(accent)};--base:${fontSize}pt" data-density="${density}" data-autotrim="${
     autoTrim ? '1' : '0'
   }">
   <div class="sheet">

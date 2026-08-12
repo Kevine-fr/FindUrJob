@@ -69,6 +69,16 @@ def _experience_block(entry) -> list[str]:
         lines += [f"- {fact}" for fact in facts]
     elif entry.description:
         lines += ["", entry.description]
+
+    # Application publiée : le lien, et les magasins où on peut la trouver.
+    stores = [
+        name
+        for name, published in (("App Store", entry.onAppStore), ("Play Store", entry.onPlayStore))
+        if published
+    ]
+    if entry.appUrl or stores:
+        bits = [entry.appUrl] + ([" · ".join(stores)] if stores else [])
+        lines.append(f"_{' — '.join(bit for bit in bits if bit)}_")
     return lines
 
 
@@ -220,6 +230,9 @@ def render_master_cv(profile: ProfileIn) -> str:
         for lang in profile.languages:
             if lang.name:
                 lines.append(f"- {lang.name}" + (f" : {lang.level}" if lang.level else ""))
+
+    if profile.interests:
+        lines += ["", "## Centres d'intérêt", "", ", ".join(profile.interests)]
 
     if profile.links:
         lines += ["", "## Liens", ""]

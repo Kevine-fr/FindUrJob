@@ -89,6 +89,23 @@ export const botSearch = (platform, query) => json('/search', { body: { platform
 export const botApply = (platform, offer, cvPath) =>
   json('/apply', { body: { platform, offer, cvPath } });
 
+/** Ouvre la page de connexion sur l'écran du conteneur, pour reprise en main. */
+export const botManualOpen = (platform) => json('/manual', { body: { platform }, timeout: 60_000 });
+
+/** La plateforme reconnaît-elle la session que l'utilisateur vient d'ouvrir ? */
+export const botManualStatus = (platform) =>
+  json(`/manual/${platform}`, { method: 'GET', timeout: 60_000 });
+
+/** État du bot, dont la disponibilité de la reprise en main. */
+export const botHealth = () => json('/health', { method: 'GET', timeout: 10_000 });
+
+/**
+ * Adresse de l'écran noVNC **telle que le navigateur de l'utilisateur peut la
+ * joindre** — donc pas le nom de service Docker. En production, elle passe par
+ * le proxy du front (/vnc), qui sait relayer le websocket.
+ */
+export const botVncUrl = () => process.env.BOT_VNC_URL || '';
+
 export const botForget = (platform, purge = false) =>
   call(`/sessions/${platform}${purge ? '?purge=1' : ''}`, { method: 'DELETE', timeout: 30_000 });
 

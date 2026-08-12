@@ -1,7 +1,16 @@
 import PlatformAccount from '../models/PlatformAccount.js';
 import { asyncHandler } from '../middleware.js';
 import { seal, open, isConfigured } from '../utils/vault.js';
-import { botSessions, botLogin, botForget, botConfigured } from '../services/botService.js';
+import {
+  botSessions,
+  botLogin,
+  botForget,
+  botConfigured,
+  botManualOpen,
+  botManualStatus,
+  botHealth,
+  botVncUrl,
+} from '../services/botService.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 const assertPlatform = (platform) => {
@@ -49,7 +58,66 @@ export const listAccounts = asyncHandler(async (_req, res) => {
     })
   );
 
-  res.json({ accounts, vaultReady: isConfigured(), botReady: botConfigured(), botError });
+  // La reprise en main n'a de sens que si le conteneur a un écran virtuel.
+  let manualLogin = false;
+  if (botConfigured() && !botError) {
+    manualLogin = await botHealth()
+      .then((health) => Boolean(health.manualLogin))
+      .catch(() => false);
+  }
+
+  res.json({
+    accounts,
+    vaultReady: isConfigured(),
+    botReady: botConfigured(),
+    botError,
+    manualLogin,
+    vncUrl: botVncUrl(),
+  });
+});
+
+/**
+ * POST /accounts/:platform/manual — ouvre la page de connexion sur l'écran du
+ * navigateur piloté, pour que l'utilisateur termine lui-même.
+ *
+ * C'est la porte de sortie quand la connexion automatique bute : plutôt que de
+ * s'acharner sur une 2FA ou un captcha, on rend la main.
+ */
+export const openManualLogin = asyncHandler(async (req, res) => {
+  const { platform } = req.params;
+  assertPlatform(platform);
+
+  const result = await botManualOpen(platform);
+  await PlatformAccount.updateOne(
+    { platform },
+    { sessionState: 'verification', lastMessage: 'Connexion manuelle en cours.' },
+    { upsert: true }
+  );
+
+  res.json({ ...result, vncUrl: botVncUrl() });
+});
+
+/**
+ * GET /accounts/:platform/manual — vérifie que la session est bien ouverte.
+ * C'est la plateforme qui tranche, pas la déclaration de l'utilisateur.
+ */
+export const checkManualLogin = asyncHandler(async (req, res) => {
+  const { platform } = req.params;
+  assertPlatform(platform);
+
+  const { connected } = await botManualStatus(platform);
+  const account =
+    (await PlatformAccount.findOne({ platform })) || new PlatformAccount({ platform });
+
+  account.sessionState = connected ? 'connectee' : 'expiree';
+  account.lastCheckedAt = new Date();
+  account.lastMessage = connected
+    ? 'Session ouverte manuellement.'
+    : "La plateforme ne reconnaît pas encore de session : la connexion n'est pas terminée.";
+  if (connected) account.lastLoginAt = new Date();
+  await account.save();
+
+  res.json({ connected, account: account.toPublic() });
 });
 
 /**

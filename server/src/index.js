@@ -1,14 +1,25 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { connectDb } from './config/db.js';
+import { startScheduler, stopScheduler } from './scheduler.js';
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/findurjob';
 
-connectDb(MONGO_URI);
-
 const app = createApp();
-app.listen(PORT, () => {
+
+// Le planificateur lit ses réglages en base : il ne démarre qu'une fois la
+// connexion établie, sinon la première programmation part sur un document vide.
+connectDb(MONGO_URI).then(startScheduler);
+
+const server = app.listen(PORT, () => {
   console.log(`✓ API FindUrJob sur http://localhost:${PORT}`);
   console.log(`  Santé : http://localhost:${PORT}/api/health`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    stopScheduler();
+    server.close(() => process.exit(0));
+  });
+}

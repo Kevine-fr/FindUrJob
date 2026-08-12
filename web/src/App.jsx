@@ -7,6 +7,7 @@ import HistoryPage from './pages/HistoryPage.jsx';
 import PreferencesPage from './pages/PreferencesPage.jsx';
 import CvBuilderPage from './pages/CvBuilderPage.jsx';
 import AccountsPage from './pages/AccountsPage.jsx';
+import CampaignPage from './pages/CampaignPage.jsx';
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
@@ -49,6 +50,17 @@ const NAV = [
         <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
         <circle cx="16" cy="7" r="2.2" />
         <circle cx="8" cy="17" r="2.2" />
+      </svg>
+    ),
+  },
+  {
+    to: '/campagne',
+    label: 'Campagne',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3.5 2" />
+        <path d="M12 3v1M21 12h-1M12 21v-1M3 12h1" />
       </svg>
     ),
   },
@@ -187,6 +199,7 @@ export default function App() {
             <Route path="/candidatures" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />
+            <Route path="/campagne" element={<CampaignPage />} />
             <Route path="/comptes" element={<AccountsPage />} />
             <Route path="/mon-cv" element={<CvBuilderPage />} />
             {/* Ancienne adresse du profil : on redirige plutôt que de casser un signet. */}

@@ -117,5 +117,15 @@ export const api = {
         body: JSON.stringify(password ? { password } : {}),
       }),
     logout: (platform) => req(`/accounts/${platform}/logout`, { method: 'POST' }),
+    // Reprise en main : ouvre la page de connexion dans le navigateur piloté,
+    // puis vérifie que la plateforme reconnaît bien la session.
+    openManual: (platform) => req(`/accounts/${platform}/manual`, { method: 'POST' }),
+    checkManual: (platform) => req(`/accounts/${platform}/manual`),
+  },
+
+  campaign: {
+    get: () => req('/campaign'),
+    update: (body) => req('/campaign', { method: 'PUT', body: JSON.stringify(body) }),
+    run: () => req('/campaign/run', { method: 'POST' }),
   },
 };

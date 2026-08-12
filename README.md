@@ -253,6 +253,36 @@ vrai navigateur, avec tes identifiants, depuis l'onglet **Comptes**.
 - La session ouverte est conservée sur disque (volume `bot_profiles`) : on se
   connecte une fois, pas à chaque candidature.
 
+### Reprise en main d'une connexion
+
+Quand la connexion automatique bute, l'application propose de terminer soi-même :
+les navigateurs des plateformes tournent en mode **visible** sur un écran virtuel
+du conteneur (Xvfb), exposé par noVNC. Un onglet s'ouvre sur cet écran, on se
+connecte à la main, et « J'ai terminé » demande **à la plateforme** de confirmer.
+
+C'est bien le navigateur *du robot* que l'on pilote. Se connecter à la plateforme
+dans son propre navigateur ne servirait à rien : la session naîtrait là où le
+robot ne peut pas la lire.
+
+> **Derrière un reverse-proxy**, l'écran passe par `/vnc` et repose sur un
+> **websocket**. Le proxy en amont (celui du VPS) doit donc relayer l'`Upgrade`,
+> sinon l'interface s'affiche mais reste sur « Échec de connexion au serveur » :
+>
+> ```nginx
+> location /vnc/ {
+>   proxy_pass http://findurjob-web:5173;
+>   proxy_http_version 1.1;
+>   proxy_set_header Upgrade $http_upgrade;
+>   proxy_set_header Connection "upgrade";
+>   proxy_set_header Host $host;
+>   proxy_read_timeout 3600s;
+> }
+> ```
+>
+> Le port 5900 (VNC brut) et 6080 ne doivent **jamais** être publiés sur
+> Internet : l'écran n'a pas de mot de passe, il n'est joignable qu'à travers
+> l'application.
+
 **Ce que l'outil ne fait pas** : franchir une 2FA ou un captcha. Quand la
 plateforme en présente un, la candidature s'arrête et te rend la main — c'est
 une limite assumée, pas un manque. Un login automatisé sur LinkedIn ou Indeed

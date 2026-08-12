@@ -222,6 +222,22 @@ Le PDF garde une **couche texte réelle** (pas une image) : un ATS le lit. La
 césure automatique est volontairement désactivée — elle insérerait un U+2010
 dans le texte extrait, et « microservice » y deviendrait « mi-croservice ».
 
+## Installable (PWA)
+
+Le front est installable sur mobile comme sur bureau : manifeste, icônes
+(dont une variante *maskable* pour Android) et service worker maison dans
+[`web/public/`](web/public/).
+
+La règle de cache tient en trois lignes : les fichiers compilés portent une
+empreinte dans leur nom, donc cache définitif ; la navigation passe par le
+réseau avec la coquille en secours, ce qui permet d'ouvrir l'application hors
+connexion ; **`/api` n'est jamais mis en cache** — afficher une offre ou un état
+de session périmés serait pire que d'afficher une erreur.
+
+Le service worker n'est enregistré que sur le build de production : en
+développement, il servirait d'anciens fichiers et masquerait les modifications
+en cours.
+
 ## Comptes de plateformes et candidatures
 
 LinkedIn, Indeed et HelloWork n'ont pas d'API : FindUrJob s'y connecte dans un
@@ -253,5 +269,6 @@ choix : un volume raisonnable convertit mieux qu'un envoi de masse identique.
 3. ~~Filtres, préférences de recherche, historique.~~ ✅
 4. ~~Agrégation : France Travail / Adzuna / Remotive + LinkedIn, Indeed, HelloWork.~~ ✅
 5. ~~Constructeur de CV et export PDF une page.~~ ✅
-6. Campagnes de candidature : file d'attente, quota et suivi en direct.
-7. Import d'une offre depuis son URL.
+6. ~~Fiche détaillée d'une offre, application installable (PWA).~~ ✅
+7. Campagnes de candidature : file d'attente, quota et suivi en direct.
+8. Import d'une offre depuis son URL.

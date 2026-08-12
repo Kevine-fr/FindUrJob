@@ -225,13 +225,20 @@ img {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 22px;
   padding: 6px 10px 20px;
   letter-spacing: -0.02em;
 }
-.brand span {
+.brand img {
+  border-radius: 7px;
+  flex: 0 0 26px;
+}
+.brand-text span {
   color: var(--accent);
 }
 
@@ -284,9 +291,11 @@ img {
   border-top: 1px solid var(--line-soft);
 }
 
+/* Pas de largeur maximale : la zone de contenu occupe tout l'écran. Les blocs
+   qui ont besoin d'une ligne courte pour rester lisibles (formulaires, textes
+   d'introduction) posent leur propre limite, plutôt que de la subir ici. */
 .main {
-  padding: 30px 34px 64px;
-  max-width: 1180px;
+  padding: 30px 38px 64px;
   width: 100%;
   min-width: 0;
 }
@@ -593,6 +602,68 @@ img {
   margin-top: 8px;
   max-height: 320px;
   overflow: auto;
+}
+
+/* --- Détail d'une offre ------------------------------------------------ */
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  transition: color var(--fast) var(--ease), gap var(--fast) var(--ease);
+}
+.back-link:hover {
+  color: var(--accent);
+  gap: 9px;
+}
+
+/* Le descriptif arrive en texte brut : ses sauts de ligne portent le sens. */
+.prose {
+  white-space: pre-wrap;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 78ch;
+}
+
+.facts {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.facts > div:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.facts dt {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Le panneau latéral du détail suit le défilement d'un long descriptif. */
+@media (min-width: 901px) {
+  .detail > div:last-child .panel {
+    position: sticky;
+    top: 20px;
+  }
 }
 
 /* --- Timeline ---------------------------------------------------------- */

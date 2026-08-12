@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const chevron = (
   <svg className="acc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -37,6 +37,69 @@ export function Field({ label, value, onChange, placeholder, multiline, type = '
     <div className="field">
       {label && <label>{label}</label>}
       {multiline ? <textarea {...props} /> : <input type={type} {...props} />}
+    </div>
+  );
+}
+
+/**
+ * Une liste saisie sur une seule ligne, séparée par des virgules.
+ *
+ * Le texte tapé est conservé tel quel pendant la frappe, et n'est découpé que
+ * pour le parent. Sans ça, refabriquer la valeur affichée à chaque touche
+ * (`join(', ')` de ce qui vient d'être découpé) supprime la virgule à l'instant
+ * où on la tape — `filter(Boolean)` jette le segment vide — et l'espace de
+ * « React Native » disparaît de la même façon, à cause du `trim()`.
+ */
+export function TagsField({ label, hint, value = [], onChange, placeholder }) {
+  const [text, setText] = useState(() => value.join(', '));
+  const editing = useRef(false);
+
+  // Le champ se resynchronise sur une modification venue d'ailleurs (profil
+  // rechargé, entrée déplacée), mais jamais pendant que l'on tape dedans.
+  const joined = value.join(', ');
+  useEffect(() => {
+    if (!editing.current) setText(joined);
+  }, [joined]);
+
+  const handle = (raw) => {
+    setText(raw);
+    onChange(
+      raw
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+  };
+
+  return (
+    <div className="field">
+      {label && (
+        <label>
+          {label}
+          {hint && <em className="filter-hint">{hint}</em>}
+        </label>
+      )}
+      <input
+        className="input"
+        value={text}
+        placeholder={placeholder}
+        onFocus={() => {
+          editing.current = true;
+        }}
+        onBlur={() => {
+          editing.current = false;
+          // À la sortie du champ, on remet la forme canonique : les espaces
+          // superflus et les virgules en trop disparaissent d'un coup.
+          setText(
+            text
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean)
+              .join(', ')
+          );
+        }}
+        onChange={(event) => handle(event.target.value)}
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import CvDropzone from '../components/CvDropzone.jsx';
 import CvPreview from '../components/CvPreview.jsx';
-import { Accordion, Field, BulletList, Repeatable } from '../components/CvFields.jsx';
+import { Accordion, Field, TagsField, BulletList, Repeatable } from '../components/CvFields.jsx';
 import { buildCvDocument } from '../lib/cvTemplate.js';
 
 const ACCENTS = ['#2d5bff', '#0f766e', '#b4530a', '#7c3aed', '#be123c', '#15803d', '#1f2937'];
@@ -272,13 +272,12 @@ export default function CvBuilderPage() {
                     onChange={(value) => patch('label', value)}
                     placeholder="Frameworks backend"
                   />
-                  <Field
-                    label="Compétences (séparées par des virgules)"
-                    value={(item.items || []).join(', ')}
-                    onChange={(value) =>
-                      patch('items', value.split(',').map((s) => s.trim()).filter(Boolean))
-                    }
-                    placeholder="Spring Boot, NestJS, Express"
+                  <TagsField
+                    label="Compétences"
+                    hint="Séparées par des virgules — les espaces sont autorisés."
+                    value={item.items || []}
+                    onChange={(items) => patch('items', items)}
+                    placeholder="Spring Boot, NestJS, React Native"
                   />
                 </>
               )}

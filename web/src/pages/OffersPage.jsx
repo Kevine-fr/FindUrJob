@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
@@ -7,6 +8,7 @@ import OfferFilters, { EMPTY_FILTERS, toQuery } from '../components/OfferFilters
 
 export default function OffersPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState({ offers: [], total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -174,7 +176,17 @@ export default function OffersPage() {
         <>
           <div className="grid grid-cards stagger">
             {offers.map((offer, index) => (
-              <div key={offer._id} className="card offer-card" style={{ '--i': index % 12 }}>
+              <div
+                key={offer._id}
+                className="card offer-card clickable"
+                style={{ '--i': index % 12 }}
+                onClick={() => navigate(`/offres/${offer._id}`)}
+                role="link"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') navigate(`/offres/${offer._id}`);
+                }}
+              >
                 <h3>{offer.title}</h3>
                 <div className="meta">
                   {offer.company || 'Entreprise ?'} · {offer.location || 'Lieu ?'}
@@ -189,7 +201,9 @@ export default function OffersPage() {
                   <span className="chip">{REMOTE_LABELS[offer.remote] || offer.remote}</span>
                   {offer.salary && <span className="chip">{offer.salary}</span>}
                 </div>
-                <div className="row">
+                {/* La carte entière est cliquable : les actions doivent retenir
+                    le clic, sinon « Suivre » ouvrirait aussi le détail. */}
+                <div className="row" onClick={(event) => event.stopPropagation()}>
                   <button
                     className="btn btn-primary btn-sm"
                     onClick={() => follow(offer)}
@@ -204,7 +218,7 @@ export default function OffersPage() {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Voir l'offre
+                      Voir l'offre ↗
                     </a>
                   )}
                 </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { CONTRACT_LABELS, REMOTE_LABELS, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
+import { TagsField } from '../components/CvFields.jsx';
 
 function ChipGroup({ label, hint, options, selected, onToggle }) {
   return (
@@ -64,14 +65,9 @@ export default function PreferencesPage() {
     setSaved(false);
   };
 
-  const setList = (key) => (e) => {
-    setPrefs({
-      ...prefs,
-      [key]: e.target.value
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
-    });
+  // `TagsField` a déjà découpé la saisie : on ne reçoit ici qu'une liste propre.
+  const setList = (key) => (items) => {
+    setPrefs({ ...prefs, [key]: items });
     setSaved(false);
   };
 
@@ -110,35 +106,27 @@ export default function PreferencesPage() {
       </div>
 
       <div className="panel" style={{ maxWidth: 780 }}>
-        <div className="field">
-          <label>Métiers et technologies recherchés (séparés par des virgules)</label>
-          <input
-            className="input"
-            placeholder="développeur full stack, react, node.js…"
-            value={(prefs.keywords || []).join(', ')}
-            onChange={setList('keywords')}
-          />
-        </div>
+        <TagsField
+          label="Métiers et technologies recherchés"
+          hint="Séparés par des virgules — les espaces sont autorisés."
+          placeholder="développeur full stack, react, node.js…"
+          value={prefs.keywords || []}
+          onChange={setList('keywords')}
+        />
 
-        <div className="field">
-          <label>Mots-clés à écarter</label>
-          <input
-            className="input"
-            placeholder="stage, php, on-site only…"
-            value={(prefs.excludedKeywords || []).join(', ')}
-            onChange={setList('excludedKeywords')}
-          />
-        </div>
+        <TagsField
+          label="Mots-clés à écarter"
+          placeholder="stage, php, on-site only…"
+          value={prefs.excludedKeywords || []}
+          onChange={setList('excludedKeywords')}
+        />
 
-        <div className="field">
-          <label>Lieux</label>
-          <input
-            className="input"
-            placeholder="Nantes, Paris, France…"
-            value={(prefs.locations || []).join(', ')}
-            onChange={setList('locations')}
-          />
-        </div>
+        <TagsField
+          label="Lieux"
+          placeholder="Nantes, Paris, France…"
+          value={prefs.locations || []}
+          onChange={setList('locations')}
+        />
 
         <ChipGroup
           label="Contrats"

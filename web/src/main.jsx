@@ -14,3 +14,15 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// Uniquement sur le build de production : en développement, un service worker
+// servirait d'anciens fichiers depuis son cache et masquerait les modifications
+// qu'on vient d'écrire.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Hors HTTPS (ou navigateur sans support), l'application marche
+      // normalement — elle n'est simplement pas installable.
+    });
+  });
+}

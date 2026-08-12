@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import OffersPage from './pages/OffersPage.jsx';
+import OfferDetailPage from './pages/OfferDetailPage.jsx';
 import ApplicationsPage from './pages/ApplicationsPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PreferencesPage from './pages/PreferencesPage.jsx';
@@ -73,6 +74,44 @@ const NAV = [
   },
 ];
 
+/**
+ * Bouton d'installation.
+ *
+ * Le navigateur décide seul si l'application est installable ; il le signale
+ * par `beforeinstallprompt`. Tant que l'événement n'est pas venu, on n'affiche
+ * rien plutôt qu'un bouton qui ne ferait rien. (iOS ne l'émet jamais :
+ * l'installation y passe par « Partager → Sur l'écran d'accueil ».)
+ */
+function InstallButton() {
+  const [prompt, setPrompt] = useState(null);
+
+  useEffect(() => {
+    const capture = (event) => {
+      event.preventDefault();
+      setPrompt(event);
+    };
+    window.addEventListener('beforeinstallprompt', capture);
+    window.addEventListener('appinstalled', () => setPrompt(null));
+    return () => window.removeEventListener('beforeinstallprompt', capture);
+  }, []);
+
+  if (!prompt) return null;
+
+  return (
+    <button
+      className="btn btn-sm btn-block"
+      style={{ marginBottom: 10 }}
+      onClick={async () => {
+        prompt.prompt();
+        await prompt.userChoice;
+        setPrompt(null); // l'événement ne peut être consommé qu'une fois
+      }}
+    >
+      Installer l'application
+    </button>
+  );
+}
+
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
@@ -94,7 +133,10 @@ export default function App() {
 
   const brand = (
     <div className="brand">
-      FindUr<span>Job</span>
+      <img src="/favicon.svg" alt="" width="26" height="26" />
+      <span className="brand-text">
+        FindUr<span>Job</span>
+      </span>
     </div>
   );
 
@@ -131,6 +173,7 @@ export default function App() {
           </NavLink>
         ))}
         <div className="nav-spacer" />
+        <InstallButton />
         <div className="nav-foot">Copilote de candidatures</div>
       </aside>
 
@@ -140,6 +183,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/offres" replace />} />
             <Route path="/offres" element={<OffersPage />} />
+            <Route path="/offres/:id" element={<OfferDetailPage />} />
             <Route path="/candidatures" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />

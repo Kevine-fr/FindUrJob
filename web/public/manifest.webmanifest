@@ -1,0 +1,38 @@
+{
+  "name": "FindUrJob — Copilote de candidatures",
+  "short_name": "FindUrJob",
+  "description": "Agrège les offres, recible ton CV par annonce et suit tes candidatures.",
+  "lang": "fr",
+  "start_url": "/offres",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f4ef",
+  "theme_color": "#2d5bff",
+  "orientation": "any",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Offres", "short_name": "Offres", "url": "/offres" },
+    { "name": "Mes candidatures", "short_name": "Candidatures", "url": "/candidatures" },
+    { "name": "Mon CV", "short_name": "Mon CV", "url": "/mon-cv" }
+  ]
+}

@@ -100,7 +100,8 @@ jobs:
           echo "Demarrage des conteneurs..."
           # Un seul build, sur le compose de production. `--no-cache` global
           # retelechargeait Chromium (~1 Go) a chaque deploiement.
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          docker compose -f docker-compose.prod.yml up -d --force-recreate ai
+
 
           echo "Verification de la sante des services..."
           for i in $(seq 1 30); do

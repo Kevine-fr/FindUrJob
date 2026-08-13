@@ -54,7 +54,20 @@ def describe_failure(error: Exception) -> str:
             429: "quota atteint, réessaie plus tard",
         }
         hint = hints.get(status, "réponse inattendue")
-        return f"échec (HTTP {status} — {hint})"
+
+        # La plupart des API expliquent le refus dans leur corps de réponse.
+        # Sans le remonter, on répète une supposition là où la source donne la
+        # cause exacte (« AUTH_FAIL », « quota exceeded », un paramètre refusé…).
+        detail = ""
+        try:
+            corps = error.response.json()
+            if isinstance(corps, dict):
+                pistes = [corps.get(k) for k in ("display", "exception", "message", "error", "doc")]
+                detail = next((str(p) for p in pistes if p), "")
+        except Exception:  # noqa: BLE001 — corps non-JSON (page HTML d'erreur)
+            detail = error.response.text.strip()[:120]
+
+        return f"échec (HTTP {status} — {hint}{' : ' + detail if detail else ''})"
 
     if isinstance(error, httpx.TimeoutException):
         return "échec (délai dépassé)"

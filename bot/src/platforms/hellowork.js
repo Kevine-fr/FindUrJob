@@ -205,34 +205,77 @@ export async function login(context, { email, password }) {
   }
 }
 
-export async function apply(context, offer, { cvPath } = {}) {
+export async function apply(context, offer, { cvFile } = {}) {
   const page = await context.newPage();
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'domcontentloaded' });
+    await dismissConsent(page);
     await humanPause();
 
-    const button = page.locator('a[href*="postuler"], button:has-text("Postuler")').first();
+    // Le libellé varie (« Postuler », « Je postule », « Postuler à cette offre ») :
+    // on cible le rôle et le verbe plutôt qu'une classe.
+    const button = page
+      .getByRole('link', { name: /postuler|je postule/i })
+      .or(page.getByRole('button', { name: /postuler|je postule/i }))
+      .first();
+
     if (!(await button.count())) {
-      return { status: 'manual', message: 'Aucun bouton de candidature trouvé sur cette offre.' };
+      return {
+        status: 'manual',
+        message: "Aucun bouton « Postuler » sur cette offre (candidature externe).",
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
     }
-    await button.click();
-    await humanPause(1200, 2200);
 
-    if (cvPath) {
+    await button.click().catch(() => {});
+    await humanPause(1500, 2500);
+
+    // Le CV d'abord : un formulaire soumis sans pièce jointe est pire qu'un
+    // formulaire non soumis.
+    let cvJoint = false;
+    if (cvFile) {
       const upload = page.locator('input[type="file"]').first();
-      if (await upload.count()) await upload.setInputFiles(cvPath);
+      if (await upload.count()) {
+        await upload.setInputFiles(cvFile).catch(() => {});
+        await humanPause(800, 1600);
+        cvJoint = true;
+      }
     }
 
-    const submit = page.locator('button[type="submit"]:has-text("Envoyer")').first();
+    if (cvFile && !cvJoint) {
+      return {
+        status: 'manual',
+        message:
+          "Le formulaire n'expose pas de champ de fichier : CV non joint, envoi interrompu.",
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
+    }
+
+    const submit = page
+      .getByRole('button', { name: /envoyer ma candidature|envoyer|postuler|valider/i })
+      .last();
+
     if (await submit.count()) {
-      await submit.click();
-      await humanPause(1500, 2500);
-      return { status: 'sent', message: 'Candidature envoyée.' };
+      await submit.click().catch(() => {});
+      await humanPause(2000, 3200);
+
+      // On ne se fie pas au clic : la page doit confirmer.
+      const texte = (await page.innerText('body').catch(() => '')).toLowerCase();
+      const confirme = /candidature (bien )?(envoy|transmis|enregistr)/.test(texte);
+
+      return confirme
+        ? { status: 'sent', message: 'Candidature envoyée, CV joint.' }
+        : {
+            status: 'manual',
+            message:
+              'Formulaire soumis sans confirmation visible : à vérifier sur la plateforme.',
+            screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+          };
     }
 
     return {
       status: 'manual',
-      message: 'Formulaire ouvert : à finir à la main.',
+      message: "Bouton d'envoi introuvable : formulaire à finir à la main.",
       screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
     };
   } finally {

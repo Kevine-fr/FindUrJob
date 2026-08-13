@@ -191,7 +191,7 @@ export async function login(context, { email, password }) {
  * renvoient vers le site de l'entreprise, où il n'y a pas de formulaire commun.
  * On le dit plutôt que de faire semblant.
  */
-export async function apply(context, offer, { cvPath } = {}) {
+export async function apply(context, offer, { cvFile } = {}) {
   const page = await context.newPage();
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'domcontentloaded' });
@@ -205,9 +205,9 @@ export async function apply(context, offer, { cvPath } = {}) {
     await easyApply.click();
     await page.waitForSelector('.jobs-easy-apply-modal', { timeout: 15_000 });
 
-    if (cvPath) {
+    if (cvFile) {
       const upload = page.locator('input[type="file"]').first();
-      if (await upload.count()) await upload.setInputFiles(cvPath);
+      if (await upload.count()) await upload.setInputFiles(cvFile).catch(() => {});
     }
 
     // Le formulaire est multi-étapes et son contenu varie selon l'entreprise :

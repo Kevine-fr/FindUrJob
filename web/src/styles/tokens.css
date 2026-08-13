@@ -678,6 +678,74 @@ img {
   }
 }
 
+/* --- Dossier de candidature -------------------------------------------- */
+
+.dossier-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.dossier-head h2 {
+  margin: 0;
+}
+.dossier-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+/* Aperçu du PDF réellement envoyé. Hauteur en proportion de la largeur pour
+   garder l'allure d'une page, sans imposer de pixels. */
+.pdf-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 210 / 297;
+  max-height: 70vh;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--paper-2);
+}
+.pdf-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.cv-source {
+  margin-top: 12px;
+}
+.cv-source summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.cv-source summary:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  /* Sur téléphone, une iframe PDF est peu maniable : on garde un aperçu court,
+     l'ouverture plein écran se fait par le bouton. */
+  .pdf-frame {
+    aspect-ratio: auto;
+    height: 46vh;
+  }
+  .dossier-actions,
+  .dossier-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 /* --- Timeline ---------------------------------------------------------- */
 
 .timeline {

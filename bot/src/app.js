@@ -228,11 +228,17 @@ export function createApp() {
     })
   );
 
-  /** POST /apply — { platform, offer, cvPath } */
+  /**
+   * POST /apply — { platform, offer, cv }
+   *
+   * `cv` : { filename, content } — le PDF en base64. Il arrive dans la requête
+   * plutôt que par un chemin de fichier : le serveur et le bot ne partagent
+   * aucun disque, et Playwright sait téléverser depuis un tampon mémoire.
+   */
   app.post(
     '/apply',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, offer, cvPath } = req.body || {};
+      const { platform: platformName, offer, cv } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!offer?.sourceUrl) {
@@ -246,7 +252,15 @@ export function createApp() {
         });
       }
 
-      res.json(await platform.apply(context, offer, { cvPath }));
+      const fichier = cv?.content
+        ? {
+            name: cv.filename || 'CV.pdf',
+            mimeType: 'application/pdf',
+            buffer: Buffer.from(cv.content, 'base64'),
+          }
+        : null;
+
+      res.json(await platform.apply(context, offer, { cvFile: fichier }));
     })
   );
 

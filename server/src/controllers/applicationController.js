@@ -4,6 +4,8 @@ import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import { asyncHandler } from '../middleware.js';
 import { tailorCv } from '../services/tailoringService.js';
+import { renderCvPdf } from '../services/botService.js';
+import { buildTailoredCvHtml } from '../services/cvDocument.js';
 import { APPLICATION_STATUSES } from '../utils/constants.js';
 
 const POPULATE = ['offer', 'cvVersion'];
@@ -80,6 +82,19 @@ export const tailorApplication = asyncHandler(async (req, res) => {
     content: result.content,
     score: typeof result.score === 'number' ? result.score : undefined,
   });
+
+  // Le PDF est produit tout de suite : c'est lui qu'on relira et qu'on joindra
+  // à la candidature. L'échec d'impression ne doit pas perdre le CV texte.
+  try {
+    const { buffer } = await renderCvPdf(
+      buildTailoredCvHtml(result.content, { accent: profile.cvOptions?.accent })
+    );
+    cv.pdf = buffer;
+    cv.pdfBytes = buffer.length;
+    await cv.save();
+  } catch {
+    /* le CV reste consultable en texte ; le PDF sera tenté à la demande */
+  }
 
   application.cvVersion = cv._id;
   application.coverLetter = result.coverLetter;

@@ -38,7 +38,13 @@ async function call(path, { method = 'POST', body, timeout = 180_000 } = {}) {
       err.status = 504;
       throw err;
     }
-    throw unavailable();
+    // Distinguer « pas configuré » de « ne répond pas » : le premier se règle
+    // dans l'environnement, le second en redémarrant le service.
+    const err = new Error(
+      `Le navigateur piloté ne répond pas (${base}) — service arrêté ou en cours de démarrage.`
+    );
+    err.status = 503;
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -86,8 +92,13 @@ export const botLogin = (platform, email, password) =>
 
 export const botSearch = (platform, query) => json('/search', { body: { platform, ...query } });
 
-export const botApply = (platform, offer, cvPath) =>
-  json('/apply', { body: { platform, offer, cvPath } });
+/**
+ * Candidate sur la plateforme, CV joint.
+ * `cv` : { filename, content } où `content` est le PDF en base64 — il voyage
+ * dans la requête, faute de disque partagé entre le serveur et le bot.
+ */
+export const botApply = (platform, offer, cv) =>
+  json('/apply', { body: { platform, offer, cv }, timeout: 240_000 });
 
 /**
  * Ouvre une page sur l'écran du conteneur, pour reprise en main.

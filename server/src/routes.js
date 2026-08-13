@@ -53,6 +53,7 @@ router.post('/accounts/:platform/logout', accounts.logoutAccount);
 router.get('/cv-versions', cv.listCvVersions);
 router.post('/cv-versions', cv.createCvVersion);
 router.get('/cv-versions/:id', cv.getCvVersion);
+router.get('/cv-versions/:id/pdf', cv.getCvVersionPdf);
 router.delete('/cv-versions/:id', cv.deleteCvVersion);
 
 // Profil (singleton) + CV déposé

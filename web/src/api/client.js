@@ -1,5 +1,9 @@
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
+// Exposée pour les ressources qu'on ne récupère pas en fetch mais qu'on pointe
+// directement (le PDF d'un CV dans une iframe ou un lien de téléchargement).
+export const API_BASE = BASE;
+
 async function req(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },

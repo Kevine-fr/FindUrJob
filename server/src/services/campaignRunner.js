@@ -5,7 +5,8 @@ import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import SearchPreference from '../models/SearchPreference.js';
 import { tailorCv } from './tailoringService.js';
-import { botApply, botConfigured } from './botService.js';
+import { botApply, botConfigured, renderCvPdf } from './botService.js';
+import { buildTailoredCvHtml } from './cvDocument.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 /**
@@ -113,6 +114,28 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
             score,
           });
 
+          /*
+           * Le CV reciblé devient un PDF ici, pas plus tard.
+           *
+           * C'est la pièce qu'on joindra au formulaire : sans elle, la
+           * candidature partirait sans CV — ce qui était exactement le défaut
+           * de la version précédente, où l'envoi ne recevait jamais de fichier.
+           */
+          let cvPdf = null;
+          try {
+            const { buffer } = await renderCvPdf(
+              buildTailoredCvHtml(result.content, { accent: profile.cvOptions?.accent })
+            );
+            cvPdf = buffer;
+            cv.pdf = buffer;
+            cv.pdfBytes = buffer.length;
+            await cv.save();
+          } catch (pdfError) {
+            // Sans PDF on peut encore préparer la candidature ; on ne l'enverra
+            // simplement pas à l'aveugle, et la raison est écrite.
+            summary.errors.push(`${source} : CV non imprimé (${pdfError.message})`);
+          }
+
           const application = await Application.create({
             offer: offer._id,
             status: 'a_postuler',
@@ -126,8 +149,13 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
 
           // Seules les plateformes pilotées au navigateur peuvent envoyer :
           // ailleurs, l'annonce renvoie vers un site tiers sans session.
+          // Et sans CV imprimé, on ne candidate pas : une candidature sans
+          // pièce jointe dessert plus qu'elle ne sert.
           const sendable =
-            campaign.mode === 'envoyer' && botConfigured() && BOT_PLATFORMS.includes(source);
+            campaign.mode === 'envoyer' &&
+            botConfigured() &&
+            BOT_PLATFORMS.includes(source) &&
+            Boolean(cvPdf);
 
           if (!sendable) {
             summary.prepared += 1;
@@ -145,11 +173,22 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
            * du résumé une candidature pourtant bien créée.
            */
           try {
-            const outcome = await botApply(source, offer);
+            // Le PDF voyage avec la demande : le bot n'a aucun fichier à aller
+            // chercher, et les deux services n'ont pas de disque en commun.
+            const outcome = await botApply(source, offer, {
+              filename: `CV-${(profile.fullName || 'candidat').replace(/\s+/g, '-')}.pdf`,
+              content: cvPdf.toString('base64'),
+            });
+
             if (outcome.status === 'sent') {
               application.status = 'postule';
               application.appliedAt = new Date();
-              application.timeline.push({ status: 'postule', note: 'Envoyée par la campagne.' });
+              application.timeline.push({
+                status: 'postule',
+                note: 'Envoyée par la campagne, CV reciblé joint.',
+              });
+              cv.sentAt = new Date();
+              await cv.save();
               summary.sent += 1;
               summary.perSource[source].sent += 1;
             } else {

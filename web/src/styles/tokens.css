@@ -1400,6 +1400,22 @@ img {
   background: var(--paper);
 }
 
+/* Raccourcis Google, dans la fenêtre de reprise en main. */
+.helper-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  padding: 12px 14px;
+}
+.helper-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
 /* Marche à suivre numérotée d'une reprise en main. */
 .steps {
   margin: 0;

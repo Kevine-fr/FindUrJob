@@ -264,6 +264,19 @@ C'est bien le navigateur *du robot* que l'on pilote. Se connecter à la platefor
 dans son propre navigateur ne servirait à rien : la session naîtrait là où le
 robot ne peut pas la lire.
 
+Deux raccourcis Google accompagnent la reprise en main : ouvrir la connexion
+Google, et ouvrir Gmail. Tous deux s'ouvrent **dans le navigateur de la
+plateforme visée**, et c'est ce qui les rend utiles — les cookies sont
+cloisonnés par profil, donc une session Google ouverte ailleurs ne serait pas vue
+par le « Se connecter avec Google » de LinkedIn. Gmail dans le même navigateur
+sert à relever un code de vérification sans changer de fenêtre.
+
+> Google refuse parfois la connexion depuis un navigateur qu'il juge automatisé
+> (« Ce navigateur ou cette application n'est peut-être pas sécurisé »). Le
+> navigateur est un Chrome complet, ce qui passe le plus souvent, mais ce n'est
+> pas garanti : dans ce cas, connecte-toi à la plateforme par son mot de passe
+> plutôt que par Google.
+
 > **Derrière un reverse-proxy**, l'écran passe par `/vnc` et repose sur un
 > **websocket**. Le proxy en amont (celui du VPS) doit donc relayer l'`Upgrade`,
 > sinon l'interface s'affiche mais reste sur « Échec de connexion au serveur » :

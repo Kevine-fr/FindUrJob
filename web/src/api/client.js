@@ -119,7 +119,13 @@ export const api = {
     logout: (platform) => req(`/accounts/${platform}/logout`, { method: 'POST' }),
     // Reprise en main : ouvre la page de connexion dans le navigateur piloté,
     // puis vérifie que la plateforme reconnaît bien la session.
-    openManual: (platform) => req(`/accounts/${platform}/manual`, { method: 'POST' }),
+    // `target` : plateforme | google | gmail — ouvert dans le navigateur de
+    // la plateforme, seul profil où les cookies Google lui serviront.
+    openManual: (platform, target = 'plateforme') =>
+      req(`/accounts/${platform}/manual`, {
+        method: 'POST',
+        body: JSON.stringify({ target }),
+      }),
     checkManual: (platform) => req(`/accounts/${platform}/manual`),
   },
 

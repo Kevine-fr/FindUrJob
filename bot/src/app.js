@@ -7,6 +7,27 @@ import { getPlatform, PLATFORM_NAMES } from './platforms/index.js';
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+/**
+ * Une session Google est-elle ouverte dans ce profil ?
+ *
+ * Google renvoie vers `accounts.google.com` quand on n'est pas connecté :
+ * rester sur `myaccount.google.com` est donc le signe d'une session valide.
+ */
+async function isGoogleLoggedIn(context) {
+  const page = await context.newPage();
+  try {
+    await page.goto('https://myaccount.google.com/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    });
+    return !/accounts\.google\.com|\/ServiceLogin|\/signin/.test(page.url());
+  } catch {
+    return false;
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 export function createApp() {
   const app = express();
 
@@ -110,36 +131,65 @@ export function createApp() {
   );
 
   /**
-   * POST /manual — { platform }
+   * POST /manual — { platform, target }
    *
-   * Ouvre la page de connexion de la plateforme sur l'écran virtuel et rend la
-   * main : c'est l'utilisateur qui termine, à la souris, via noVNC. On ne
-   * cherche rien à automatiser ici — c'est précisément le point.
+   * Ouvre une page sur l'écran virtuel et rend la main : c'est l'utilisateur
+   * qui termine, à la souris, via noVNC. On ne cherche rien à automatiser ici —
+   * c'est précisément le point.
+   *
+   * `target` choisit quoi ouvrir, **toujours dans le navigateur de la
+   * plateforme visée** :
+   *   - `plateforme` : sa page de connexion ;
+   *   - `google`     : la connexion Google, pour que « Se connecter avec
+   *                    Google » fonctionne ensuite sur cette plateforme ;
+   *   - `gmail`      : la boîte de réception, pour relever un code de
+   *                    vérification sans quitter la fenêtre.
+   *
+   * Une session Google ouverte dans un autre profil ne servirait à rien : les
+   * cookies sont cloisonnés par profil, et c'est celui de la plateforme qui
+   * compte au moment du « Se connecter avec Google ».
    */
   app.post(
     '/manual',
     asyncHandler(async (req, res) => {
-      const { platform: platformName } = req.body || {};
+      const { platform: platformName, target = 'plateforme' } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!process.env.DISPLAY) {
         return res.status(503).json({
           error:
             "Aucun écran virtuel dans ce conteneur : la reprise en main n'est pas " +
-            'disponible. Reconstruis l\'image du service `bot`.',
+            "disponible. Reconstruis l'image du service `bot`.",
+        });
+      }
+
+      // Liste blanche : l'URL ne vient jamais de l'appelant.
+      const destinations = {
+        plateforme: platform.loginUrl,
+        google: 'https://accounts.google.com/ServiceLogin',
+        gmail: 'https://mail.google.com/',
+      };
+      const url = destinations[target];
+      if (!url) {
+        return res.status(400).json({
+          error: `Destination inconnue : « ${target} ». Attendu : ${Object.keys(destinations).join(', ')}.`,
         });
       }
 
       const context = await getContext(platformName);
-      const page = context.pages()[0] || (await context.newPage());
+      // Un onglet par destination : garder la plateforme et Gmail ouverts côte
+      // à côte est tout l'intérêt quand on attend un code de vérification.
+      const page = target === 'plateforme' ? context.pages()[0] || (await context.newPage()) : await context.newPage();
+
       await page.bringToFront();
-      await page.goto(platform.loginUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
       res.json({
         status: 'ouvert',
         platform: platformName,
-        loginUrl: platform.loginUrl,
-        message: 'Page de connexion ouverte. Termine la connexion dans la fenêtre.',
+        target,
+        url,
+        message: 'Page ouverte dans le navigateur du robot.',
       });
     })
   );
@@ -155,7 +205,13 @@ export function createApp() {
       const platform = getPlatform(req.params.platform);
       const context = await getContext(req.params.platform);
       const connected = await platform.isLoggedIn(context);
-      res.json({ platform: req.params.platform, connected });
+      res.json({
+        platform: req.params.platform,
+        connected,
+        // Une session Google déjà ouverte dans ce profil rend le bouton
+        // « Se connecter avec Google » de la plateforme utilisable en un clic.
+        google: await isGoogleLoggedIn(context),
+      });
     })
   );
 

@@ -89,8 +89,13 @@ export const botSearch = (platform, query) => json('/search', { body: { platform
 export const botApply = (platform, offer, cvPath) =>
   json('/apply', { body: { platform, offer, cvPath } });
 
-/** Ouvre la page de connexion sur l'écran du conteneur, pour reprise en main. */
-export const botManualOpen = (platform) => json('/manual', { body: { platform }, timeout: 60_000 });
+/**
+ * Ouvre une page sur l'écran du conteneur, pour reprise en main.
+ * `target` : plateforme | google | gmail — toujours dans le navigateur de la
+ * plateforme visée, seul endroit où les cookies Google lui serviront.
+ */
+export const botManualOpen = (platform, target = 'plateforme') =>
+  json('/manual', { body: { platform, target }, timeout: 60_000 });
 
 /** La plateforme reconnaît-elle la session que l'utilisateur vient d'ouvrir ? */
 export const botManualStatus = (platform) =>

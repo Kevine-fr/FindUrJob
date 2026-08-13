@@ -87,7 +87,12 @@ export const openManualLogin = asyncHandler(async (req, res) => {
   const { platform } = req.params;
   assertPlatform(platform);
 
-  const result = await botManualOpen(platform);
+  // `target` choisit ce qu'on ouvre : la plateforme, la connexion Google
+  // (pour le « Se connecter avec Google » de la plateforme), ou Gmail (pour
+  // relever un code de vérification). Le bot valide la valeur.
+  const target = req.body?.target || 'plateforme';
+  const result = await botManualOpen(platform, target);
+
   await PlatformAccount.updateOne(
     { platform },
     { sessionState: 'verification', lastMessage: 'Connexion manuelle en cours.' },

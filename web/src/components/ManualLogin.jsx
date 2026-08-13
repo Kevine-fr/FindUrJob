@@ -68,11 +68,15 @@ export default function ManualLogin({ platform, label, vncUrl, onDone, onClose }
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const [google, setGoogle] = useState(null);
+
   const confirm = async () => {
     setChecking(true);
     try {
-      const { connected } = await api.accounts.checkManual(platform);
-      if (connected) {
+      const result = await api.accounts.checkManual(platform);
+      setGoogle(result.google ?? null);
+
+      if (result.connected) {
         toast.success(`Session ${label} ouverte.`);
         onDone();
       } else {
@@ -84,6 +88,18 @@ export default function ManualLogin({ platform, label, vncUrl, onDone, onClose }
       toast.error(err.message);
     } finally {
       setChecking(false);
+    }
+  };
+
+  /** Ouvre Google ou Gmail dans le navigateur *de cette plateforme*. */
+  const openHelper = async (target, name) => {
+    try {
+      await api.accounts.openManual(platform, target);
+      toast.info(`${name} ouvert dans le navigateur du robot — bascule sur l'onglet.`, {
+        duration: 7000,
+      });
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
@@ -132,6 +148,38 @@ export default function ManualLogin({ platform, label, vncUrl, onDone, onClose }
               Ouvrir le navigateur du robot ↗
             </a>
           )}
+
+          <div className="helper-box">
+            <div className="helper-head">
+              <strong>Coup de pouce Google</strong>
+              {google !== null && (
+                <span className={`state state-${google ? 'connectee' : 'absente'}`}>
+                  {google ? 'Session Google ouverte' : 'Pas de session Google'}
+                </span>
+              )}
+            </div>
+            <p className="muted" style={{ fontSize: 12.5, margin: '4px 0 10px' }}>
+              Ouverts dans le navigateur de {label} : la session Google y devient utilisable par
+              son bouton « Se connecter avec Google », et Gmail sert à relever un code de
+              vérification sans changer de fenêtre.
+            </p>
+            <div className="inline">
+              <button
+                className="btn btn-sm"
+                onClick={() => openHelper('google', 'Google')}
+                disabled={opening || Boolean(error)}
+              >
+                Se connecter à Google
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => openHelper('gmail', 'Gmail')}
+                disabled={opening || Boolean(error)}
+              >
+                Ouvrir Gmail
+              </button>
+            </div>
+          </div>
 
           <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
             C'est le navigateur du robot que tu pilotes : la session s'enregistre là où il en a

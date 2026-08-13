@@ -28,15 +28,15 @@ const assertPlatform = (platform) => {
  * quelque chose. S'il ne répond pas, on rend l'état connu en base : la page
  * reste lisible quand le bot est arrêté.
  */
-export const listAccounts = asyncHandler(async (_req, res) => {
-  const stored = await PlatformAccount.find();
+export const listAccounts = asyncHandler(async (req, res) => {
+  const stored = await PlatformAccount.find({ user: req.user.id });
   const byPlatform = new Map(stored.map((account) => [account.platform, account]));
 
   let live = new Map();
   let botError = null;
   if (botConfigured()) {
     try {
-      const { sessions } = await botSessions();
+      const { sessions } = await botSessions(req.user.id);
       live = new Map(sessions.map((session) => [session.platform, session]));
     } catch (error) {
       botError = error.message;
@@ -45,7 +45,7 @@ export const listAccounts = asyncHandler(async (_req, res) => {
 
   const accounts = await Promise.all(
     BOT_PLATFORMS.map(async (platform) => {
-      const account = byPlatform.get(platform) || new PlatformAccount({ platform });
+      const account = byPlatform.get(platform) || new PlatformAccount({ platform, user: req.user.id });
       const session = live.get(platform);
 
       if (session && session.state !== account.sessionState) {
@@ -91,10 +91,10 @@ export const openManualLogin = asyncHandler(async (req, res) => {
   // (pour le « Se connecter avec Google » de la plateforme), ou Gmail (pour
   // relever un code de vérification). Le bot valide la valeur.
   const target = req.body?.target || 'plateforme';
-  const result = await botManualOpen(platform, target);
+  const result = await botManualOpen(platform, target, req.user.id);
 
   await PlatformAccount.updateOne(
-    { platform },
+    { platform, user: req.user.id },
     { sessionState: 'verification', lastMessage: 'Connexion manuelle en cours.' },
     { upsert: true }
   );
@@ -110,9 +110,9 @@ export const checkManualLogin = asyncHandler(async (req, res) => {
   const { platform } = req.params;
   assertPlatform(platform);
 
-  const { connected } = await botManualStatus(platform);
+  const { connected } = await botManualStatus(platform, req.user.id);
   const account =
-    (await PlatformAccount.findOne({ platform })) || new PlatformAccount({ platform });
+    (await PlatformAccount.findOne({ platform, user: req.user.id })) || new PlatformAccount({ platform, user: req.user.id });
 
   account.sessionState = connected ? 'connectee' : 'expiree';
   account.lastCheckedAt = new Date();
@@ -138,7 +138,7 @@ export const saveAccount = asyncHandler(async (req, res) => {
 
   const { email, password, dailyQuota } = req.body || {};
   const account =
-    (await PlatformAccount.findOne({ platform })) || new PlatformAccount({ platform });
+    (await PlatformAccount.findOne({ platform, user: req.user.id })) || new PlatformAccount({ platform, user: req.user.id });
 
   if (typeof email === 'string') account.email = email.trim();
   if (Number.isFinite(Number(dailyQuota))) {
@@ -159,8 +159,8 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   const { platform } = req.params;
   assertPlatform(platform);
 
-  await PlatformAccount.deleteOne({ platform });
-  if (botConfigured()) await botForget(platform, true).catch(() => {});
+  await PlatformAccount.deleteOne({ platform, user: req.user.id });
+  if (botConfigured()) await botForget(platform, true, req.user.id).catch(() => {});
 
   res.status(204).end();
 });
@@ -176,7 +176,7 @@ export const loginAccount = asyncHandler(async (req, res) => {
   const { platform } = req.params;
   assertPlatform(platform);
 
-  const account = await PlatformAccount.findOne({ platform }).select('+password');
+  const account = await PlatformAccount.findOne({ platform, user: req.user.id }).select('+password');
   if (!account?.email) {
     return res.status(400).json({ error: 'Renseigne d\'abord un e-mail pour cette plateforme.' });
   }
@@ -187,7 +187,7 @@ export const loginAccount = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Aucun mot de passe enregistré pour cette plateforme.' });
   }
 
-  const result = await botLogin(platform, account.email, password);
+  const result = await botLogin(platform, account.email, password, req.user.id);
 
   const STATE = { connected: 'connectee', verification: 'verification', failed: 'erreur' };
   account.sessionState = STATE[result.status] || 'erreur';
@@ -204,9 +204,9 @@ export const logoutAccount = asyncHandler(async (req, res) => {
   const { platform } = req.params;
   assertPlatform(platform);
 
-  if (botConfigured()) await botForget(platform, true);
+  if (botConfigured()) await botForget(platform, true, req.user.id);
   await PlatformAccount.updateOne(
-    { platform },
+    { platform, user: req.user.id },
     { sessionState: 'absente', lastMessage: 'Session fermée.', lastCheckedAt: new Date() }
   );
   res.status(204).end();

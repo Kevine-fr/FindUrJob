@@ -5,56 +5,56 @@ import { runCampaign } from './services/campaignRunner.js';
 /**
  * Planificateur des campagnes.
  *
- * Une seule tâche vit à la fois : reprogrammer, c'est détruire l'ancienne et
- * en créer une neuve. Sans ça, changer de rythme empilerait les exécutions.
+ * Une tâche par utilisateur : chacun a son rythme, son fuseau et ses quotas.
+ * Reprogrammer, c'est détruire les tâches existantes et les recréer — sans quoi
+ * un changement de rythme empilerait les exécutions.
  */
 
-let task = null;
-let current = { cron: null, timezone: null, enabled: false };
+const tasks = new Map(); // id utilisateur → tâche cron
 
 export function describeSchedule() {
-  return { ...current, active: Boolean(task) };
+  return { active: tasks.size, users: [...tasks.keys()] };
 }
 
-function stop() {
-  if (task) {
-    task.stop();
-    task = null;
-  }
+function stopAll() {
+  for (const task of tasks.values()) task.stop();
+  tasks.clear();
 }
 
 /**
- * (Re)programme la campagne d'après le document en base.
- * Appelée au démarrage et à chaque enregistrement des réglages.
+ * (Re)programme toutes les campagnes actives d'après la base.
+ * Appelée au démarrage et à chaque enregistrement de réglages.
  */
 export async function reschedule() {
-  const campaign = await Campaign.getSingleton();
-  stop();
-  current = { cron: campaign.cron, timezone: campaign.timezone, enabled: campaign.enabled };
+  stopAll();
 
-  if (!campaign.enabled) {
-    console.log('campagne : désactivée');
-    return describeSchedule();
+  const campaigns = await Campaign.find({ enabled: true });
+
+  for (const campaign of campaigns) {
+    if (!campaign.user) continue;
+
+    if (!cron.validate(campaign.cron)) {
+      console.warn(`campagne ${campaign.user} : expression invalide (${campaign.cron})`);
+      campaign.lastError = `Expression cron invalide : ${campaign.cron}`;
+      await campaign.save();
+      continue;
+    }
+
+    const user = campaign.user.toString();
+    const task = cron.schedule(
+      campaign.cron,
+      () => {
+        runCampaign({ user, trigger: 'planifié' })
+          .then((summary) => console.log(`campagne ${user} :`, JSON.stringify(summary)))
+          .catch((error) => console.error(`campagne ${user} :`, error.message));
+      },
+      { timezone: campaign.timezone || 'Europe/Paris' }
+    );
+
+    tasks.set(user, task);
   }
 
-  if (!cron.validate(campaign.cron)) {
-    console.warn(`campagne : expression cron invalide (${campaign.cron}) — non programmée`);
-    campaign.lastError = `Expression cron invalide : ${campaign.cron}`;
-    await campaign.save();
-    return describeSchedule();
-  }
-
-  task = cron.schedule(
-    campaign.cron,
-    () => {
-      runCampaign({ trigger: 'planifié' })
-        .then((summary) => console.log('campagne :', JSON.stringify(summary)))
-        .catch((error) => console.error('campagne :', error));
-    },
-    { timezone: campaign.timezone || 'Europe/Paris' }
-  );
-
-  console.log(`campagne : programmée « ${campaign.cron} » (${campaign.timezone})`);
+  console.log(`campagnes : ${tasks.size} programmée(s)`);
   return describeSchedule();
 }
 
@@ -63,13 +63,11 @@ export async function startScheduler() {
   try {
     // Un redémarrage pendant une exécution laisserait le drapeau à `true`,
     // et plus aucune campagne ne partirait ensuite.
-    await Campaign.updateOne({}, { running: false });
+    await Campaign.updateMany({ running: true }, { running: false });
     await reschedule();
   } catch (error) {
-    console.error('campagne : programmation impossible —', error.message);
+    console.error('campagnes : programmation impossible —', error.message);
   }
 }
 
-export function stopScheduler() {
-  stop();
-}
+export const stopScheduler = stopAll;

@@ -13,6 +13,9 @@ const timelineEntrySchema = new mongoose.Schema(
 
 const applicationSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     offer: { type: mongoose.Schema.Types.ObjectId, ref: 'JobOffer', required: true },
     status: { type: String, enum: APPLICATION_STATUSES, default: 'brouillon', index: true },
     timeline: { type: [timelineEntrySchema], default: [] },

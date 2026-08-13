@@ -14,7 +14,7 @@ import { APPLICATION_STATUSES } from '../utils/constants.js';
 export const listHistory = asyncHandler(async (req, res) => {
   const { status, offer, from, to, type, limit } = req.query;
 
-  const applications = await Application.find(offer ? { offer } : {})
+  const applications = await Application.find({ ...offer ? { offer } : {}, user: req.user.id })
     .populate('offer')
     .sort({ updatedAt: -1 });
 
@@ -41,7 +41,7 @@ export const listHistory = asyncHandler(async (req, res) => {
   }
 
   const cvFilter = offer ? { offer, kind: 'cible' } : { kind: 'cible' };
-  const cvVersions = await CVVersion.find(cvFilter).populate('offer').sort({ createdAt: -1 });
+  const cvVersions = await CVVersion.find({ ...cvFilter, user: req.user.id }).populate('offer').sort({ createdAt: -1 });
 
   for (const version of cvVersions) {
     events.push({

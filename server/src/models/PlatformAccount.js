@@ -11,12 +11,10 @@ import { BOT_PLATFORMS } from '../utils/constants.js';
  */
 const platformAccountSchema = new mongoose.Schema(
   {
-    platform: {
-      type: String,
-      enum: BOT_PLATFORMS,
-      required: true,
-      unique: true,
-    },
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    platform: { type: String, enum: BOT_PLATFORMS, required: true },
     email: { type: String, default: '' },
     password: { type: String, default: '', select: false },
     // `password` étant `select: false`, il n'est pas chargé : ce drapeau permet
@@ -41,6 +39,12 @@ const platformAccountSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+/*
+ * Unicité par compte, et non globale : `platform` seul empêcherait deux
+ * personnes d'avoir chacune son LinkedIn.
+ */
+platformAccountSchema.index({ user: 1, platform: 1 }, { unique: true });
 
 /** Vue sûre pour le front : jamais de chiffré, jamais de mot de passe. */
 platformAccountSchema.methods.toPublic = function () {

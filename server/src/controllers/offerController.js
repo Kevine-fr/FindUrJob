@@ -31,7 +31,8 @@ const MAX_PAGE_SIZE = 200;
  */
 export const listOffers = asyncHandler(async (req, res) => {
   const { q, location } = req.query;
-  const filter = {};
+  // Cloisonnement : chaque lecture part du propriétaire.
+  const filter = { user: req.user.id };
 
   const sources = asList(req.query.source);
   const contractTypes = asList(req.query.contractType);
@@ -67,27 +68,28 @@ export const listOffers = asyncHandler(async (req, res) => {
 });
 
 export const getOffer = asyncHandler(async (req, res) => {
-  const offer = await JobOffer.findById(req.params.id);
+  const offer = await JobOffer.findOne({ _id: req.params.id, user: req.user.id });
   if (!offer) return res.status(404).json({ error: 'Offre introuvable' });
   res.json(offer);
 });
 
 export const createOffer = asyncHandler(async (req, res) => {
-  const offer = await JobOffer.create(req.body);
+  const offer = await JobOffer.create({ ...req.body, user: req.user.id });
   res.status(201).json(offer);
 });
 
 export const updateOffer = asyncHandler(async (req, res) => {
-  const offer = await JobOffer.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
+  const offer = await JobOffer.findOneAndUpdate(
+    { _id: req.params.id, user: req.user.id },
+    req.body,
+    { new: true, runValidators: true }
+  );
   if (!offer) return res.status(404).json({ error: 'Offre introuvable' });
   res.json(offer);
 });
 
 export const deleteOffer = asyncHandler(async (req, res) => {
-  const offer = await JobOffer.findByIdAndDelete(req.params.id);
+  const offer = await JobOffer.findOneAndDelete({ _id: req.params.id, user: req.user.id });
   if (!offer) return res.status(404).json({ error: 'Offre introuvable' });
   res.status(204).end();
 });
@@ -116,7 +118,7 @@ const sanitize = (offer) => ({
  * `limit` s'entend **par source** : demander 50 sur cinq sources branchées peut
  * donc rapporter 250 offres. C'est l'intérêt d'agréger.
  */
-async function gather(criteria, wantedSources) {
+async function gather(criteria, wantedSources, user) {
   const apiSources = wantedSources.filter((source) => !BOT_SEARCH_SOURCES.includes(source));
   const botPlatforms = wantedSources.filter((source) => BOT_SEARCH_SOURCES.includes(source));
 
@@ -140,7 +142,7 @@ async function gather(criteria, wantedSources) {
         : [];
     for (const platform of platforms) {
       tasks.push(
-        botSearch(platform, criteria).then(
+        botSearch(platform, criteria, user).then(
           (result) => ({
             offers: result.offers || [],
             report: { [platform]: `${result.total || 0} offre(s)` },
@@ -167,7 +169,7 @@ async function gather(criteria, wantedSources) {
  * déjà connues (même source + même externalId) sont mises à jour, pas dupliquées.
  */
 export const syncOffers = asyncHandler(async (req, res) => {
-  const prefs = await SearchPreference.getSingleton();
+  const prefs = await SearchPreference.forUser(req.user.id);
   const body = req.body || {};
 
   const criteria = {
@@ -179,7 +181,7 @@ export const syncOffers = asyncHandler(async (req, res) => {
   };
 
   const wantedSources = (body.sources ?? []).filter((source) => SOURCES.includes(source));
-  const { offers: found, report } = await gather(criteria, wantedSources);
+  const { offers: found, report } = await gather(criteria, wantedSources, req.user.id);
 
   const excluded = (prefs.excludedKeywords || []).map((word) => word.toLowerCase()).filter(Boolean);
 
@@ -205,13 +207,13 @@ export const syncOffers = asyncHandler(async (req, res) => {
       ? { source: offer.source, externalId: offer.externalId }
       : { source: offer.source, title: offer.title, company: offer.company };
 
-    const existing = await JobOffer.findOne(identity);
+    const existing = await JobOffer.findOne({ ...identity, user: req.user.id });
     if (existing) {
       existing.set(offer);
       await existing.save();
       updated += 1;
     } else {
-      await JobOffer.create(offer);
+      await JobOffer.create({ ...offer, user: req.user.id });
       imported += 1;
     }
   }

@@ -5,6 +5,9 @@ import { SOURCES, CONTRACT_TYPES, REMOTE } from '../utils/constants.js';
 // dans l'interface, et de cadrage pour les campagnes de candidature.
 const searchPreferenceSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     keywords: { type: [String], default: [] }, // métiers / technos visés
     excludedKeywords: { type: [String], default: [] }, // pour écarter des annonces
     locations: { type: [String], default: [] },
@@ -21,10 +24,8 @@ const searchPreferenceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-searchPreferenceSchema.statics.getSingleton = async function () {
-  let preference = await this.findOne();
-  if (!preference) preference = await this.create({});
-  return preference;
+searchPreferenceSchema.statics.forUser = async function (user) {
+  return (await this.findOne({ user })) || this.create({ user });
 };
 
 export default mongoose.model('SearchPreference', searchPreferenceSchema);

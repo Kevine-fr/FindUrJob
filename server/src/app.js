@@ -4,10 +4,66 @@ import morgan from 'morgan';
 import routes from './routes.js';
 import { notFound, errorHandler } from './middleware.js';
 
+/**
+ * Lecture des cookies.
+ *
+ * `res.cookie()` fait partie d'Express ; seule la lecture manque. Une dizaine
+ * de lignes suffisent, plutôt qu'une dépendance de plus dans une image qu'il
+ * faut reconstruire à chaque ajout.
+ */
+function cookies(req, _res, next) {
+  req.cookies = {};
+  const entete = req.headers.cookie;
+  if (entete) {
+    for (const morceau of entete.split(';')) {
+      const separateur = morceau.indexOf('=');
+      if (separateur < 0) continue;
+      const nom = morceau.slice(0, separateur).trim();
+      const valeur = morceau.slice(separateur + 1).trim();
+      if (nom) {
+        try {
+          req.cookies[nom] = decodeURIComponent(valeur);
+        } catch {
+          req.cookies[nom] = valeur; // valeur mal encodée : on la garde telle quelle
+        }
+      }
+    }
+  }
+  next();
+}
+
+/**
+ * Origines autorisées à porter une session.
+ *
+ * Avec des cookies, on ne peut plus répondre « toutes » : le navigateur refuse
+ * `Access-Control-Allow-Credentials` accompagné d'un joker. On liste donc les
+ * origines connues — l'application et la console d'administration.
+ */
+function corsOptions() {
+  const declarees = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origine) => origine.trim())
+    .filter(Boolean);
+
+  return {
+    credentials: true,
+    origin(origine, callback) {
+      // Sans en-tête `Origin` (appel serveur à serveur, curl) : rien à valider.
+      if (!origine) return callback(null, true);
+      if (declarees.includes(origine)) return callback(null, true);
+      // En développement, tout localhost est accepté.
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origine)) return callback(null, true);
+      return callback(new Error(`Origine non autorisée : ${origine}`));
+    },
+  };
+}
+
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  app.use(cors(corsOptions()));
+  app.use(cookies);
+
   // Le CV déposé arrive en corps brut (PDF/DOCX/TXT) : il doit être lu avant
   // le parseur JSON, qui ne saurait pas quoi en faire.
   app.use('/api/profile/cv', express.raw({ type: '*/*', limit: '6mb' }));

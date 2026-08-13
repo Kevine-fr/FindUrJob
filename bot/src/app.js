@@ -40,7 +40,7 @@ export function createApp() {
       status: 'ok',
       service: 'findurjob-bot',
       platforms: PLATFORM_NAMES,
-      sessions: await knownProfiles(),
+      sessions: [],
       // Sans écran virtuel, la reprise en main n'est pas proposée côté interface.
       manualLogin: Boolean(process.env.DISPLAY),
       time: new Date().toISOString(),
@@ -77,8 +77,8 @@ export function createApp() {
   /** GET /sessions — état de connexion de chaque plateforme. */
   app.get(
     '/sessions',
-    asyncHandler(async (_req, res) => {
-      const known = await knownProfiles();
+    asyncHandler(async (req, res) => {
+      const known = await knownProfiles(req.query.user);
 
       // Séquentiel, et non `Promise.all` : chaque vérification ouvre un
       // Chromium complet. Les lancer tous d'un coup fait un pic mémoire de
@@ -91,7 +91,7 @@ export function createApp() {
         }
         try {
           const platform = getPlatform(name);
-          const context = await getContext(name);
+          const context = await getContext(name, { user: req.query.user });
           sessions.push({
             platform: name,
             state: (await platform.isLoggedIn(context)) ? 'connectee' : 'expiree',
@@ -114,14 +114,14 @@ export function createApp() {
   app.post(
     '/login',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, email, password } = req.body || {};
+      const { platform: platformName, user, email, password } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!email || !password) {
         return res.status(400).json({ error: 'Identifiants incomplets.' });
       }
 
-      const context = await getContext(platformName);
+      const context = await getContext(platformName, { user });
       if (await platform.isLoggedIn(context)) {
         return res.json({ status: 'connected', message: 'Session déjà ouverte.' });
       }
@@ -152,7 +152,7 @@ export function createApp() {
   app.post(
     '/manual',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, target = 'plateforme' } = req.body || {};
+      const { platform: platformName, user, target = 'plateforme' } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!process.env.DISPLAY) {
@@ -176,7 +176,7 @@ export function createApp() {
         });
       }
 
-      const context = await getContext(platformName);
+      const context = await getContext(platformName, { user });
       // Un onglet par destination : garder la plateforme et Gmail ouverts côte
       // à côte est tout l'intérêt quand on attend un code de vérification.
       const page = target === 'plateforme' ? context.pages()[0] || (await context.newPage()) : await context.newPage();
@@ -203,7 +203,7 @@ export function createApp() {
     '/manual/:platform',
     asyncHandler(async (req, res) => {
       const platform = getPlatform(req.params.platform);
-      const context = await getContext(req.params.platform);
+      const context = await getContext(req.params.platform, { user: req.query.user });
       const connected = await platform.isLoggedIn(context);
       res.json({
         platform: req.params.platform,
@@ -219,10 +219,10 @@ export function createApp() {
   app.post(
     '/search',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, ...query } = req.body || {};
+      const { platform: platformName, user, ...query } = req.body || {};
       const platform = getPlatform(platformName);
 
-      const context = await getContext(platformName);
+      const context = await getContext(platformName, { user });
       const offers = await platform.search(context, query);
       res.json({ offers, total: offers.length, platform: platformName });
     })
@@ -238,14 +238,14 @@ export function createApp() {
   app.post(
     '/apply',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, offer, cv } = req.body || {};
+      const { platform: platformName, user, offer, cv } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!offer?.sourceUrl) {
         return res.status(400).json({ error: "L'offre n'a pas d'URL : impossible de candidater." });
       }
 
-      const context = await getContext(platformName);
+      const context = await getContext(platformName, { user });
       if (!(await platform.isLoggedIn(context))) {
         return res.status(409).json({
           error: `Aucune session ${platformName} ouverte. Connecte-toi depuis l'onglet Comptes.`,
@@ -269,8 +269,8 @@ export function createApp() {
     '/sessions/:platform',
     asyncHandler(async (req, res) => {
       getPlatform(req.params.platform);
-      if (req.query.purge === '1') await forgetContext(req.params.platform);
-      else await closeContext(req.params.platform);
+      if (req.query.purge === '1') await forgetContext(req.params.platform, req.query.user);
+      else await closeContext(req.params.platform, req.query.user);
       res.status(204).end();
     })
   );

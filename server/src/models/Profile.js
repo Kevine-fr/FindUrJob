@@ -101,6 +101,9 @@ const cvOptionsSchema = new mongoose.Schema(
 // reciblera pour chaque offre, et la source du CV exporté en PDF.
 const profileSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     fullName: { type: String, default: '' },
     headline: { type: String, default: '' }, // ex : "Développeur Full Stack / DevOps"
     email: { type: String, default: '' },
@@ -141,8 +144,8 @@ const profileSchema = new mongoose.Schema(
  * profil. La conversion passe donc par le driver brut, avant que le modèle ne
  * touche au document.
  */
-async function migrateLegacyLinks(model) {
-  const raw = await model.collection.findOne({});
+async function migrateLegacyLinks(model, user) {
+  const raw = await model.collection.findOne({ user });
   if (!raw || Array.isArray(raw.links)) return;
 
   const links = Object.entries(raw.links || {})
@@ -152,12 +155,10 @@ async function migrateLegacyLinks(model) {
   await model.collection.updateOne({ _id: raw._id }, { $set: { links } });
 }
 
-// Récupère l'unique profil (le crée vide si absent).
-profileSchema.statics.getSingleton = async function () {
-  await migrateLegacyLinks(this);
-  let profile = await this.findOne();
-  if (!profile) profile = await this.create({});
-  return profile;
+/** Le profil d'un compte (créé vide s'il n'existe pas encore). */
+profileSchema.statics.forUser = async function (user) {
+  await migrateLegacyLinks(this, new mongoose.Types.ObjectId(String(user)));
+  return (await this.findOne({ user })) || this.create({ user });
 };
 
 export default mongoose.model('Profile', profileSchema);

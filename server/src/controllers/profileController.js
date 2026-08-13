@@ -6,12 +6,12 @@ import { composeCv, extractCv } from '../services/tailoringService.js';
 const MIN_CV_CHARS = 120;
 
 export const getProfile = asyncHandler(async (req, res) => {
-  const profile = await Profile.getSingleton();
+  const profile = await Profile.forUser(req.user.id);
   res.json(profile);
 });
 
 export const updateProfile = asyncHandler(async (req, res) => {
-  const profile = await Profile.getSingleton();
+  const profile = await Profile.forUser(req.user.id);
   Object.assign(profile, req.body);
   await profile.save();
   res.json(profile);
@@ -42,7 +42,7 @@ export const uploadCv = asyncHandler(async (req, res) => {
     });
   }
 
-  const profile = await Profile.getSingleton();
+  const profile = await Profile.forUser(req.user.id);
   profile.masterCv = result.text;
   profile.cvFileName = filename;
   profile.cvUploadedAt = new Date();
@@ -57,7 +57,7 @@ export const uploadCv = asyncHandler(async (req, res) => {
 // POST /profile/compose — construit le CV à partir des champs du formulaire
 // et l'enregistre comme CV source.
 export const composeProfileCv = asyncHandler(async (req, res) => {
-  const profile = await Profile.getSingleton();
+  const profile = await Profile.forUser(req.user.id);
 
   // Le corps peut contenir des champs fraîchement saisis, pas encore enregistrés.
   if (req.body && Object.keys(req.body).length > 0) {
@@ -80,7 +80,7 @@ export const composeProfileCv = asyncHandler(async (req, res) => {
 
 // DELETE /profile/cv — retire le CV déposé, garde le reste du profil.
 export const deleteCv = asyncHandler(async (req, res) => {
-  const profile = await Profile.getSingleton();
+  const profile = await Profile.forUser(req.user.id);
   profile.masterCv = '';
   profile.cvFileName = '';
   profile.cvUploadedAt = undefined;

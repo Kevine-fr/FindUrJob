@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import * as auth from './controllers/authController.js';
+import * as admin from './controllers/adminController.js';
+import { requireAuth, requireAdmin } from './middleware.js';
 import * as offers from './controllers/offerController.js';
 import * as applications from './controllers/applicationController.js';
 import * as cv from './controllers/cvController.js';
@@ -14,6 +17,21 @@ const router = Router();
 router.get('/health', (req, res) =>
   res.json({ status: 'ok', service: 'findurjob-api', time: new Date().toISOString() })
 );
+
+// --- Authentification (seules routes ouvertes) --------------------------
+router.post('/auth/register', auth.register);
+router.post('/auth/login', auth.login);
+router.post('/auth/logout', auth.logout);
+router.get('/auth/me', auth.me);
+router.patch('/auth/me', requireAuth, auth.updateMe);
+
+/*
+ * Tout ce qui suit appartient à quelqu'un.
+ *
+ * La garde est posée ici, une fois, plutôt que route par route : un oubli sur
+ * une seule ligne exposerait les données d'un compte à un autre.
+ */
+router.use(requireAuth);
 
 // Offres
 router.get('/offers', offers.listOffers);
@@ -34,6 +52,12 @@ router.delete('/applications/:id', applications.deleteApplication);
 
 // Export PDF du CV : le front envoie le document, Chromium l'imprime.
 router.post('/cv/pdf', cvExport.exportCvPdf);
+
+// Administration : lecture de tout le flux et gestion des comptes.
+router.get('/admin/overview', requireAdmin, admin.overview);
+router.get('/admin/users', requireAdmin, admin.listUsers);
+router.patch('/admin/users/:id', requireAdmin, admin.updateUser);
+router.delete('/admin/users/:id', requireAdmin, admin.deleteUser);
 
 // Campagne automatique : rythme, garde-fous, exécution immédiate
 router.get('/campaign', campaign.getCampaign);

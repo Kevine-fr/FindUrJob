@@ -8,6 +8,9 @@ import PreferencesPage from './pages/PreferencesPage.jsx';
 import CvBuilderPage from './pages/CvBuilderPage.jsx';
 import AccountsPage from './pages/AccountsPage.jsx';
 import CampaignPage from './pages/CampaignPage.jsx';
+import LoginPage from './pages/LoginPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
+import { useAuth } from './lib/auth.jsx';
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
@@ -86,6 +89,17 @@ const NAV = [
   },
 ];
 
+const ADMIN_NAV = {
+  to: '/admin',
+  label: 'Administration',
+  icon: (
+    <svg viewBox="0 0 24 24" {...stroke}>
+      <path d="M12 3l8 3.5v5c0 4.6-3.2 8.4-8 9.5-4.8-1.1-8-4.9-8-9.5v-5L12 3z" />
+      <path d="M9.5 12l1.8 1.8L15 10" />
+    </svg>
+  ),
+};
+
 /**
  * Bouton d'installation.
  *
@@ -127,6 +141,7 @@ function InstallButton() {
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
+  const { user, ready, logout, isAdmin } = useAuth();
 
   // Changer de page ferme le tiroir : sinon il masque la page qu'on vient d'ouvrir.
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -152,6 +167,24 @@ export default function App() {
     </div>
   );
 
+  /*
+   * La session vit dans un cookie que le JavaScript ne peut pas lire : son état
+   * arrive du serveur. Tant qu'il n'est pas connu, on n'affiche ni l'écran de
+   * connexion (qui clignoterait devant quelqu'un de déjà connecté) ni
+   * l'application (qui déclencherait des appels voués au 401).
+   */
+  if (!ready) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-splash">
+          <img src="/favicon.svg" alt="" width="44" height="44" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -174,7 +207,7 @@ export default function App() {
 
       <aside className={`sidebar${menuOpen ? ' is-open' : ''}`}>
         {brand}
-        {NAV.map((item) => (
+        {[...NAV, ...(isAdmin ? [ADMIN_NAV] : [])].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -186,7 +219,15 @@ export default function App() {
         ))}
         <div className="nav-spacer" />
         <InstallButton />
-        <div className="nav-foot">Copilote de candidatures</div>
+        <div className="nav-foot">
+          <div className="nav-user" title={user?.email}>
+            <span className="nav-avatar">{(user?.fullName || user?.email || '?').charAt(0).toUpperCase()}</span>
+            <span className="nav-user-name">{user?.fullName || user?.email}</span>
+          </div>
+          <button className="btn btn-ghost btn-sm btn-block" onClick={logout}>
+            Se déconnecter
+          </button>
+        </div>
       </aside>
 
       <main className="main">
@@ -202,6 +243,12 @@ export default function App() {
             <Route path="/campagne" element={<CampaignPage />} />
             <Route path="/comptes" element={<AccountsPage />} />
             <Route path="/mon-cv" element={<CvBuilderPage />} />
+            {/* La console n'existe que pour un administrateur : sans ce garde,
+                l'URL suffirait à en afficher la coquille (l'API, elle, refuse). */}
+            <Route
+              path="/admin"
+              element={isAdmin ? <AdminPage /> : <Navigate to="/offres" replace />}
+            />
             {/* Ancienne adresse du profil : on redirige plutôt que de casser un signet. */}
             <Route path="/profil" element={<Navigate to="/mon-cv" replace />} />
           </Routes>

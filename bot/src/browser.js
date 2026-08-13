@@ -72,12 +72,25 @@ async function clearStaleLocks(dir) {
   );
 }
 
-export function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
-  const existing = contexts.get(platform);
+/**
+ * Clé de profil : un dossier par couple (compte, plateforme).
+ *
+ * Sans le compte dans le chemin, la session LinkedIn du premier utilisateur
+ * servirait à tous les autres — et candidaterait en son nom. L'identifiant est
+ * filtré : il vient d'une requête, et compose un chemin de fichier.
+ */
+function profileKey(platform, user) {
+  const compte = String(user || 'partage').replace(/[^a-zA-Z0-9_-]/g, '');
+  return `${compte || 'partage'}/${platform}`;
+}
+
+export function getContext(platform, { headless = !process.env.DISPLAY, user } = {}) {
+  const cle = profileKey(platform, user);
+  const existing = contexts.get(cle);
   if (existing) return existing;
 
   const launching = (async () => {
-    const dir = path.join(PROFILE_ROOT, platform);
+    const dir = path.join(PROFILE_ROOT, cle);
     await fs.mkdir(dir, { recursive: true });
     await clearStaleLocks(dir);
 
@@ -101,7 +114,7 @@ export function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
     });
 
     context.setDefaultTimeout(30_000);
-    context.on('close', () => contexts.delete(platform));
+    context.on('close', () => contexts.delete(cle));
     return context;
   })();
 
@@ -113,20 +126,21 @@ export function getContext(platform, { headless = !process.env.DISPLAY } = {}) {
    * la même plateforme lançaient deux Chromium sur le même dossier de profil,
    * et le second échouait sur le verrou.
    */
-  contexts.set(platform, launching);
+  contexts.set(cle, launching);
 
   // Un lancement raté ne doit pas rester en cache, sinon la plateforme est
   // définitivement cassée jusqu'au redémarrage du service.
-  launching.catch(() => contexts.delete(platform));
+  launching.catch(() => contexts.delete(cle));
 
   return launching;
 }
 
 /** Ferme la session d'une plateforme sans effacer ses cookies. */
-export async function closeContext(platform) {
-  const pending = contexts.get(platform);
+export async function closeContext(platform, user) {
+  const cle = profileKey(platform, user);
+  const pending = contexts.get(cle);
   if (!pending) return false;
-  contexts.delete(platform);
+  contexts.delete(cle);
 
   // `pending` est une promesse : un lancement en cours doit aboutir avant
   // d'être fermé, sinon le navigateur survit au retrait du cache.
@@ -136,23 +150,26 @@ export async function closeContext(platform) {
 }
 
 /** Déconnexion réelle : le profil sur disque est supprimé. */
-export async function forgetContext(platform) {
-  await closeContext(platform);
-  await fs.rm(path.join(PROFILE_ROOT, platform), { recursive: true, force: true });
+export async function forgetContext(platform, user) {
+  await closeContext(platform, user);
+  await fs.rm(path.join(PROFILE_ROOT, profileKey(platform, user)), { recursive: true, force: true });
 }
 
-/** Plateformes ayant déjà un profil sur disque. */
-export async function knownProfiles() {
+/** Plateformes déjà connues d’un compte (dossiers présents sur disque). */
+export async function knownProfiles(user) {
   try {
-    const entries = await fs.readdir(PROFILE_ROOT, { withFileTypes: true });
-    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const racine = path.join(PROFILE_ROOT, profileKey("", user).split("/")[0]);
+    const entries = await fs.readdir(racine, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
+    // Dossier absent : ce compte n’a simplement jamais ouvert de session.
     return [];
   }
 }
 
 export async function shutdown() {
-  await Promise.all([...contexts.keys()].map(closeContext));
+  await Promise.all([...contexts.values()].map(async (p) => { const c = await p.catch(() => null); if (c) await c.close().catch(() => {}); }));
+  contexts.clear();
   if (renderBrowser?.isConnected()) await renderBrowser.close().catch(() => {});
   renderBrowser = null;
 }

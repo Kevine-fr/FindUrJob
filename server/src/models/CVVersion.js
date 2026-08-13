@@ -5,6 +5,9 @@ import { CV_KINDS } from '../utils/constants.js';
 // produite par le moteur IA pour une offre précise.
 const cvVersionSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     label: { type: String, required: true, trim: true },
     kind: { type: String, enum: CV_KINDS, default: 'cible' },
     offer: { type: mongoose.Schema.Types.ObjectId, ref: 'JobOffer' }, // rempli si ciblé

@@ -7,23 +7,23 @@ export const listCvVersions = asyncHandler(async (req, res) => {
   const { kind } = req.query;
   const filter = {};
   if (kind) filter.kind = kind;
-  const cvs = await CVVersion.find(filter).populate('offer').sort({ createdAt: -1 });
+  const cvs = await CVVersion.find({ ...filter, user: req.user.id }).populate('offer').sort({ createdAt: -1 });
   res.json(cvs);
 });
 
 export const getCvVersion = asyncHandler(async (req, res) => {
-  const cv = await CVVersion.findById(req.params.id).populate('offer');
+  const cv = await CVVersion.findOne({ _id: req.params.id, user: req.user.id }).populate('offer');
   if (!cv) return res.status(404).json({ error: 'CV introuvable' });
   res.json(cv);
 });
 
 export const createCvVersion = asyncHandler(async (req, res) => {
-  const cv = await CVVersion.create(req.body);
+  const cv = await CVVersion.create({ ...req.body, user: req.user.id });
   res.status(201).json(cv);
 });
 
 export const deleteCvVersion = asyncHandler(async (req, res) => {
-  const cv = await CVVersion.findByIdAndDelete(req.params.id);
+  const cv = await CVVersion.findOneAndDelete({ _id: req.params.id, user: req.user.id });
   if (!cv) return res.status(404).json({ error: 'CV introuvable' });
   res.status(204).end();
 });
@@ -39,7 +39,7 @@ export const deleteCvVersion = asyncHandler(async (req, res) => {
  * `?download=1` force le téléchargement plutôt que l'affichage.
  */
 export const getCvVersionPdf = asyncHandler(async (req, res) => {
-  const cv = await CVVersion.findById(req.params.id).select('+pdf');
+  const cv = await CVVersion.findOne({ _id: req.params.id, user: req.user.id }).select('+pdf');
   if (!cv) return res.status(404).json({ error: 'CV introuvable' });
 
   let pdf = cv.pdf?.length ? cv.pdf : null;

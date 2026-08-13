@@ -25,6 +25,9 @@ const targetSchema = new mongoose.Schema(
  */
 const campaignSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     enabled: { type: Boolean, default: false },
 
     // Expression cron standard (minute heure jour mois jour-semaine).
@@ -69,8 +72,8 @@ const campaignSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-campaignSchema.statics.getSingleton = async function () {
-  return (await this.findOne()) || this.create({});
+campaignSchema.statics.forUser = async function (user) {
+  return (await this.findOne({ user })) || this.create({ user });
 };
 
 /** Ce qu'il reste à faire aujourd'hui, compte tenu du plafond quotidien. */

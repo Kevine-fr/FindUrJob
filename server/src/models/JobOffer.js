@@ -5,6 +5,9 @@ import { SOURCES, CONTRACT_TYPES, REMOTE } from '../utils/constants.js';
 // est modélisé séparément par Application.
 const jobOfferSchema = new mongoose.Schema(
   {
+    // Propriétaire : toute donnée appartient à un compte. Indexé, car chaque
+    // lecture filtre dessus.
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     title: { type: String, required: true, trim: true },
     company: { type: String, trim: true },
     location: { type: String, trim: true },

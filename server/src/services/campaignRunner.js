@@ -19,8 +19,9 @@ import { BOT_PLATFORMS } from '../utils/constants.js';
  * La fonction ne lève jamais : une campagne qui échoue doit laisser une trace
  * lisible dans la page, pas faire tomber le planificateur.
  */
-export async function runCampaign({ trigger = 'planifié' } = {}) {
-  const campaign = await Campaign.getSingleton();
+export async function runCampaign({ user, trigger = 'planifié' } = {}) {
+  if (!user) throw new Error("runCampaign : utilisateur manquant.");
+  const campaign = await Campaign.forUser(user);
 
   // Deux exécutions ne doivent pas se chevaucher : une recherche multi-sources
   // peut durer plusieurs minutes, bien plus que l'intervalle le plus court.
@@ -49,14 +50,14 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
 
   try {
     const [profile, prefs] = await Promise.all([
-      Profile.getSingleton(),
-      SearchPreference.getSingleton(),
+      Profile.forUser(user),
+      SearchPreference.forUser(user),
     ]);
 
     // Les offres déjà suivies ne sont pas re-candidatées.
-    const known = await Application.find().distinct('offer');
+    const known = await Application.find({ user }).distinct('offer');
 
-    const baseFilter = { _id: { $nin: known } };
+    const baseFilter = { _id: { $nin: known }, user };
     if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
     if (prefs.remotes?.length) baseFilter.remote = { $in: prefs.remotes };
 
@@ -107,6 +108,7 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
 
           const at = offer.company ? ` @ ${offer.company}` : '';
           const cv = await CVVersion.create({
+            user,
             label: `CV — ${offer.title}${at}`,
             kind: 'cible',
             offer: offer._id,
@@ -137,6 +139,7 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
           }
 
           const application = await Application.create({
+            user,
             offer: offer._id,
             status: 'a_postuler',
             cvVersion: cv._id,
@@ -178,7 +181,7 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
             const outcome = await botApply(source, offer, {
               filename: `CV-${(profile.fullName || 'candidat').replace(/\s+/g, '-')}.pdf`,
               content: cvPdf.toString('base64'),
-            });
+            }, user);
 
             if (outcome.status === 'sent') {
               application.status = 'postule';

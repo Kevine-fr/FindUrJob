@@ -21,13 +21,13 @@ const publicView = (campaign) => ({
   })),
 });
 
-export const getCampaign = asyncHandler(async (_req, res) => {
-  res.json(publicView(await Campaign.getSingleton()));
+export const getCampaign = asyncHandler(async (req, res) => {
+  res.json(publicView(await Campaign.forUser(req.user.id)));
 });
 
 /** PUT /campaign — enregistre les réglages et reprogramme dans la foulée. */
 export const updateCampaign = asyncHandler(async (req, res) => {
-  const campaign = await Campaign.getSingleton();
+  const campaign = await Campaign.forUser(req.user.id);
   const { enabled, cron: expression, timezone, mode, dailyLimit, minScore, targets } =
     req.body || {};
 
@@ -64,7 +64,7 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   await campaign.save();
   await reschedule();
 
-  res.json(publicView(await Campaign.getSingleton()));
+  res.json(publicView(await Campaign.forUser(req.user.id)));
 });
 
 /**
@@ -73,7 +73,7 @@ export const updateCampaign = asyncHandler(async (req, res) => {
  * Le même code que la version planifiée : c'est le seul moyen honnête de
  * vérifier ce que fera la campagne cette nuit.
  */
-export const runNow = asyncHandler(async (_req, res) => {
-  const summary = await runCampaign({ trigger: 'manuel' });
-  res.json({ summary, campaign: publicView(await Campaign.getSingleton()) });
+export const runNow = asyncHandler(async (req, res) => {
+  const summary = await runCampaign({ user: req.user.id, trigger: 'manuel' });
+  res.json({ summary, campaign: publicView(await Campaign.forUser(req.user.id)) });
 });

@@ -104,6 +104,11 @@ services:
       # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
       # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
+      # Signature des sessions. Sans elle, aucun compte ne peut être ouvert.
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # Origines autorisées à porter un cookie de session (application + admin).
+      # Obligatoire avec des cookies : le navigateur refuse le joker.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - NODE_ENV=production
     expose:
       - "4000"

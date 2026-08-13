@@ -62,6 +62,8 @@ jobs:
 
           cat > .env << 'ENVEOF'
           CREDENTIALS_KEY=${{ secrets.CREDENTIALS_KEY }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}
           ENVEOF
 
           # Version calculee plus haut : ajoutee hors du heredoc (qui est quote

@@ -85,32 +85,33 @@ export async function renderCvPdf(html) {
   };
 }
 
-export const botSessions = () => json('/sessions', { method: 'GET' });
+export const botSessions = (user) => json(`/sessions?user=${encodeURIComponent(user)}`, { method: 'GET' });
 
-export const botLogin = (platform, email, password) =>
-  json('/login', { body: { platform, email, password }, timeout: 120_000 });
+export const botLogin = (platform, email, password, user) =>
+  json('/login', { body: { platform, user, email, password }, timeout: 120_000 });
 
-export const botSearch = (platform, query) => json('/search', { body: { platform, ...query } });
+export const botSearch = (platform, query, user) =>
+  json('/search', { body: { platform, user, ...query } });
 
 /**
  * Candidate sur la plateforme, CV joint.
  * `cv` : { filename, content } où `content` est le PDF en base64 — il voyage
  * dans la requête, faute de disque partagé entre le serveur et le bot.
  */
-export const botApply = (platform, offer, cv) =>
-  json('/apply', { body: { platform, offer, cv }, timeout: 240_000 });
+export const botApply = (platform, offer, cv, user) =>
+  json('/apply', { body: { platform, user, offer, cv }, timeout: 240_000 });
 
 /**
  * Ouvre une page sur l'écran du conteneur, pour reprise en main.
  * `target` : plateforme | google | gmail — toujours dans le navigateur de la
  * plateforme visée, seul endroit où les cookies Google lui serviront.
  */
-export const botManualOpen = (platform, target = 'plateforme') =>
-  json('/manual', { body: { platform, target }, timeout: 60_000 });
+export const botManualOpen = (platform, target = 'plateforme', user) =>
+  json('/manual', { body: { platform, user, target }, timeout: 60_000 });
 
 /** La plateforme reconnaît-elle la session que l'utilisateur vient d'ouvrir ? */
-export const botManualStatus = (platform) =>
-  json(`/manual/${platform}`, { method: 'GET', timeout: 60_000 });
+export const botManualStatus = (platform, user) =>
+  json(`/manual/${platform}?user=${encodeURIComponent(user)}`, { method: 'GET', timeout: 60_000 });
 
 /** État du bot, dont la disponibilité de la reprise en main. */
 export const botHealth = () => json('/health', { method: 'GET', timeout: 10_000 });
@@ -122,7 +123,7 @@ export const botHealth = () => json('/health', { method: 'GET', timeout: 10_000 
  */
 export const botVncUrl = () => process.env.BOT_VNC_URL || '';
 
-export const botForget = (platform, purge = false) =>
-  call(`/sessions/${platform}${purge ? '?purge=1' : ''}`, { method: 'DELETE', timeout: 30_000 });
+export const botForget = (platform, purge = false, user) =>
+  call(`/sessions/${platform}?user=${encodeURIComponent(user)}${purge ? '&purge=1' : ''}`, { method: 'DELETE', timeout: 30_000 });
 
 export const botConfigured = () => Boolean(botUrl());

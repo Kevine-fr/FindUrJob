@@ -6,6 +6,9 @@ export const API_BASE = BASE;
 
 async function req(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    // Sans cela, le navigateur n'envoie pas le cookie de session sur une
+    // requête vers une autre origine — l'API répondrait 401 en permanence.
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -20,6 +23,7 @@ async function req(path, options = {}) {
 async function upload(path, file) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': file.type || 'application/octet-stream',
       'X-Filename': encodeURIComponent(file.name),
@@ -41,6 +45,7 @@ async function upload(path, file) {
 async function pdf(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -63,6 +68,16 @@ async function pdf(path, body) {
 
 export const api = {
   health: () => req('/health'),
+
+  auth: {
+    me: () => req('/auth/me'),
+    login: (email, password) =>
+      req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    register: (body) =>
+      req('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+    logout: () => req('/auth/logout', { method: 'POST' }),
+    update: (body) => req('/auth/me', { method: 'PATCH', body: JSON.stringify(body) }),
+  },
 
   offers: {
     // Réponse paginée : { offers, total, page, pages, limit }
@@ -131,6 +146,13 @@ export const api = {
         body: JSON.stringify({ target }),
       }),
     checkManual: (platform) => req(`/accounts/${platform}/manual`),
+  },
+
+  admin: {
+    overview: (days = 30) => req(`/admin/overview?days=${days}`),
+    users: () => req('/admin/users'),
+    updateUser: (id, body) => req(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    deleteUser: (id) => req(`/admin/users/${id}`, { method: 'DELETE' }),
   },
 
   campaign: {

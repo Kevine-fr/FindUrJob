@@ -55,85 +55,148 @@ export async function runCampaign({ trigger = 'planifié' } = {}) {
     // Les offres déjà suivies ne sont pas re-candidatées.
     const known = await Application.find().distinct('offer');
 
-    // On part des offres déjà en base : la synchronisation des sources est un
-    // geste séparé, pour que la campagne reste rapide et prévisible.
-    const filter = { _id: { $nin: known } };
-    if (prefs.contractTypes?.length) filter.contractType = { $in: prefs.contractTypes };
-    if (prefs.remotes?.length) filter.remote = { $in: prefs.remotes };
+    const baseFilter = { _id: { $nin: known } };
+    if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
+    if (prefs.remotes?.length) baseFilter.remote = { $in: prefs.remotes };
 
-    const budget = Math.min(campaign.perRun, left);
-    // On en examine plus que le budget : beaucoup seront écartées au score.
-    const candidates = await JobOffer.find(filter).sort({ createdAt: -1 }).limit(budget * 6);
+    // Une file par source, chacune avec son propre quota. On part des offres
+    // déjà en base : la synchronisation est un geste séparé, pour que la
+    // campagne reste rapide et prévisible.
+    const wanted = (campaign.targets || []).filter((target) => target.limit > 0);
+    if (!wanted.length) {
+      campaign.lastResult = 'Aucune source activée : rien à faire.';
+      return { ...summary, skipped: 'aucune source activée' };
+    }
 
-    for (const offer of candidates) {
-      if (summary.prepared + summary.sent >= budget) break;
-      summary.examined += 1;
+    let budget = left;
+    const candidates = [];
 
-      try {
-        // Le score vient du moteur IA, avec le CV ciblé : une seule passe.
-        const result = await tailorCv({ offer, profile });
-        const score = typeof result.score === 'number' ? result.score : 0;
+    for (const target of wanted) {
+      if (budget <= 0) break;
+      const take = Math.min(target.limit, budget);
+      // On en tire plus que le quota : beaucoup seront écartées au score.
+      const pool = await JobOffer.find({ ...baseFilter, source: target.source })
+        .sort({ createdAt: -1 })
+        .limit(take * 6);
+      candidates.push({ source: target.source, quota: take, pool });
+      budget -= take;
+    }
 
-        if (score < campaign.minScore) {
-          summary.belowScore += 1;
-          continue;
+    summary.perSource = {};
+
+    for (const { source, quota, pool } of candidates) {
+      let done = 0;
+      summary.perSource[source] = { prepared: 0, sent: 0, manual: 0, belowScore: 0 };
+
+      for (const offer of pool) {
+        if (done >= quota) break;
+        if (summary.prepared + summary.sent >= left) break;
+        summary.examined += 1;
+
+        try {
+          // Le score vient du moteur IA, avec le CV ciblé : une seule passe.
+          const result = await tailorCv({ offer, profile });
+          const score = typeof result.score === 'number' ? result.score : 0;
+
+          if (score < campaign.minScore) {
+            summary.belowScore += 1;
+            summary.perSource[source].belowScore += 1;
+            continue;
+          }
+
+          const at = offer.company ? ` @ ${offer.company}` : '';
+          const cv = await CVVersion.create({
+            label: `CV — ${offer.title}${at}`,
+            kind: 'cible',
+            offer: offer._id,
+            content: result.content,
+            score,
+          });
+
+          const application = await Application.create({
+            offer: offer._id,
+            status: 'a_postuler',
+            cvVersion: cv._id,
+            coverLetter: result.coverLetter,
+            matchScore: score,
+            notes: `Préparée automatiquement (campagne ${trigger}).`,
+          });
+
+          done += 1;
+
+          // Seules les plateformes pilotées au navigateur peuvent envoyer :
+          // ailleurs, l'annonce renvoie vers un site tiers sans session.
+          const sendable =
+            campaign.mode === 'envoyer' && botConfigured() && BOT_PLATFORMS.includes(source);
+
+          if (!sendable) {
+            summary.prepared += 1;
+            summary.perSource[source].prepared += 1;
+            continue;
+          }
+
+          /*
+           * L'envoi a son propre filet.
+           *
+           * Une session fermée ou un formulaire inattendu ne doit pas effacer le
+           * travail déjà fait : la candidature est préparée, elle reste en
+           * « à postuler » avec la raison écrite dessus, et elle compte dans le
+           * bilan. Sans cette séparation, une erreur d'envoi faisait disparaître
+           * du résumé une candidature pourtant bien créée.
+           */
+          try {
+            const outcome = await botApply(source, offer);
+            if (outcome.status === 'sent') {
+              application.status = 'postule';
+              application.appliedAt = new Date();
+              application.timeline.push({ status: 'postule', note: 'Envoyée par la campagne.' });
+              summary.sent += 1;
+              summary.perSource[source].sent += 1;
+            } else {
+              // « manual » : la plateforme demande des réponses qu'on ne devine pas.
+              application.notes += ` — à finir à la main : ${outcome.message || ''}`;
+              application.timeline.push({
+                status: 'a_postuler',
+                note: outcome.message || 'À finir à la main.',
+              });
+              summary.manual += 1;
+              summary.perSource[source].manual += 1;
+            }
+          } catch (sendError) {
+            application.notes += ` — envoi impossible : ${sendError.message}`;
+            application.timeline.push({ status: 'a_postuler', note: sendError.message });
+            summary.prepared += 1;
+            summary.perSource[source].prepared += 1;
+            summary.errors.push(`${source} : ${sendError.message}`);
+          }
+
+          await application.save();
+        } catch (error) {
+          // Une offre qui échoue ne doit pas emporter la passe entière.
+          summary.errors.push(`${source} · ${offer.title?.slice(0, 32)} : ${error.message}`);
         }
-
-        const at = offer.company ? ` @ ${offer.company}` : '';
-        const cv = await CVVersion.create({
-          label: `CV — ${offer.title}${at}`,
-          kind: 'cible',
-          offer: offer._id,
-          content: result.content,
-          score,
-        });
-
-        const application = await Application.create({
-          offer: offer._id,
-          status: 'a_postuler',
-          cvVersion: cv._id,
-          coverLetter: result.coverLetter,
-          matchScore: score,
-          notes: `Préparée automatiquement (campagne ${trigger}).`,
-        });
-
-        const sendable =
-          campaign.mode === 'envoyer' &&
-          botConfigured() &&
-          BOT_PLATFORMS.includes(offer.source) &&
-          campaign.platforms.includes(offer.source);
-
-        if (!sendable) {
-          summary.prepared += 1;
-          continue;
-        }
-
-        const outcome = await botApply(offer.source, offer);
-        if (outcome.status === 'sent') {
-          application.status = 'postule';
-          application.appliedAt = new Date();
-          application.timeline.push({ status: 'postule', note: 'Envoyée par la campagne.' });
-          summary.sent += 1;
-        } else {
-          // « manual » : la plateforme demande des réponses qu'on ne devine pas.
-          application.notes += ` — à finir à la main : ${outcome.message || ''}`;
-          application.timeline.push({ status: 'a_postuler', note: outcome.message || 'À finir à la main.' });
-          summary.manual += 1;
-        }
-        await application.save();
-      } catch (error) {
-        // Une offre qui échoue ne doit pas emporter la passe entière.
-        summary.errors.push(`${offer.title?.slice(0, 40)} : ${error.message}`);
       }
     }
 
-    const done = summary.prepared + summary.sent;
-    if (done > 0) campaign.consume(done);
+    const total = summary.prepared + summary.sent;
+    if (total > 0) campaign.consume(total);
+
+    // Le détail par source est ce qui permet de voir qu'une plateforme
+    // n'envoie jamais — un total agrégé le masquerait.
+    const detail = Object.entries(summary.perSource)
+      .filter(([, counts]) => counts.prepared || counts.sent || counts.manual)
+      .map(([name, counts]) => {
+        const bits = [
+          counts.sent && `${counts.sent} envoyée(s)`,
+          counts.prepared && `${counts.prepared} préparée(s)`,
+          counts.manual && `${counts.manual} à finir`,
+        ].filter(Boolean);
+        return `${name} : ${bits.join(', ')}`;
+      });
 
     campaign.lastResult =
-      `${summary.examined} offre(s) examinée(s) · ${summary.prepared} préparée(s) · ` +
-      `${summary.sent} envoyée(s)` +
-      (summary.manual ? ` · ${summary.manual} à finir à la main` : '') +
+      `${summary.examined} offre(s) examinée(s)` +
+      (detail.length ? ` — ${detail.join(' · ')}` : ' — aucune retenue') +
       (summary.belowScore ? ` · ${summary.belowScore} sous le seuil` : '');
     campaign.lastError = summary.errors.slice(0, 3).join(' | ');
   } catch (error) {

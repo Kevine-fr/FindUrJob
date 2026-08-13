@@ -1,5 +1,21 @@
 import mongoose from 'mongoose';
-import { BOT_PLATFORMS } from '../utils/constants.js';
+import { BOT_PLATFORMS, SOURCES } from '../utils/constants.js';
+
+/**
+ * Combien de candidatures viser par source, à chaque exécution.
+ *
+ * `limit: 0` (ou source absente) = source ignorée. Toutes les sources sont
+ * réglables, mais seules celles pilotées au navigateur peuvent réellement
+ * *envoyer* : les autres s'arrêtent au brouillon relu à la main, faute de
+ * session sur laquelle candidater.
+ */
+const targetSchema = new mongoose.Schema(
+  {
+    source: { type: String, enum: SOURCES, required: true },
+    limit: { type: Number, default: 0, min: 0, max: 50 },
+  },
+  { _id: false }
+);
 
 /**
  * La campagne automatique : ce que le robot fait, quand, et jusqu'où.
@@ -26,20 +42,19 @@ const campaignSchema = new mongoose.Schema(
      */
     mode: { type: String, enum: ['preparer', 'envoyer'], default: 'preparer' },
 
-    // Garde-fous de volume : par exécution, et par jour toutes exécutions confondues.
-    perRun: { type: Number, default: 5, min: 1, max: 50 },
+    // Volume visé, source par source. Le total tenté à chaque exécution est la
+    // somme de ces limites, plafonnée par `dailyLimit`.
+    targets: {
+      type: [targetSchema],
+      default: () => BOT_PLATFORMS.map((source) => ({ source, limit: 3 })),
+    },
+
+    // Plafond global de la journée, toutes exécutions et sources confondues.
     dailyLimit: { type: Number, default: 10, min: 1, max: 100 },
 
     // En dessous de ce score de correspondance, l'offre est ignorée : mieux
     // vaut trois candidatures pertinentes que trente hors sujet.
     minScore: { type: Number, default: 60, min: 0, max: 100 },
-
-    // Plateformes sur lesquelles l'envoi est autorisé (mode « envoyer »).
-    platforms: {
-      type: [String],
-      enum: BOT_PLATFORMS,
-      default: () => [...BOT_PLATFORMS],
-    },
 
     // Suivi de la dernière exécution, pour que la page dise ce qui s'est passé.
     lastRunAt: { type: Date },

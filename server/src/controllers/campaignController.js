@@ -3,24 +3,22 @@ import Campaign from '../models/Campaign.js';
 import { asyncHandler } from '../middleware.js';
 import { runCampaign } from '../services/campaignRunner.js';
 import { reschedule, describeSchedule } from '../scheduler.js';
-import { BOT_PLATFORMS } from '../utils/constants.js';
+import { BOT_PLATFORMS, SOURCES } from '../utils/constants.js';
 
-// Rythmes proposés dans l'interface : le champ `cron` reste libre pour qui
-// veut autre chose, mais personne ne devrait avoir à écrire du cron pour
-// « tous les matins ».
-export const PRESETS = [
-  { id: 'quotidien-matin', label: 'Chaque matin (9h)', cron: '0 9 * * *' },
-  { id: 'ouvres-matin', label: 'Du lundi au vendredi (9h)', cron: '0 9 * * 1-5' },
-  { id: 'ouvres-2x', label: 'Du lundi au vendredi (9h et 17h)', cron: '0 9,17 * * 1-5' },
-  { id: 'toutes-4h', label: 'Toutes les 4 heures', cron: '0 */4 * * *' },
-  { id: 'hebdo', label: 'Chaque lundi (9h)', cron: '0 9 * * 1' },
-];
-
+/**
+ * Vue publique enrichie de ce que le front ne peut pas deviner : quelles
+ * sources existent, et lesquelles savent réellement envoyer une candidature.
+ */
 const publicView = (campaign) => ({
   ...campaign.toObject(),
   remainingToday: campaign.remainingToday().left,
   schedule: describeSchedule(),
-  presets: PRESETS,
+  sources: SOURCES.filter((source) => source !== 'autre').map((source) => ({
+    source,
+    // Ailleurs, l'annonce renvoie vers un site tiers : on peut préparer le
+    // dossier, pas l'envoyer.
+    canSend: BOT_PLATFORMS.includes(source),
+  })),
 });
 
 export const getCampaign = asyncHandler(async (_req, res) => {
@@ -30,7 +28,7 @@ export const getCampaign = asyncHandler(async (_req, res) => {
 /** PUT /campaign — enregistre les réglages et reprogramme dans la foulée. */
 export const updateCampaign = asyncHandler(async (req, res) => {
   const campaign = await Campaign.getSingleton();
-  const { enabled, cron: expression, timezone, mode, perRun, dailyLimit, minScore, platforms } =
+  const { enabled, cron: expression, timezone, mode, dailyLimit, minScore, targets } =
     req.body || {};
 
   if (expression !== undefined) {
@@ -47,11 +45,20 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   if (enabled !== undefined) campaign.enabled = Boolean(enabled);
   if (timezone) campaign.timezone = timezone;
   if (mode) campaign.mode = mode;
-  if (perRun !== undefined) campaign.perRun = Number(perRun);
-  if (dailyLimit !== undefined) campaign.dailyLimit = Number(dailyLimit);
-  if (minScore !== undefined) campaign.minScore = Number(minScore);
-  if (Array.isArray(platforms)) {
-    campaign.platforms = platforms.filter((name) => BOT_PLATFORMS.includes(name));
+
+  // Les nombres arrivent parfois vides d'un champ de saisie effacé : on retombe
+  // sur la valeur en place plutôt que d'écrire NaN en base.
+  const asNumber = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+  if (dailyLimit !== undefined) campaign.dailyLimit = asNumber(dailyLimit, campaign.dailyLimit);
+  if (minScore !== undefined) campaign.minScore = asNumber(minScore, campaign.minScore);
+
+  if (Array.isArray(targets)) {
+    campaign.targets = targets
+      .filter((target) => SOURCES.includes(target?.source))
+      .map((target) => ({
+        source: target.source,
+        limit: Math.max(0, Math.min(50, asNumber(target.limit, 0))),
+      }));
   }
 
   await campaign.save();

@@ -3,7 +3,7 @@ import SearchPreference from '../models/SearchPreference.js';
 import { asyncHandler } from '../middleware.js';
 import { searchOffers } from '../services/tailoringService.js';
 import { botSearch, botConfigured } from '../services/botService.js';
-import { SOURCES, CONTRACT_TYPES, REMOTE, BOT_PLATFORMS } from '../utils/constants.js';
+import { SOURCES, CONTRACT_TYPES, REMOTE, BOT_SEARCH_SOURCES } from '../utils/constants.js';
 
 // Les filtres arrivent en valeurs multiples séparées par des virgules :
 //   ?contractType=cdi,alternance&remote=teletravail,hybride
@@ -117,8 +117,8 @@ const sanitize = (offer) => ({
  * donc rapporter 250 offres. C'est l'intérêt d'agréger.
  */
 async function gather(criteria, wantedSources) {
-  const apiSources = wantedSources.filter((source) => !BOT_PLATFORMS.includes(source));
-  const botPlatforms = wantedSources.filter((source) => BOT_PLATFORMS.includes(source));
+  const apiSources = wantedSources.filter((source) => !BOT_SEARCH_SOURCES.includes(source));
+  const botPlatforms = wantedSources.filter((source) => BOT_SEARCH_SOURCES.includes(source));
 
   const tasks = [];
 
@@ -133,7 +133,11 @@ async function gather(criteria, wantedSources) {
   }
 
   if (botConfigured()) {
-    const platforms = botPlatforms.length ? botPlatforms : !wantedSources.length ? BOT_PLATFORMS : [];
+    const platforms = botPlatforms.length
+      ? botPlatforms
+      : !wantedSources.length
+        ? BOT_SEARCH_SOURCES
+        : [];
     for (const platform of platforms) {
       tasks.push(
         botSearch(platform, criteria).then(

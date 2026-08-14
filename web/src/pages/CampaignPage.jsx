@@ -17,12 +17,23 @@ const HEURES = [6, 7, 8, 9, 10, 12, 14, 17, 19, 21];
  */
 function NumberField({ value, onChange, min = 0, max = 99, className = 'input', style }) {
   const [text, setText] = useState(String(value ?? ''));
+  // Tant que le champ a le focus, la frappe est souveraine : aucune valeur
+  // venue d'ailleurs ne vient la réécrire sous les doigts.
+  const [saisie, setSaisie] = useState(false);
 
-  useEffect(() => setText(String(value ?? '')), [value]);
+  useEffect(() => {
+    if (!saisie) setText(String(value ?? ''));
+  }, [value, saisie]);
 
   const commit = () => {
+    setSaisie(false);
+    // Champ vidé : on ne devine pas une intention, on remet la valeur en place.
+    if (text.trim() === '') {
+      setText(String(value ?? ''));
+      return;
+    }
     const parsed = Number(text);
-    const safe = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
+    const safe = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : value;
     setText(String(safe));
     if (safe !== value) onChange(safe);
   };
@@ -36,13 +47,22 @@ function NumberField({ value, onChange, min = 0, max = 99, className = 'input', 
       min={min}
       max={max}
       value={text}
+      onFocus={() => setSaisie(true)}
       onChange={(event) => {
         setText(event.target.value);
+
+        /*
+         * On ne remonte que ce qui tient déjà dans les bornes.
+         *
+         * Auparavant la valeur était bornée à chaque touche puis renvoyée au
+         * parent, qui la réinjectait : taper « 150 » affichait « 100 » dès la
+         * troisième touche, et le champ semblait refuser toute modification.
+         * Hors bornes, on laisse la frappe se poursuivre et on tranche à la
+         * sortie du champ, une seule fois.
+         */
         const parsed = Number(event.target.value);
-        // On remonte la valeur au fil de la frappe quand elle est valide,
-        // pour que l'aperçu suive — mais sans jamais réécrire la saisie.
-        if (event.target.value !== '' && Number.isFinite(parsed)) {
-          onChange(Math.min(max, Math.max(min, parsed)));
+        if (event.target.value !== '' && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+          onChange(parsed);
         }
       }}
       onBlur={commit}
@@ -114,7 +134,16 @@ export default function CampaignPage() {
       );
       setCampaign(updated);
     } catch {
-      /* déjà signalé */
+      /*
+       * L'enregistrement a échoué : on remet ce que le serveur a réellement.
+       *
+       * Sans ce rechargement, le formulaire gardait la valeur saisie et donnait
+       * tous les signes d'un enregistrement réussi — jusqu'au prochain
+       * rafraîchissement de la page, où l'ancienne valeur réapparaissait. D'où
+       * l'impression qu'un champ « ne peut pas être modifié » alors que c'est
+       * la sauvegarde qui n'était jamais passée.
+       */
+      load();
     } finally {
       setBusy(false);
     }
@@ -336,7 +365,8 @@ export default function CampaignPage() {
                   onChange={set('dailyLimit')}
                 />
                 <span className="filter-hint">
-                  Toutes sources confondues. Il en reste {campaign.remainingToday} aujourd'hui.
+                  Entre 1 et 100, toutes sources confondues. Il en reste{' '}
+                  {campaign.remainingToday} aujourd'hui.
                 </span>
               </div>
               <div className="field">

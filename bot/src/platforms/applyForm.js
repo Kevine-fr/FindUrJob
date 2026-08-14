@@ -44,6 +44,20 @@ async function trouverFormulaire(page) {
   const avecEmail = page.locator('form').filter({ has: page.locator('input[type="email"]') });
   if (await avecEmail.count()) return avecEmail.first();
 
+  /*
+   * Repli sur la fenêtre modale.
+   *
+   * Tous les sites ne construisent pas leur candidature autour d'un `<form>` :
+   * LinkedIn ouvre une boîte de dialogue faite de `div`, sans balise de
+   * formulaire. Exiger un `<form>` y renvoyait « aucun formulaire » alors que
+   * les champs étaient bien là, à l'écran. Le conteneur de dialogue joue le
+   * même rôle : c'est la portée du remplissage.
+   */
+  const dialogue = page
+    .locator('[role="dialog"], dialog')
+    .filter({ has: page.locator('input, textarea') });
+  if (await dialogue.count()) return dialogue.last();
+
   return null;
 }
 
@@ -161,8 +175,72 @@ export async function applyForm(
 ) {
   const capture = async () => (await page.screenshot({ type: 'png' })).toString('base64');
 
-  const formulaire = await trouverFormulaire(page);
-  if (!formulaire) {
+  /**
+   * Un écran du parcours : remplir ce qu'on sait, joindre le CV si son champ
+   * est là, cocher les consentements.
+   *
+   * Le CV n'est pas exigé à chaque écran, et c'est la leçon de LinkedIn : sa
+   * candidature simplifiée commence par les coordonnées et ne propose le CV
+   * qu'à l'étape suivante. Exiger le champ dès le premier écran faisait
+   * abandonner un parcours parfaitement valide.
+   */
+  async function traiterEcran(scope) {
+    await remplirChamps(scope, {
+      firstName: applicant.firstName || '',
+      lastName: applicant.lastName || '',
+      email: applicant.email || '',
+      phone: applicant.phone || '',
+      coverLetter: coverLetter || '',
+    });
+    await humanPause(400, 900);
+
+    let joint = false;
+    const upload = scope.locator('input[type="file"]').first();
+    if (cvFile && (await upload.count())) {
+      await upload.setInputFiles(cvFile).catch(() => {});
+
+      // Le champ fichier ne prouve rien : la plateforme peut le vider après un
+      // transfert en arrière-plan et ranger une référence ailleurs. On surveille
+      // **ce** conteneur — pas « le premier de la page », qui pourrait être un
+      // autre formulaire et ferait conclure à tort à un refus.
+      joint = await scope
+        .elementHandle()
+        .then((handle) =>
+          page.waitForFunction(
+            ([racine, nom]) => {
+              if (!racine) return false;
+              if (racine.querySelector('input[type="file"]')?.value) return true;
+              const caches = [...racine.querySelectorAll('input[type="hidden"]')];
+              if (caches.some((el) => /resume|cv|file|upload|attach/i.test(el.name) && el.value)) {
+                return true;
+              }
+              return racine.textContent.includes(nom);
+            },
+            [handle, cvFile.name],
+            { timeout: 30_000 }
+          )
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      if (!joint) {
+        return { erreur: 'CV non accepté par la plateforme : envoi interrompu.' };
+      }
+    }
+
+    await cocherCases(scope);
+    await humanPause(400, 900);
+
+    const vides = await manquants(scope);
+    if (vides.length) {
+      return { erreur: `Champs obligatoires non renseignés : ${vides.join(', ')}.` };
+    }
+
+    return { joint };
+  }
+
+  const premier = await trouverFormulaire(page);
+  if (!premier) {
     return {
       status: 'manual',
       message: "Aucun formulaire de candidature sur la page : à faire depuis l'annonce.",
@@ -170,76 +248,11 @@ export async function applyForm(
     };
   }
 
-  await remplirChamps(formulaire, {
-    firstName: applicant.firstName || '',
-    lastName: applicant.lastName || '',
-    email: applicant.email || '',
-    phone: applicant.phone || '',
-    coverLetter: coverLetter || '',
-  });
-  await humanPause(400, 900);
-
-  // Le CV. Sans pièce jointe, on n'envoie pas : une candidature vide dessert.
-  if (cvFile) {
-    const upload = formulaire.locator('input[type="file"]').first();
-    if (!(await upload.count())) {
-      return {
-        status: 'manual',
-        message: 'Champ de fichier absent : CV non joint, envoi interrompu.',
-        screenshot: await capture(),
-      };
-    }
-
-    await upload.setInputFiles(cvFile).catch(() => {});
-
-    // Le champ fichier ne prouve rien : la plateforme peut le vider après un
-    // transfert en arrière-plan. On attend soit sa valeur, soit la trace du
-    // téléversement (champ caché renseigné, nom du fichier affiché).
-    //
-    // La surveillance porte sur **ce** formulaire, pas sur « le premier de la
-    // page qui a un champ fichier » : une page qui en contient plusieurs (dépôt
-    // de CV dans l'en-tête, formulaire caché) ferait alors surveiller le mauvais
-    // et conclure à tort que le CV a été refusé.
-    const accepte = await formulaire
-      .elementHandle()
-      .then((handle) =>
-        page.waitForFunction(
-          ([form, nom]) => {
-            if (!form) return false;
-            if (form.querySelector('input[type="file"]')?.value) return true;
-            const caches = [...form.querySelectorAll('input[type="hidden"]')];
-            if (caches.some((el) => /resume|cv|file|upload|attach/i.test(el.name) && el.value)) {
-              return true;
-            }
-            return form.textContent.includes(nom);
-          },
-          [handle, cvFile.name],
-          { timeout: 30_000 }
-        )
-      )
-      .then(() => true)
-      .catch(() => false);
-
-    if (!accepte) {
-      return {
-        status: 'manual',
-        message: 'CV non accepté par la plateforme : envoi interrompu.',
-        screenshot: await capture(),
-      };
-    }
+  const etat = await traiterEcran(premier);
+  if (etat.erreur) {
+    return { status: 'manual', message: etat.erreur, screenshot: await capture() };
   }
-
-  await cocherCases(formulaire);
-  await humanPause(400, 900);
-
-  const vides = await manquants(formulaire);
-  if (vides.length) {
-    return {
-      status: 'manual',
-      message: `Champs obligatoires non renseignés : ${vides.join(', ')}.`,
-      screenshot: await capture(),
-    };
-  }
+  let cvJoint = etat.joint;
 
   // Le bouton d'envoi est cherché sur la page, pas dans le formulaire : les
   // parcours en plusieurs écrans le posent dans le conteneur du funnel.
@@ -253,11 +266,15 @@ export async function applyForm(
   }
 
   if (dryRun) {
+    // Le CV est le point qui décide de la valeur d'une candidature : le dire
+    // explicitement évite de croire un essai concluant alors qu'il partirait nu.
+    const libelle = (await bouton().innerText().catch(() => '?')).trim();
     return {
-      status: 'dry-run',
-      message: `Prêt à envoyer — non soumis (mode essai). Bouton : « ${(
-        await bouton().innerText().catch(() => '?')
-      ).trim()} ».`,
+      status: cvFile && !cvJoint ? 'manual' : 'dry-run',
+      message:
+        cvFile && !cvJoint
+          ? `Formulaire prêt, mais aucun champ pour joindre le CV sur cet écran (bouton « ${libelle} »). Le CV se joint peut-être à l'étape suivante : à vérifier avant d'activer l'envoi.`
+          : `Prêt à envoyer — non soumis (mode essai). Bouton : « ${libelle} »${cvFile ? ', CV joint' : ''}.`,
       screenshot: await capture(),
     };
   }
@@ -265,7 +282,7 @@ export async function applyForm(
   // Plusieurs écrans possibles : on avance tant qu'un bouton d'envoi répond,
   // et on s'arrête net à la confirmation.
   let texte = '';
-  for (let etape = 0; etape < 4; etape += 1) {
+  for (let etape = 0; etape < 5; etape += 1) {
     if (!(await bouton().isVisible().catch(() => false))) break;
 
     await bouton().click().catch(() => {});
@@ -273,20 +290,25 @@ export async function applyForm(
 
     texte = await page.innerText('body').catch(() => '');
     if (confirmPattern.test(texte)) {
-      return { status: 'sent', message: 'Candidature envoyée, CV joint.' };
+      return {
+        status: 'sent',
+        message: cvJoint ? 'Candidature envoyée, CV joint.' : 'Candidature envoyée.',
+      };
     }
 
-    // Un écran intermédiaire peut poser ses propres questions obligatoires :
-    // on ne sait pas y répondre, on rend la main plutôt que de deviner.
+    // Écran suivant : il peut porter le champ CV, ou ses propres questions.
     const suivant = await trouverFormulaire(page);
-    const bloquants = suivant ? await manquants(suivant) : [];
-    if (bloquants.length) {
+    if (!suivant) continue;
+
+    const pas = await traiterEcran(suivant);
+    if (pas.erreur) {
       return {
         status: 'manual',
-        message: `Étape ${etape + 2} : question(s) de l'employeur à remplir à la main (${bloquants.join(', ')}).`,
+        message: `Étape ${etape + 2} : ${pas.erreur}`,
         screenshot: await capture(),
       };
     }
+    cvJoint = cvJoint || pas.joint;
   }
 
   return {

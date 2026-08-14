@@ -1,4 +1,5 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate } from './common.js';
+import { applyForm } from './applyForm.js';
 
 /**
  * LinkedIn.
@@ -26,7 +27,7 @@ const CONTRACT_FILTER = {
   freelance: 'C',
 };
 
-function searchUrl({ keywords = [], location = '', contractTypes = [], remotes = [] }, start) {
+function searchUrl({ keywords = [], location = '', contractTypes = [], remotes = [], easyApplyOnly = false }, start) {
   const params = new URLSearchParams({ start: String(start) });
   if (keywords.length) params.set('keywords', keywords.join(' '));
   if (location) params.set('location', location);
@@ -36,6 +37,16 @@ function searchUrl({ keywords = [], location = '', contractTypes = [], remotes =
 
   const workplace = remotes.map((mode) => REMOTE_FILTER[mode]).filter(Boolean);
   if (workplace.length) params.set('f_WT', workplace.join(','));
+
+  /*
+   * « Candidature simplifiée » seulement.
+   *
+   * Sans ce filtre, la recherche ramène surtout des annonces dont la
+   * candidature se fait sur le site de l'employeur : la campagne les prépare
+   * puis échoue à les envoyer, faute de formulaire à remplir. Vérifié à
+   * l'essai : 0 offre envoyable sur 4 sans le filtre, 3 sur 4 avec.
+   */
+  if (easyApplyOnly) params.set('f_AL', 'true');
 
   return `${GUEST_SEARCH}?${params}`;
 }
@@ -216,45 +227,92 @@ export async function login(context, { email, password }) {
  * renvoient vers le site de l'entreprise, où il n'y a pas de formulaire commun.
  * On le dit plutôt que de faire semblant.
  */
-export async function apply(context, offer, { cvFile } = {}) {
+/**
+ * Candidature LinkedIn (« Candidature simplifiée »).
+ *
+ * Deux pièges, tous deux constatés à l'essai :
+ *
+ * 1. `offer.sourceUrl` vient de la recherche **invité** (`fr.linkedin.com`) et
+ *    rend la page publique — celle qui propose de s'inscrire — même avec une
+ *    session valide. Il faut reconstruire l'URL authentifiée à partir de
+ *    l'identifiant, sans quoi on ne voit jamais le bouton de candidature.
+ *
+ * 2. Les classes CSS de LinkedIn sont générées (`_29eb6fa7 _9b65a86c…`) et
+ *    changent à chaque déploiement. L'ancien `button.jobs-apply-button` ne
+ *    correspondait plus à rien. On cible le libellé, qui lui est stable.
+ *
+ * Beaucoup d'annonces n'ont pas de candidature simplifiée du tout : elles
+ * n'offrent qu'« Enregistrer » ou « Je suis intéressé(e) ». On le dit.
+ */
+export async function apply(context, offer, options = {}) {
   const page = await context.newPage();
   try {
-    await page.goto(offer.sourceUrl, { waitUntil: 'domcontentloaded' });
-    await humanPause();
+    // L'identifiant numérique est la seule partie fiable : le slug change.
+    const id = offer.externalId || offer.sourceUrl?.match(/-(\d+)(?:\?|$)/)?.[1];
+    if (!id) {
+      return { status: 'manual', message: "Offre LinkedIn sans identifiant exploitable." };
+    }
 
-    const easyApply = page.locator('button.jobs-apply-button').first();
+    await page.goto(`https://www.linkedin.com/jobs/view/${id}/`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+
+    // LinkedIn rend le bloc d'action en dernier : un délai fixe le rate une
+    // fois sur deux, d'où l'attente sur le bouton lui-même.
+    const easyApply = page.getByRole('button', { name: /candidature simplifiée|easy apply/i }).first();
+    await easyApply.waitFor({ state: 'visible', timeout: 25_000 }).catch(() => {});
+
     if (!(await easyApply.count())) {
-      return { status: 'manual', message: "Cette offre n'a pas de candidature simplifiée." };
+      // Distinguer « pas de candidature simplifiée » de « session fermée » :
+      // les deux donnent une page sans bouton, mais ne se règlent pas pareil.
+      const invite = await page.locator('.sign-up-modal__outlet').count();
+      return {
+        status: 'manual',
+        message: invite
+          ? 'LinkedIn affiche la page publique : la session est fermée ou expirée.'
+          : "Cette offre n'a pas de candidature simplifiée (candidature sur le site de l'employeur).",
+      };
     }
 
-    await easyApply.click();
-    await page.waitForSelector('.jobs-easy-apply-modal', { timeout: 15_000 });
+    await easyApply.click().catch(() => {});
 
-    if (cvFile) {
-      const upload = page.locator('input[type="file"]').first();
-      if (await upload.count()) await upload.setInputFiles(cvFile).catch(() => {});
+    /*
+     * La candidature simplifiée s'ouvre dans une boîte de dialogue. Constaté à
+     * l'essai : le bouton se clique sans erreur, mais la boîte ne s'ouvre
+     * jamais dans le navigateur du robot — LinkedIn ne rend pas ce module hors
+     * de son application complète. On l'attend, et on le dit clairement plutôt
+     * que de laisser le remplisseur conclure « aucun formulaire ».
+     */
+    const modale = page.locator('[role="dialog"]').filter({ has: page.locator('input, textarea') });
+    await modale.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+
+    if (!(await modale.count())) {
+      return {
+        status: 'manual',
+        message:
+          "LinkedIn n'ouvre pas sa candidature simplifiée dans le navigateur piloté. " +
+          "Ouvre l'offre depuis la reprise en main pour candidater.",
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
     }
 
-    // Le formulaire est multi-étapes et son contenu varie selon l'entreprise :
-    // on avance tant qu'il n'y a qu'un bouton « suivant » à cliquer.
-    for (let step = 0; step < 6; step++) {
-      await humanPause();
-      const submit = page.locator('button[aria-label*="Envoyer"], button[aria-label*="Submit"]');
-      if (await submit.count()) {
-        await submit.first().click();
-        await humanPause(1500, 2500);
-        return { status: 'sent', message: 'Candidature envoyée.' };
-      }
-      const next = page.locator('button[aria-label*="suivant"], button[aria-label*="next"]');
-      if (!(await next.count())) break;
-      await next.first().click();
-    }
+    await humanPause(1500, 2500);
 
-    return {
-      status: 'manual',
-      message: 'Le formulaire demande des réponses spécifiques : à terminer à la main.',
-      screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-    };
+    /*
+     * Le reste est un formulaire ordinaire, confié au remplisseur commun. Seuls
+     * les libellés d'action lui sont propres : LinkedIn enchaîne « Suivant »,
+     * « Vérifier » puis « Envoyer la candidature » plutôt qu'un bouton unique.
+     */
+    return await applyForm(page, {
+      ...options,
+      submitSelector:
+        'button[aria-label*="Envoyer la candidature" i], button[aria-label*="Submit application" i], ' +
+        'button[aria-label*="Suivant" i], button[aria-label*="Continue" i], ' +
+        'button[aria-label*="Vérifier" i], button[aria-label*="Review" i]',
+      confirmPattern:
+        /candidature (bien )?(envoy|transmis)|votre candidature a été envoyée|application sent|candidature envoyée/i,
+    });
   } finally {
     await page.close().catch(() => {});
   }

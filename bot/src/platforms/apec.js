@@ -176,13 +176,37 @@ export async function apply(context, offer, options = {}) {
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'commit', timeout: 45_000 });
     await dismissConsent(page);
-    await page.waitForTimeout(3000);
+    // Application Angular : le contenu arrive bien après le DOM. On attend la
+    // page réelle plutôt qu'un délai arbitraire, qui la manquait une fois sur deux.
+    await page
+      .waitForFunction(() => document.body.innerText.length > 1200, undefined, { timeout: 25_000 })
+      .catch(() => {});
 
     const externe = await externalApplyUrl(page, 'apec.fr');
     if (externe) {
       return {
         status: 'manual',
         message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
+      };
+    }
+
+    /*
+     * L'APEC refuse le détail des offres à ce navigateur.
+     *
+     * Constaté à l'essai : sur une annonce fraîche, sortie de sa propre
+     * recherche, son webservice `offre/public` répond 403 et l'application
+     * affiche « L'offre que vous souhaitez afficher n'est plus disponible ».
+     * La recherche, elle, passe — c'est donc bien le détail qui est filtré,
+     * pas l'adresse IP en bloc. Rien à corriger côté sélecteurs : il n'y a
+     * simplement aucune page à lire.
+     */
+    const texte = await page.innerText('body').catch(() => '');
+    if (/n['’]est plus disponible|offre introuvable/i.test(texte)) {
+      return {
+        status: 'manual',
+        message:
+          "L'APEC refuse d'afficher le détail de ses offres à un navigateur automatisé " +
+          '(403 sur son propre service). Candidature à faire depuis ton navigateur.',
       };
     }
 

@@ -158,6 +158,7 @@ export const api = {
   campaign: {
     get: () => req('/campaign'),
     update: (body) => req('/campaign', { method: 'PUT', body: JSON.stringify(body) }),
-    run: () => req('/campaign/run', { method: 'POST' }),
+    run: (dryRun = false) =>
+      req(`/campaign/run${dryRun ? '?dryRun=1' : ''}`, { method: 'POST' }),
   },
 };

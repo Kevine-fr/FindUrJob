@@ -77,12 +77,18 @@ export const updateCampaign = asyncHandler(async (req, res) => {
 });
 
 /**
- * POST /campaign/run — exécution immédiate.
+ * POST /campaign/run — exécution immédiate. `?dryRun=1` remplit les formulaires
+ * jusqu'au bouton d'envoi sans jamais appuyer dessus.
  *
  * Le même code que la version planifiée : c'est le seul moyen honnête de
- * vérifier ce que fera la campagne cette nuit.
+ * vérifier ce que fera la campagne cette nuit. Le mode essai existe parce qu'un
+ * envoi ne se rattrape pas — un employeur ne « dé-reçoit » pas une candidature.
  */
 export const runNow = asyncHandler(async (req, res) => {
-  const summary = await runCampaign({ user: req.user.id, trigger: 'manuel' });
+  const summary = await runCampaign({
+    user: req.user.id,
+    trigger: 'manuel',
+    dryRun: req.query.dryRun === '1' || req.body?.dryRun === true,
+  });
   res.json({ summary, campaign: publicView(await Campaign.forUser(req.user.id)) });
 });

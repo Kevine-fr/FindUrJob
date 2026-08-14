@@ -238,7 +238,7 @@ export function createApp() {
   app.post(
     '/apply',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, user, offer, cv } = req.body || {};
+      const { platform: platformName, user, offer, cv, applicant, coverLetter, dryRun } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!offer?.sourceUrl) {
@@ -260,7 +260,9 @@ export function createApp() {
           }
         : null;
 
-      res.json(await platform.apply(context, offer, { cvFile: fichier }));
+      res.json(
+        await platform.apply(context, offer, { cvFile: fichier, applicant, coverLetter, dryRun })
+      );
     })
   );
 

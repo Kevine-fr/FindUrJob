@@ -19,7 +19,7 @@ import { BOT_PLATFORMS } from '../utils/constants.js';
  * La fonction ne lève jamais : une campagne qui échoue doit laisser une trace
  * lisible dans la page, pas faire tomber le planificateur.
  */
-export async function runCampaign({ user, trigger = 'planifié' } = {}) {
+export async function runCampaign({ user, trigger = 'planifié', dryRun = false } = {}) {
   if (!user) throw new Error("runCampaign : utilisateur manquant.");
   const campaign = await Campaign.forUser(user);
 
@@ -40,11 +40,14 @@ export async function runCampaign({ user, trigger = 'planifié' } = {}) {
 
   const summary = {
     trigger,
+    dryRun,
     examined: 0,
     prepared: 0,
     sent: 0,
     manual: 0,
     belowScore: 0,
+    // Essais concluants : formulaire rempli, envoi volontairement retenu.
+    ready: 0,
     errors: [],
   };
 
@@ -216,7 +219,17 @@ export async function runCampaign({ user, trigger = 'planifié' } = {}) {
             const outcome = await botApply(source, offer, {
               filename: `CV-${(profile.fullName || 'candidat').replace(/\s+/g, '-')}.pdf`,
               content: cvPdf.toString('base64'),
-            }, user);
+            }, user, {
+              // Le formulaire HelloWork exige nom, prénom, e-mail et la lettre :
+              // le CV seul ne suffit pas à le faire partir.
+              applicant: {
+                firstName: (profile.fullName || "").split(" ")[0] || "",
+                lastName: (profile.fullName || "").split(" ").slice(1).join(" ") || "",
+                email: profile.email || "",
+              },
+              coverLetter: result.coverLetter || "",
+              dryRun,
+            });
 
             if (outcome.status === 'sent') {
               application.status = 'postule';
@@ -229,6 +242,14 @@ export async function runCampaign({ user, trigger = 'planifié' } = {}) {
               await cv.save();
               summary.sent += 1;
               summary.perSource[source].sent += 1;
+            } else if (outcome.status === 'dry-run') {
+              // Essai : le formulaire était prêt à partir, on n'a pas appuyé.
+              // La candidature reste « à postuler », rien n'est daté.
+              application.timeline.push({
+                status: 'a_postuler',
+                note: `Essai concluant : ${outcome.message || 'formulaire prêt.'}`,
+              });
+              summary.ready += 1;
             } else {
               // « manual » : la plateforme demande des réponses qu'on ne devine pas.
               application.notes += ` — à finir à la main : ${outcome.message || ''}`;

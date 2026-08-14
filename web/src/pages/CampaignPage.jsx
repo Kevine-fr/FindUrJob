@@ -120,15 +120,21 @@ export default function CampaignPage() {
     }
   };
 
-  const runNow = async () => {
+  /**
+   * `essai` remplit les formulaires jusqu'au bouton d'envoi sans appuyer :
+   * de quoi vérifier le parcours d'une plateforme avant d'écrire à un employeur.
+   */
+  const runNow = async (essai = false) => {
     setBusy(true);
     try {
-      const { summary, campaign: updated } = await toast.promise(api.campaign.run(), {
-        loading: 'Exécution de la campagne…',
+      const { summary, campaign: updated } = await toast.promise(api.campaign.run(essai), {
+        loading: essai ? 'Essai en cours (aucun envoi)…' : 'Exécution de la campagne…',
         success: (res) =>
           res.summary.skipped
             ? `Rien à faire : ${res.summary.skipped}`
-            : `${res.summary.prepared} préparée(s), ${res.summary.sent} envoyée(s).`,
+            : essai
+              ? `${res.summary.ready || 0} formulaire(s) prêt(s) à partir — rien n'a été envoyé.`
+              : `${res.summary.prepared} préparée(s), ${res.summary.sent} envoyée(s).`,
         error: (err) => err.message,
       });
       setCampaign(updated);
@@ -174,7 +180,16 @@ export default function CampaignPage() {
           </p>
         </div>
         <div className="inline">
-          <button className={`btn${busy ? ' is-busy' : ''}`} onClick={runNow} disabled={busy}>
+          {/* Un envoi ne se rattrape pas : l'essai passe avant, toujours. */}
+          <button
+            className={`btn btn-ghost${busy ? ' is-busy' : ''}`}
+            onClick={() => runNow(true)}
+            disabled={busy}
+            title="Remplit les formulaires jusqu'au bouton d'envoi, sans appuyer dessus."
+          >
+            Tester sans envoyer
+          </button>
+          <button className={`btn${busy ? ' is-busy' : ''}`} onClick={() => runNow(false)} disabled={busy}>
             Lancer maintenant
           </button>
           <button

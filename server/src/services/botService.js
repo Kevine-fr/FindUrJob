@@ -98,8 +98,8 @@ export const botSearch = (platform, query, user) =>
  * `cv` : { filename, content } où `content` est le PDF en base64 — il voyage
  * dans la requête, faute de disque partagé entre le serveur et le bot.
  */
-export const botApply = (platform, offer, cv, user) =>
-  json('/apply', { body: { platform, user, offer, cv }, timeout: 240_000 });
+export const botApply = (platform, offer, cv, user, extra = {}) =>
+  json('/apply', { body: { platform, user, offer, cv, ...extra }, timeout: 240_000 });
 
 /**
  * Ouvre une page sur l'écran du conteneur, pour reprise en main.

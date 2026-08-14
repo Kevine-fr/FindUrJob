@@ -29,6 +29,20 @@ export const getApplication = asyncHandler(async (req, res) => {
 export const createApplication = asyncHandler(async (req, res) => {
   const offer = await JobOffer.findOne({ _id: req.body.offer, user: req.user.id });
   if (!offer) return res.status(400).json({ error: 'Offre associée introuvable' });
+
+  /*
+   * Une offre déjà suivie ne se re-candidate pas.
+   *
+   * On renvoie la candidature existante plutôt qu'une erreur : suivre deux fois
+   * la même annonce n'est pas une faute, c'est presque toujours un doublon de
+   * clic. L'appelant retombe sur son dossier, et aucune seconde candidature
+   * n'est créée.
+   */
+  const existante = await Application.findOne({ user: req.user.id, offer: offer._id });
+  if (existante) {
+    return res.status(200).json(await existante.populate(POPULATE));
+  }
+
   const application = await Application.create({ ...req.body, user: req.user.id });
   res.status(201).json(await application.populate(POPULATE));
 });

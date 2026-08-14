@@ -302,17 +302,31 @@ export async function applyForm(
 
     const pas = await traiterEcran(suivant);
     if (pas.erreur) {
+      /*
+       * Bloqué **après** avoir déjà appuyé sur envoyer : on ne sait pas si la
+       * candidature est partie.
+       *
+       * Constaté en vrai : HelloWork enregistre la candidature dès le premier
+       * écran, puis propose un questionnaire complémentaire. Rester coincé
+       * dessus n'empêche rien — le recruteur a déjà reçu le dossier. Annoncer
+       * un échec à ce stade est faux, et surtout dangereux : cela pousse à
+       * recommencer, donc à candidater deux fois.
+       */
       return {
-        status: 'manual',
-        message: `Étape ${etape + 2} : ${pas.erreur}`,
+        status: 'uncertain',
+        message:
+          `Candidature soumise, puis étape ${etape + 2} restée incomplète (${pas.erreur}) — ` +
+          'à vérifier sur la plateforme avant toute nouvelle tentative.',
         screenshot: await capture(),
       };
     }
     cvJoint = cvJoint || pas.joint;
   }
 
+  // Le bouton a été actionné sans qu'aucune confirmation ne s'affiche : même
+  // prudence, on ne conclut ni à l'envoi ni à l'échec.
   return {
-    status: 'manual',
+    status: 'uncertain',
     message: 'Formulaire soumis sans confirmation visible : à vérifier sur la plateforme.',
     screenshot: await capture(),
   };

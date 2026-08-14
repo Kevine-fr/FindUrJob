@@ -6,6 +6,8 @@ export const STATUS_META = {
   // Distinct de « refusé » : là, c'est l'envoi qui a échoué, pas l'employeur
   // qui a dit non. Confondre les deux masque un problème réparable.
   echec_envoi: { label: 'Envoi échoué', color: '#eb6834' },
+  // Ni parti ni échoué : on a appuyé, la plateforme n'a rien confirmé.
+  a_verifier: { label: 'À vérifier', color: '#eda100' },
   postule: { label: 'Postulé', color: '#7a5af8' },
   relance: { label: 'Relancé', color: '#d99400' },
   entretien: { label: 'Entretien', color: '#1f9d57' },
@@ -18,6 +20,7 @@ export const STATUS_ORDER = [
   'brouillon',
   'a_postuler',
   'echec_envoi',
+  'a_verifier',
   'postule',
   'relance',
   'entretien',

@@ -58,16 +58,18 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
     ]);
 
     /*
-     * Les offres déjà suivies ne sont pas re-candidatées — sauf celles dont
-     * l'envoi a échoué.
+     * Une offre déjà suivie n'est jamais re-candidatée. Aucune exception.
      *
-     * Un échec vient presque toujours d'une cause passagère ou réparable :
-     * session expirée, formulaire modifié, CV refusé. Les exclure comme les
-     * autres condamnait ces candidatures à ne jamais repartir, même une fois la
-     * cause levée. On les repêche, et on réutilise la candidature existante
-     * plutôt que d'en créer une seconde sur la même offre.
+     * J'avais un temps repêché les envois marqués en échec, en pensant qu'ils
+     * n'étaient jamais partis. C'était faux : un « échec » signifie seulement
+     * qu'on n'a pas *vu* de confirmation — la candidature, elle, pouvait très
+     * bien être arrivée chez le recruteur. Le rattrapage a donc produit de
+     * vraies doubles candidatures sur la même offre.
+     *
+     * L'existence d'une candidature suffit à écarter l'offre, quel que soit son
+     * statut. Une candidature à reprendre se termine à la main, depuis sa fiche.
      */
-    const known = await Application.find({ user, status: { $ne: 'echec_envoi' } }).distinct('offer');
+    const known = await Application.find({ user }).distinct('offer');
 
     const baseFilter = { _id: { $nin: known }, user };
     if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
@@ -185,38 +187,28 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
             summary.errors.push(`${source} : CV non imprimé (${pdfError.message})`);
           }
 
-          // Nouvelle tentative sur un échec précédent : on repart de la même
-          // candidature, avec le CV fraîchement reciblé. En créer une seconde
-          // ferait deux entrées pour une seule offre.
-          const existante = await Application.findOne({
+          /*
+           * Dernier verrou avant d'engager quoi que ce soit.
+           *
+           * La liste des offres écartées a été lue au début de la passe : une
+           * candidature créée entre-temps — autre passe, geste manuel — n'y
+           * figure pas. L'index unique en base rejetterait le doublon, mais on
+           * s'arrête avant, pour ne pas envoyer un formulaire qu'on ne pourrait
+           * de toute façon pas enregistrer.
+           */
+          if (await Application.exists({ user, offer: offer._id })) {
+            continue;
+          }
+
+          const application = await Application.create({
             user,
             offer: offer._id,
-            status: 'echec_envoi',
+            status: 'a_postuler',
+            cvVersion: cv._id,
+            coverLetter: result.coverLetter,
+            matchScore: score,
+            notes: `Préparée automatiquement (campagne ${trigger}).`,
           });
-
-          const application = existante
-            ? Object.assign(existante, {
-                status: 'a_postuler',
-                cvVersion: cv._id,
-                coverLetter: result.coverLetter,
-                matchScore: score,
-              })
-            : await Application.create({
-                user,
-                offer: offer._id,
-                status: 'a_postuler',
-                cvVersion: cv._id,
-                coverLetter: result.coverLetter,
-                matchScore: score,
-                notes: `Préparée automatiquement (campagne ${trigger}).`,
-              });
-
-          if (existante) {
-            application.timeline.push({
-              status: 'a_postuler',
-              note: `Nouvelle tentative (campagne ${trigger}).`,
-            });
-          }
 
           done += 1;
 
@@ -293,6 +285,23 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
                 note: `Essai concluant : ${outcome.message || 'formulaire prêt.'}`,
               });
               summary.ready += 1;
+            } else if (outcome.status === 'uncertain') {
+              /*
+               * Le bouton a été actionné, la plateforme n'a rien confirmé.
+               *
+               * Ni « postulé » — ce serait affirmer sans preuve — ni « échec » :
+               * la candidature est peut-être arrivée, et c'est précisément le
+               * cas qui a produit un double envoi. On le nomme pour ce qu'il
+               * est, et personne n'y retouche automatiquement.
+               */
+              application.status = 'a_verifier';
+              application.notes += ` — à vérifier : ${outcome.message || ''}`;
+              application.timeline.push({
+                status: 'a_verifier',
+                note: outcome.message || 'Issue inconnue.',
+              });
+              summary.manual += 1;
+              summary.perSource[source].manual += 1;
             } else {
               // « manual » : l'envoi a bien été tenté, et il n'a pas abouti —
               // formulaire absent, CV refusé, question de l'employeur. Le noter

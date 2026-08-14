@@ -37,4 +37,15 @@ applicationSchema.pre('save', function (next) {
   next();
 });
 
+/*
+ * Une seule candidature par offre et par compte — garanti par la base.
+ *
+ * Le contrôle en amont peut toujours être contourné par une course entre deux
+ * exécutions, ou par un chemin qu'on aura oublié de protéger. Postuler deux
+ * fois à la même annonce se voit du côté du recruteur : la garantie doit donc
+ * tenir à l'endroit où rien ne peut passer outre, pas seulement dans le code
+ * qui y mène.
+ */
+applicationSchema.index({ user: 1, offer: 1 }, { unique: true });
+
 export default mongoose.model('Application', applicationSchema);

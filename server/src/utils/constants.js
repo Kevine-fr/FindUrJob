@@ -48,6 +48,7 @@ export const APPLICATION_STATUSES = [
   'brouillon', // offre enregistrée, en préparation
   'a_postuler', // prête à envoyer
   'echec_envoi', // l'envoi automatique n'a pas abouti — à finir à la main
+  'a_verifier', // envoi tenté, issue inconnue — à confirmer sur la plateforme
   'postule', // candidature envoyée
   'relance', // relance effectuée
   'entretien', // entretien décroché

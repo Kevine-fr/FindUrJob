@@ -15,7 +15,7 @@ const HEURES = [6, 7, 8, 9, 10, 12, 14, 17, 19, 21];
  * de taper « 10 » sans passer par 1 puis 10. On garde donc la frappe telle
  * quelle et on ne recale la valeur qu'à la sortie du champ.
  */
-function NumberField({ value, onChange, min = 0, max = 99, className = 'input', style }) {
+function NumberField({ value, onChange, min = 0, max = 99, className = 'input', style, disabled }) {
   const [text, setText] = useState(String(value ?? ''));
   // Tant que le champ a le focus, la frappe est souveraine : aucune valeur
   // venue d'ailleurs ne vient la réécrire sous les doigts.
@@ -45,7 +45,9 @@ function NumberField({ value, onChange, min = 0, max = 99, className = 'input', 
       type="number"
       inputMode="numeric"
       min={min}
-      max={max}
+      // Un maximum infini ne s'écrit pas dans l'attribut HTML : on l'omet.
+      max={Number.isFinite(max) ? max : undefined}
+      disabled={disabled}
       value={text}
       onFocus={() => setSaisie(true)}
       onChange={(event) => {
@@ -358,15 +360,33 @@ export default function CampaignPage() {
             <div className="grid-2">
               <div className="field">
                 <label>Maximum par jour</label>
-                <NumberField
-                  value={campaign.dailyLimit}
-                  min={1}
-                  max={100}
-                  onChange={set('dailyLimit')}
-                />
+                <div className="inline" style={{ gap: 12 }}>
+                  <NumberField
+                    value={campaign.dailyLimit ?? ''}
+                    min={1}
+                    // Aucun plafond : c'est un garde-fou qu'on se donne, pas
+                    // une règle imposée. `Infinity` laisse la saisie libre.
+                    max={Infinity}
+                    disabled={campaign.dailyLimit == null}
+                    onChange={set('dailyLimit')}
+                    style={{ width: 110 }}
+                  />
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={campaign.dailyLimit == null}
+                      onChange={(event) =>
+                        set('dailyLimit')(event.target.checked ? null : 10)
+                      }
+                    />
+                    Sans limite
+                  </label>
+                </div>
                 <span className="filter-hint">
-                  Entre 1 et 100, toutes sources confondues. Il en reste{' '}
-                  {campaign.remainingToday} aujourd'hui.
+                  Toutes sources confondues.{' '}
+                  {campaign.dailyLimit == null
+                    ? 'Le volume est alors décidé par les quotas de chaque plateforme.'
+                    : `Il en reste ${campaign.remainingToday} aujourd'hui.`}
                 </span>
               </div>
               <div className="field">

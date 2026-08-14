@@ -53,7 +53,15 @@ const campaignSchema = new mongoose.Schema(
     },
 
     // Plafond global de la journée, toutes exécutions et sources confondues.
-    dailyLimit: { type: Number, default: 10, min: 1, max: 100 },
+    /*
+     * Plafond quotidien, toutes sources confondues. `null` = aucune limite.
+     *
+     * Pas de maximum imposé : c'est un garde-fou que la personne se donne, pas
+     * une règle que l'application lui dicte. Un plafond arbitraire à 100 se
+     * transformait en mur dès qu'on visait plus haut, sans rien protéger que
+     * l'idée qu'on se faisait d'un « volume raisonnable ».
+     */
+    dailyLimit: { type: Number, default: 10, min: 1 },
 
     // En dessous de ce score de correspondance, l'offre est ignorée : mieux
     // vaut trois candidatures pertinentes que trente hors sujet.
@@ -98,6 +106,9 @@ campaignSchema.statics.forUser = async function (user) {
 campaignSchema.methods.remainingToday = function () {
   const today = new Date().toISOString().slice(0, 10);
   const used = this.quotaDate === today ? this.sentToday : 0;
+  // Sans plafond, il reste toujours de la place : c'est alors la somme des
+  // quotas par plateforme qui décide du volume d'une passe.
+  if (this.dailyLimit == null) return { used, left: Infinity, today };
   return { used, left: Math.max(0, this.dailyLimit - used), today };
 };
 

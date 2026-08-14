@@ -11,7 +11,11 @@ import { BOT_PLATFORMS, SOURCES } from '../utils/constants.js';
  */
 const publicView = (campaign) => ({
   ...campaign.toObject(),
-  remainingToday: campaign.remainingToday().left,
+  // `null` = sans limite. JSON ne sait pas transporter l'infini, et le rendre
+  // explicite évite que l'interface l'affiche comme un zéro.
+  remainingToday: Number.isFinite(campaign.remainingToday().left)
+    ? campaign.remainingToday().left
+    : null,
   schedule: describeSchedule(),
   sources: SOURCES.filter((source) => source !== 'autre').map((source) => ({
     source,
@@ -51,7 +55,14 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   // Les nombres arrivent parfois vides d'un champ de saisie effacé : on retombe
   // sur la valeur en place plutôt que d'écrire NaN en base.
   const asNumber = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
-  if (dailyLimit !== undefined) campaign.dailyLimit = asNumber(dailyLimit, campaign.dailyLimit);
+  // Vide ou nul = « sans limite ». Aucun plafond n'est imposé au-dessus : le
+  // volume est une décision de l'utilisateur, pas de l'application.
+  if (dailyLimit !== undefined) {
+    campaign.dailyLimit =
+      dailyLimit === '' || dailyLimit === null
+        ? null
+        : Math.max(1, asNumber(dailyLimit, campaign.dailyLimit ?? 10));
+  }
   if (minScore !== undefined) campaign.minScore = asNumber(minScore, campaign.minScore);
   if (maxAgeValue !== undefined) campaign.maxAgeValue = Math.max(0, asNumber(maxAgeValue, 0));
   if (maxAgeUnit) campaign.maxAgeUnit = maxAgeUnit;

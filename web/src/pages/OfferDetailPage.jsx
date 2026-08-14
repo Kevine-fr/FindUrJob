@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
-import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS } from '../lib/status.js';
+import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS, SENDABLE_SOURCES } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
 import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
-
-// Plateformes sur lesquelles on peut candidater depuis son propre compte.
-const BOT_PLATFORMS = ['linkedin', 'indeed', 'hellowork'];
 
 export default function OfferDetailPage() {
   const { id } = useParams();
@@ -64,7 +61,7 @@ export default function OfferDetailPage() {
     );
   }
 
-  const canApply = BOT_PLATFORMS.includes(offer.source);
+  const canApply = SENDABLE_SOURCES.includes(offer.source);
 
   return (
     <>

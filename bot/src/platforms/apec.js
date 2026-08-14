@@ -1,4 +1,5 @@
-import { normalize, humanPause } from './common.js';
+import { normalize, humanPause, dismissConsent } from './common.js';
+import { applyForm, externalApplyUrl } from './applyForm.js';
 
 /**
  * APEC.
@@ -116,23 +117,91 @@ export async function search(context, query) {
   }
 }
 
-// L'APEC n'est pas pilotée pour candidater : l'annonce renvoie vers le
-// formulaire de l'employeur. On le dit plutôt que d'échouer en silence.
-export async function isLoggedIn() {
-  return false;
+/** L'espace candidat n'est atteignable qu'avec une session ouverte. */
+export async function isLoggedIn(context) {
+  const page = await context.newPage();
+  try {
+    await page.goto('https://www.apec.fr/candidat/mon-espace.html', {
+      waitUntil: 'commit',
+      timeout: 30_000,
+    });
+    await page.waitForTimeout(3000);
+    return !/connexion|authentification|login/i.test(page.url());
+  } catch {
+    return false;
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
-export async function login() {
-  return {
-    status: 'manual',
-    message:
-      "La candidature APEC n'est pas automatisée : ouvre l'annonce et postule depuis le site.",
-  };
+export async function login(context, { email, password }) {
+  const page = await context.newPage();
+  try {
+    await page.goto(loginUrl, { waitUntil: 'commit', timeout: 45_000 });
+    await dismissConsent(page);
+    await humanPause();
+
+    await page.fill('input[type="email"], input[name*="mail" i]', email);
+    await humanPause(300, 700);
+    await page.fill('input[type="password"]', password);
+    await humanPause(300, 700);
+
+    await page.getByRole('button', { name: /se connecter|connexion/i }).first().click();
+    await page.waitForTimeout(6000);
+
+    if (/connexion|authentification/i.test(page.url())) {
+      return {
+        status: 'manual',
+        message:
+          "L'APEC refuse la connexion automatique. Termine-la depuis la reprise en main.",
+      };
+    }
+    return { status: 'connected', message: 'Session APEC ouverte.' };
+  } catch (error) {
+    return { status: 'manual', message: `Connexion APEC : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
-export async function apply() {
-  return {
-    status: 'manual',
-    message: "L'APEC renvoie vers le formulaire de l'employeur : candidature à faire à la main.",
-  };
+/**
+ * Candidature.
+ *
+ * Le bouton « Postuler » n'apparaît qu'une fois la session ouverte : sans
+ * elle, l'annonce ne montre rien à quoi se raccrocher. Certaines annonces
+ * renvoient tout de même vers le site de l'employeur — on le signale.
+ */
+export async function apply(context, offer, options = {}) {
+  const page = await context.newPage();
+  try {
+    await page.goto(offer.sourceUrl, { waitUntil: 'commit', timeout: 45_000 });
+    await dismissConsent(page);
+    await page.waitForTimeout(3000);
+
+    const externe = await externalApplyUrl(page, 'apec.fr');
+    if (externe) {
+      return {
+        status: 'manual',
+        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
+      };
+    }
+
+    const postuler = page.getByRole('button', { name: /postuler|candidater/i }).first();
+    if (!(await postuler.count())) {
+      return {
+        status: 'manual',
+        message:
+          "Aucun bouton « Postuler » sur l'annonce : la session APEC est-elle bien ouverte ?",
+      };
+    }
+
+    await postuler.click().catch(() => {});
+    await page.waitForTimeout(3000);
+
+    return await applyForm(page, options);
+  } catch (error) {
+    return { status: 'manual', message: `Candidature APEC : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }

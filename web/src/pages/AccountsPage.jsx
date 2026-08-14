@@ -3,11 +3,37 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import ManualLogin from '../components/ManualLogin.jsx';
 
+/**
+ * Une entrée par plateforme sur laquelle on sait candidater.
+ *
+ * `note` dit ce qui attend la personne : toutes ne se connectent pas de la
+ * même façon, et le découvrir après trois échecs est décourageant.
+ */
 const PLATFORMS = {
   linkedin: { label: 'LinkedIn', color: '#0a66c2', short: 'in' },
-  indeed: { label: 'Indeed', color: '#2557a7', short: 'id' },
+  indeed: {
+    label: 'Indeed',
+    color: '#2557a7',
+    short: 'id',
+    note: 'Indeed bloque les connexions venues d’un serveur (protection Cloudflare). La reprise en main est souvent le seul chemin.',
+  },
   hellowork: { label: 'HelloWork', color: '#e5484d', short: 'hw' },
+  apec: { label: 'APEC', color: '#00857d', short: 'ap' },
+  welcometothejungle: {
+    label: 'Welcome to the Jungle',
+    color: '#ffcd00',
+    short: 'wt',
+    note: 'Beaucoup d’annonces renvoient vers l’outil de recrutement de l’employeur : l’envoi automatique ne couvre que celles hébergées par WTTJ.',
+  },
+  francetravail: {
+    label: 'France Travail',
+    color: '#ec4a2c',
+    short: 'ft',
+    note: 'Authentification renforcée (code par courriel ou SMS) : passe par la reprise en main, la session est ensuite conservée.',
+  },
 };
+
+const INCONNUE = { label: '', color: '#6b7280', short: '??' };
 
 const STATE_LABELS = {
   connectee: 'Session ouverte',
@@ -19,7 +45,12 @@ const STATE_LABELS = {
 
 function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
   const toast = useToast();
-  const meta = PLATFORMS[account.platform];
+  // Une plateforme ajoutée côté serveur ne doit pas faire écran blanc ici.
+  const meta = PLATFORMS[account.platform] || {
+    ...INCONNUE,
+    label: account.platform,
+    short: account.platform.slice(0, 2),
+  };
 
   const [email, setEmail] = useState(account.email || '');
   const [password, setPassword] = useState('');
@@ -98,6 +129,13 @@ function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
           </span>
         </div>
       </div>
+
+      {/* Ce que la plateforme impose, dit avant l'échec plutôt qu'après. */}
+      {meta.note && (
+        <p className="account-note" style={{ fontSize: 13, margin: 0 }}>
+          {meta.note}
+        </p>
+      )}
 
       {account.lastMessage && (
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>

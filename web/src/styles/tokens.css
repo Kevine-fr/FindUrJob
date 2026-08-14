@@ -1103,6 +1103,60 @@ img {
   border-color: var(--accent);
   color: #fff;
 }
+/* Le compteur d'une pastille : présent, mais jamais au premier plan. */
+.filter-count {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.65;
+}
+.filter-grow {
+  align-items: center;
+}
+.filter-search {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+.filter-search .input {
+  width: 100%;
+  padding-right: 34px;
+}
+.filter-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--line-soft);
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all var(--fast) var(--ease);
+}
+.filter-clear:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+/* Nombre + unité : le cas « ni 24 h ni 3 jours, mais 36 heures ». */
+.filter-custom {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: 4px;
+}
+.filter-custom .input {
+  padding: 4px 8px;
+  font-size: 13px;
+  height: auto;
+}
+.input-num {
+  width: 68px;
+}
 .filter-footer {
   display: flex;
   align-items: center;
@@ -1111,6 +1165,17 @@ img {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+}
+/* Sur mobile, l'étiquette passe au-dessus : 92 px de gouttière n'y tiennent pas. */
+@media (max-width: 620px) {
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+  .filter-label {
+    min-width: 0;
+  }
 }
 .filter-hint {
   display: block;
@@ -1473,6 +1538,15 @@ img {
   display: flex;
   align-items: center;
   gap: 11px;
+}
+/* Contrainte propre à la plateforme : à lire avant d'essayer, pas après. */
+.account-note {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 9px 12px;
+  color: var(--ink-soft);
+  line-height: 1.5;
 }
 .account-logo {
   width: 34px;

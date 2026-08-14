@@ -1,4 +1,5 @@
-import { normalize, humanPause } from './common.js';
+import { normalize, humanPause, dismissConsent } from './common.js';
+import { applyForm, externalApplyUrl } from './applyForm.js';
 
 /**
  * Welcome to the Jungle.
@@ -129,21 +130,93 @@ export async function search(context, query) {
   }
 }
 
-// Pas de candidature automatisée : chaque annonce a son propre parcours.
-export async function isLoggedIn() {
-  return false;
+/**
+ * La session se lit sur le tableau de bord candidat : sans elle, le site
+ * renvoie vers `/authenticate/signin`.
+ */
+export async function isLoggedIn(context) {
+  const page = await context.newPage();
+  try {
+    await page.goto('https://www.welcometothejungle.com/fr/me/applications', {
+      waitUntil: 'commit',
+      timeout: 30_000,
+    });
+    await page.waitForTimeout(2500);
+    return !/\/signin|\/authenticate|\/login/.test(page.url());
+  } catch {
+    return false;
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
-export async function login() {
-  return {
-    status: 'manual',
-    message: "La candidature Welcome to the Jungle n'est pas automatisée.",
-  };
+export async function login(context, { email, password }) {
+  const page = await context.newPage();
+  try {
+    await page.goto(loginUrl, { waitUntil: 'commit', timeout: 45_000 });
+    await dismissConsent(page);
+    await humanPause();
+
+    // Champs relevés sur la page : `session.email` / `session.password`.
+    await page.fill('input[name="session.email"], input[type="email"]', email);
+    await humanPause(300, 700);
+    await page.fill('input[name="session.password"], input[type="password"]', password);
+    await humanPause(300, 700);
+
+    await page.getByRole('button', { name: /se connecter|log ?in|sign ?in/i }).first().click();
+    await page.waitForTimeout(6000);
+
+    if (/\/signin|\/authenticate/.test(page.url())) {
+      return {
+        status: 'manual',
+        message:
+          'Welcome to the Jungle refuse la connexion automatique (vérification en cours). ' +
+          'Termine-la depuis la reprise en main.',
+      };
+    }
+    return { status: 'connected', message: 'Session Welcome to the Jungle ouverte.' };
+  } catch (error) {
+    return { status: 'manual', message: `Connexion WTTJ : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
-export async function apply() {
-  return {
-    status: 'manual',
-    message: 'Welcome to the Jungle : candidature à faire depuis l’annonce.',
-  };
+/**
+ * Candidature.
+ *
+ * Beaucoup d'annonces WTTJ ne sont qu'une vitrine : « Postuler » renvoie vers
+ * l'ATS de l'employeur (contactrh, Greenhouse, Lever…), chacun avec son propre
+ * parcours. On ne les suit pas — on le dit, avec l'adresse, pour que la
+ * candidature se termine à la main en connaissance de cause. Les annonces
+ * hébergées par WTTJ, elles, se remplissent normalement.
+ */
+export async function apply(context, offer, options = {}) {
+  const page = await context.newPage();
+  try {
+    await page.goto(offer.sourceUrl, { waitUntil: 'commit', timeout: 45_000 });
+    await dismissConsent(page);
+    await page.waitForTimeout(3000);
+
+    const externe = await externalApplyUrl(page, 'welcometothejungle.com');
+    if (externe) {
+      return {
+        status: 'manual',
+        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
+      };
+    }
+
+    await page
+      .getByRole('link', { name: /postuler|apply/i })
+      .first()
+      .click({ timeout: 8000 })
+      .catch(() => {});
+    await page.waitForTimeout(2500);
+
+    return await applyForm(page, options);
+  } catch (error) {
+    return { status: 'manual', message: `Candidature WTTJ : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }

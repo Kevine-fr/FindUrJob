@@ -1,14 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
-import { STATUS_META } from '../lib/status.js';
-import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
+import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
+import { ilYA, fraicheur, candidats, concurrence, UNITES } from '../lib/freshness.js';
 import ApplicationDetail from '../components/ApplicationDetail.jsx';
+import {
+  SearchField,
+  ChipGroup,
+  FreshnessFilter,
+  ApplicantsFilter,
+  FilterFooter,
+} from '../components/FilterBar.jsx';
+
+const FILTRES_VIDES = {
+  q: '',
+  status: '',
+  source: '',
+  age: '',
+  ageUnit: 'jour',
+  maxApplicants: '',
+};
 
 export default function ApplicationsPage() {
   const [apps, setApps] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [filtres, setFiltres] = useState(FILTRES_VIDES);
+
+  const set = (cle, valeur) => setFiltres((f) => ({ ...f, [cle]: valeur }));
 
   const load = () => {
     setLoading(true);
@@ -22,6 +41,75 @@ export default function ApplicationsPage() {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+
+  /*
+   * Les campagnes tournent en arrière-plan : une candidature préparée il y a
+   * dix secondes peut être partie depuis. Sans ce rafraîchissement, l'onglet
+   * montrait un état figé au chargement de la page, et il fallait recharger
+   * pour voir « postulé » apparaître.
+   */
+  useEffect(() => {
+    if (selected) return undefined; // le détail a sa propre synchronisation
+    const timer = setInterval(() => {
+      api.applications
+        .list()
+        .then(setApps)
+        .catch(() => {});
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [selected]);
+
+  // Compteur par statut : savoir qu'une case est vide évite de cliquer dedans.
+  const parStatut = useMemo(() => {
+    const compte = {};
+    for (const a of apps) compte[a.status] = (compte[a.status] || 0) + 1;
+    return compte;
+  }, [apps]);
+
+  const visibles = useMemo(() => {
+    const recherche = filtres.q.trim().toLowerCase();
+    const unite = UNITES.find((u) => u.key === filtres.ageUnit);
+    const limite = filtres.age && unite ? Date.now() - Number(filtres.age) * unite.ms : null;
+
+    return apps.filter((a) => {
+      if (filtres.status && a.status !== filtres.status) return false;
+      if (filtres.source && a.offer?.source !== filtres.source) return false;
+
+      if (limite) {
+        // Sans date de publication, on ne peut pas affirmer que l'offre est
+        // récente : on l'écarte plutôt que de la faire passer pour fraîche.
+        if (!a.offer?.publishedAt) return false;
+        if (new Date(a.offer.publishedAt).getTime() < limite) return false;
+      }
+
+      if (filtres.maxApplicants !== '') {
+        const n = a.offer?.applicantCount;
+        if (typeof n !== 'number' || n > Number(filtres.maxApplicants)) return false;
+      }
+
+      if (recherche) {
+        const foin = [a.offer?.title, a.offer?.company, a.offer?.location, a.notes]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!foin.includes(recherche)) return false;
+      }
+
+      return true;
+    });
+  }, [apps, filtres]);
+
+  const filtreActif = JSON.stringify(filtres) !== JSON.stringify(FILTRES_VIDES);
+
+  // Seules les plateformes réellement présentes méritent une pastille.
+  const sources = useMemo(
+    () =>
+      [...new Set(apps.map((a) => a.offer?.source).filter(Boolean))].map((value) => ({
+        value,
+        label: SOURCE_LABELS[value] || value,
+      })),
+    [apps]
+  );
 
   const refreshOne = (updated) => {
     setApps((list) => list.map((a) => (a._id === updated._id ? updated : a)));
@@ -47,6 +135,57 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
+      {apps.length > 0 && (
+        <div className="panel filters">
+          <SearchField
+            value={filtres.q}
+            onChange={(v) => set('q', v)}
+            placeholder="Intitulé, entreprise, ville, note…"
+          />
+
+          <ChipGroup
+            label="Statut"
+            value={filtres.status}
+            onChange={(v) => set('status', v)}
+            options={STATUS_ORDER.filter((s) => parStatut[s]).map((s) => ({
+              value: s,
+              label: STATUS_META[s].label,
+              color: STATUS_META[s].color,
+              count: parStatut[s],
+            }))}
+          />
+
+          {sources.length > 1 && (
+            <ChipGroup
+              label="Plateforme"
+              value={filtres.source}
+              onChange={(v) => set('source', v)}
+              options={sources}
+              allLabel="Toutes"
+            />
+          )}
+
+          <FreshnessFilter
+            value={filtres.age}
+            unit={filtres.ageUnit}
+            onChange={(age, ageUnit) => setFiltres((f) => ({ ...f, age, ageUnit }))}
+          />
+
+          <ApplicantsFilter
+            value={filtres.maxApplicants}
+            onChange={(v) => set('maxApplicants', v)}
+          />
+
+          <FilterFooter
+            shown={visibles.length}
+            total={apps.length}
+            noun="candidature"
+            active={filtreActif}
+            onReset={() => setFiltres(FILTRES_VIDES)}
+          />
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cards">
           {Array.from({ length: 4 }, (_, index) => (
@@ -63,9 +202,14 @@ export default function ApplicationsPage() {
           <strong>Aucune candidature</strong>
           Va dans « Offres » et clique sur « Suivre cette offre ».
         </div>
+      ) : visibles.length === 0 ? (
+        <div className="empty">
+          <strong>Aucune candidature ne correspond</strong>
+          Tes {apps.length} candidatures sont toujours là — ce sont les filtres qui les masquent.
+        </div>
       ) : (
         <div className="grid grid-cards stagger">
-          {apps.map((a, index) => {
+          {visibles.map((a, index) => {
             const meta = STATUS_META[a.status] || { label: a.status, color: '#62667a' };
             return (
               <div

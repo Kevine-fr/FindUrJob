@@ -34,6 +34,22 @@ export const SOURCE_LABELS = {
   autre: 'Autre',
 };
 
+/**
+ * Plateformes sur lesquelles l'envoi automatique est possible — doit rester
+ * aligné sur `BOT_PLATFORMS` côté serveur.
+ *
+ * Adzuna et Remotive en sont absents par nature : ce sont des agrégateurs,
+ * sans compte candidat ni formulaire à eux.
+ */
+export const SENDABLE_SOURCES = [
+  'linkedin',
+  'indeed',
+  'hellowork',
+  'apec',
+  'welcometothejungle',
+  'francetravail',
+];
+
 export const CONTRACT_LABELS = {
   cdi: 'CDI',
   cdd: 'CDD',

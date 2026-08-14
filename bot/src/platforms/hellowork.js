@@ -1,4 +1,5 @@
 import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
+import { applyForm } from './applyForm.js';
 
 /**
  * HelloWork.
@@ -208,31 +209,30 @@ export async function login(context, { email, password }) {
 }
 
 /**
+/**
  * Candidature HelloWork.
  *
- * Le formulaire vit **dans la page de l'annonce** (ancre `#postuler`), pas sur
- * une page à part. Il exige nom, prénom, e-mail et l'acceptation des CGU en
- * plus du CV : n'envoyer que le fichier ne suffit pas, le formulaire reste en
- * erreur sans le dire.
- *
- * Champs relevés sur le site :
- *   Firstname · LastName · Email · MotivationLetter · upload · HasAcceptedCGU
+ * Le formulaire vit **dans la page de l’annonce** (ancre `#postuler`), pas sur
+ * une page à part : le clic fait défiler, il ne navigue pas. Tout le reste est
+ * du remplissage de formulaire ordinaire, délégué à `applyForm` — dont les
+ * règles ont précisément été tirées de ce site : champ fichier vidé après
+ * téléversement, bouton d’envoi hors du `<form>`, parcours en plusieurs écrans.
  */
-export async function apply(context, offer, { cvFile, applicant = {}, coverLetter, dryRun } = {}) {
+export async function apply(context, offer, options = {}) {
   const page = await context.newPage();
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'domcontentloaded' });
     await dismissConsent(page);
     await humanPause();
 
-    // Le libellé varie (« Postuler », « Je postule », « Postuler à cette offre ») :
-    // on cible le rôle et le verbe plutôt qu'une classe.
-    const button = page
+    // Le libellé varie (« Postuler », « Je postule »…) : on cible le rôle et le
+    // verbe plutôt qu’une classe, qui change à chaque refonte.
+    const bouton = page
       .getByRole('link', { name: /postuler|je postule/i })
       .or(page.getByRole('button', { name: /postuler|je postule/i }))
       .first();
 
-    if (!(await button.count())) {
+    if (!(await bouton.count())) {
       return {
         status: 'manual',
         message: "Aucun bouton « Postuler » sur cette offre (candidature externe).",
@@ -240,178 +240,10 @@ export async function apply(context, offer, { cvFile, applicant = {}, coverLette
       };
     }
 
-    // « Postuler » est une ancre `#postuler` dans la même page : le clic fait
-    // défiler jusqu'au formulaire, il ne navigue pas.
-    await button.click().catch(() => {});
+    await bouton.click().catch(() => {});
     await humanPause(1200, 2000);
 
-    const formulaire = page.locator('form').filter({ has: page.locator('input[type="file"]') }).first();
-    if (!(await formulaire.count())) {
-      return {
-        status: 'manual',
-        message: "Le formulaire de candidature ne s'est pas affiché.",
-        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-      };
-    }
-
-    // Remplissage. Chaque champ est facultatif à l'écriture (le site peut les
-    // pré-remplir depuis la session) mais obligatoire à l'envoi : on n'écrase
-    // que ce qui est vide, sinon on remplacerait les données du compte.
-    const remplir = async (selecteur, valeur) => {
-      if (!valeur) return;
-      const champ = formulaire.locator(selecteur).first();
-      if (!(await champ.count())) return;
-      if (!(await champ.inputValue().catch(() => ''))) {
-        await champ.fill(String(valeur)).catch(() => {});
-        await humanPause(200, 500);
-      }
-    };
-
-    await remplir('input[name="Firstname"]', applicant.firstName);
-    await remplir('input[name="LastName"]', applicant.lastName);
-    await remplir('input[name="Email"]', applicant.email);
-    await remplir('textarea[name="MotivationLetter"]', coverLetter);
-
-    // Le CV. Sans pièce jointe, on n'envoie pas : une candidature vide dessert.
-    //
-    // HelloWork téléverse le fichier en arrière-plan puis **vide** le champ et
-    // range une référence dans le champ caché `JweHashResume`. C'est donc ce
-    // jeton, et non la valeur du champ fichier, qui atteste que le CV est passé.
-    let cvJoint = false;
-    if (cvFile) {
-      const upload = formulaire.locator('input[type="file"]').first();
-      if (await upload.count()) {
-        await upload.setInputFiles(cvFile).catch(() => {});
-        cvJoint = await formulaire
-          .locator('input[name="JweHashResume"]')
-          .first()
-          .waitFor({ state: 'attached', timeout: 1000 })
-          .then(() =>
-            page.waitForFunction(
-              () =>
-                Boolean(
-                  document.querySelector('input[name="JweHashResume"]')?.value
-                ),
-              undefined,
-              { timeout: 30_000 }
-            )
-          )
-          .then(() => true)
-          // Pas de champ caché sur ce formulaire : le champ fichier suffit.
-          .catch(() => Boolean(cvFile));
-      }
-    }
-    if (cvFile && !cvJoint) {
-      return {
-        status: 'manual',
-        message: "CV non accepté par la plateforme : envoi interrompu.",
-        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-      };
-    }
-
-    // Les cases à cocher obligatoires — CGU en tête. Sans elles, le formulaire
-    // refuse silencieusement : c'est ce qui bloquait tous les envois.
-    for (const nom of ['HasAcceptedCGU', 'CriterionChecked']) {
-      const case_ = formulaire.locator(`input[type="checkbox"][name="${nom}"]`).first();
-      if ((await case_.count()) && !(await case_.isChecked().catch(() => true))) {
-        await case_.check({ force: true }).catch(() => {});
-      }
-    }
-
-    // Dernier contrôle avant envoi. Les champs `file` sont exclus : la
-    // plateforme les vide après téléversement, ils paraîtraient toujours
-    // manquants alors que le CV est bien arrivé (cf. `JweHashResume` plus haut).
-    const manquants = await formulaire.evaluate((form) =>
-      [...form.querySelectorAll('input[required], textarea[required], select[required]')]
-        .filter((el) =>
-          el.type === 'checkbox' ? !el.checked : el.type !== 'file' && !el.value
-        )
-        .map((el) => el.name || el.id)
-        .slice(0, 6)
-    );
-
-    if (manquants.length) {
-      return {
-        status: 'manual',
-        message: `Champs obligatoires non renseignés : ${manquants.join(', ')}.`,
-        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-      };
-    }
-
-    // Le bouton d'envoi est **hors du `<form>`** : HelloWork le pose dans le
-    // conteneur du parcours. Le chercher dans le formulaire ne donne rien.
-    const submit = page.locator('[data-cy="submitButton"], button[type="submit"]').last();
-    if (!(await submit.count())) {
-      return {
-        status: 'manual',
-        message: "Bouton d'envoi introuvable sur la page.",
-        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-      };
-    }
-
-    // Mode essai : tout est prêt, on ne soumet pas. Sert à vérifier le parcours
-    // sans envoyer une vraie candidature à un employeur.
-    if (dryRun) {
-      return {
-        status: 'dry-run',
-        message: `Prêt à envoyer — non soumis (mode essai). Bouton : « ${(
-          await submit.innerText().catch(() => '?')
-        ).trim()} ».`,
-        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-      };
-    }
-
-    // « Continuer ma candidature » : le parcours peut compter plusieurs écrans
-    // (questions de l'employeur, récapitulatif). On avance tant qu'un bouton
-    // d'envoi reste cliquable, en s'arrêtant dès la confirmation.
-    const confirme = /candidature (bien )?(envoy|transmis|enregistr)|merci pour votre candidature|votre candidature a bien/;
-    let texte = '';
-
-    for (let etape = 0; etape < 4; etape += 1) {
-      const bouton = page.locator('[data-cy="submitButton"], button[type="submit"]').last();
-      if (!(await bouton.isVisible().catch(() => false))) break;
-
-      await bouton.click().catch(() => {});
-      await humanPause(2500, 4000);
-
-      texte = (await page.innerText('body').catch(() => '')).toLowerCase();
-      if (confirme.test(texte)) {
-        return { status: 'sent', message: 'Candidature envoyée, CV joint.' };
-      }
-
-      // Un écran intermédiaire peut poser ses propres questions obligatoires :
-      // on ne sait pas y répondre, on rend la main plutôt que de deviner.
-      const bloquants = await page
-        .locator('form')
-        .first()
-        .evaluate((form) =>
-          [...form.querySelectorAll('input[required], textarea[required], select[required]')]
-            .filter((el) =>
-              el.type === 'checkbox' ? !el.checked : el.type !== 'file' && !el.value
-            )
-            .map((el) => el.name || el.id)
-            .slice(0, 6)
-        )
-        .catch(() => []);
-
-      if (bloquants.length) {
-        return {
-          status: 'manual',
-          message: `Étape ${etape + 2} : question(s) de l'employeur à remplir à la main (${bloquants.join(', ')}).`,
-          screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-        };
-      }
-    }
-
-    if (confirme.test(texte)) {
-      return { status: 'sent', message: 'Candidature envoyée, CV joint.' };
-    }
-
-    return {
-      status: 'manual',
-      message: 'Formulaire soumis sans confirmation visible : à vérifier sur la plateforme.',
-      screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
-    };
+    return await applyForm(page, options);
   } finally {
     await page.close().catch(() => {});
   }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
+import { SearchField, ChipGroup, FilterFooter } from '../components/FilterBar.jsx';
 
 const TYPE_FILTERS = [
   { value: '', label: 'Tout' },
@@ -29,6 +30,10 @@ export default function HistoryPage() {
   const [error, setError] = useState(null);
   const [type, setType] = useState('');
   const [status, setStatus] = useState('');
+  // Plateforme et recherche se jouent côté client : le serveur renvoie déjà la
+  // fenêtre d'évènements, la refiltrer localement évite un aller-retour.
+  const [source, setSource] = useState('');
+  const [q, setQ] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -49,9 +54,40 @@ export default function HistoryPage() {
 
   useEffect(load, [load]);
 
+  const sources = useMemo(
+    () =>
+      [...new Set(events.map((e) => e.offer?.source).filter(Boolean))].map((value) => ({
+        value,
+        label: SOURCE_LABELS[value] || value,
+      })),
+    [events]
+  );
+
+  const visibles = useMemo(() => {
+    const recherche = q.trim().toLowerCase();
+    return events.filter((event) => {
+      if (source && event.offer?.source !== source) return false;
+      if (!recherche) return true;
+      const foin = [event.offer?.title, event.offer?.company, event.note]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return foin.includes(recherche);
+    });
+  }, [events, source, q]);
+
+  const filtreActif = Boolean(type || status || source || q);
+
+  const reset = () => {
+    setType('');
+    setStatus('');
+    setSource('');
+    setQ('');
+  };
+
   // Regroupement par jour, l'ordre du serveur étant déjà décroissant.
   const groups = [];
-  for (const event of events) {
+  for (const event of visibles) {
     const key = dayKey(event.at);
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.events.push(event);
@@ -68,6 +104,12 @@ export default function HistoryPage() {
       </div>
 
       <div className="panel filters">
+        <SearchField
+          value={q}
+          onChange={setQ}
+          placeholder="Intitulé, entreprise, note…"
+        />
+
         <div className="filter-group">
           <span className="filter-label">Type</span>
           <div className="filter-chips">
@@ -106,11 +148,23 @@ export default function HistoryPage() {
           </div>
         )}
 
-        <div className="filter-footer">
-          <span className="muted">
-            {total} évènement{total > 1 ? 's' : ''}
-          </span>
-        </div>
+        {sources.length > 1 && (
+          <ChipGroup
+            label="Plateforme"
+            value={source}
+            onChange={setSource}
+            options={sources}
+            allLabel="Toutes"
+          />
+        )}
+
+        <FilterFooter
+          shown={visibles.length}
+          total={total}
+          noun="évènement"
+          active={filtreActif}
+          onReset={reset}
+        />
       </div>
 
       {loading ? (
@@ -121,6 +175,11 @@ export default function HistoryPage() {
         <div className="empty">
           Rien à afficher pour l'instant. L'historique se remplit dès que tu suis une offre ou
           génères un CV ✦
+        </div>
+      ) : visibles.length === 0 ? (
+        <div className="empty">
+          <strong>Aucun évènement ne correspond</strong>
+          Les {events.length} évènements de cette période sont masqués par les filtres.
         </div>
       ) : (
         groups.map((group) => (

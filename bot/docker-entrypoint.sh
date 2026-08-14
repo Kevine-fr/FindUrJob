@@ -11,6 +11,13 @@ set -e
 : "${VNC_GEOMETRY:=1440x900x24}"
 export DISPLAY
 
+# Un `docker compose restart` ne vide pas /tmp : le verrou du serveur X et sa
+# socket survivent au processus qui les a créés, et Xvfb refuse alors de
+# démarrer (« Server is already active for display 99 »). Le conteneur reste
+# « running » mais le service ne répond plus. Comme rien d'autre ne peut
+# détenir cet écran dans ce conteneur, le verrou trouvé ici est forcément mort.
+rm -f "/tmp/.X${DISPLAY#:}-lock" "/tmp/.X11-unix/X${DISPLAY#:}" 2>/dev/null || true
+
 Xvfb "$DISPLAY" -screen 0 "$VNC_GEOMETRY" -nolisten tcp &
 
 # Sans cette attente, Chromium démarre avant le serveur X et échoue.

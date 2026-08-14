@@ -19,6 +19,21 @@ const jobOfferSchema = new mongoose.Schema(
     remote: { type: String, enum: REMOTE, default: 'non_precise' },
     salary: { type: String, trim: true },
     keywords: { type: [String], default: [] }, // extraits par le moteur IA (à venir)
+
+    /*
+     * Les deux signaux qui décident s'il vaut la peine de postuler.
+     *
+     * `publishedAt` est la date de la *plateforme*, distincte de `createdAt`
+     * qui n'est que le moment où on l'a collectée : une annonce d'il y a trois
+     * semaines découverte aujourd'hui n'est pas une annonce fraîche.
+     *
+     * `applicantCount` n'est pas toujours disponible — seules quelques
+     * plateformes l'exposent. `null` veut dire « inconnu », surtout pas zéro :
+     * filtrer sur « moins de 10 candidats » ne doit pas faire remonter tout ce
+     * dont on ignore le chiffre.
+     */
+    publishedAt: { type: Date, index: true },
+    applicantCount: { type: Number, min: 0, default: null },
   },
   { timestamps: true }
 );

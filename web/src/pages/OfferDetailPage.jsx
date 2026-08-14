@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
+import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
 
 // Plateformes sur lesquelles on peut candidater depuis son propre compte.
 const BOT_PLATFORMS = ['linkedin', 'indeed', 'hellowork'];
@@ -119,6 +120,19 @@ export default function OfferDetailPage() {
                   <dd>{offer.salary}</dd>
                 </div>
               )}
+              {/* Les deux signaux décisifs, en tête des repères. */}
+              <div>
+                <dt>Publiée</dt>
+                <dd className={`signal signal-${fraicheur(offer.publishedAt)}`}>
+                  {ilYA(offer.publishedAt) || 'date inconnue'}
+                </dd>
+              </div>
+              <div>
+                <dt>Candidats</dt>
+                <dd className={`signal signal-${concurrence(offer.applicantCount)}`}>
+                  {candidats(offer.applicantCount) || 'non communiqué'}
+                </dd>
+              </div>
               <div>
                 <dt>Repérée le</dt>
                 <dd>{new Date(offer.createdAt).toLocaleDateString('fr-FR')}</dd>

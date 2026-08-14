@@ -296,6 +296,25 @@ sert à relever un code de vérification sans changer de fenêtre.
 > Internet : l'écran n'a pas de mot de passe, il n'est joignable qu'à travers
 > l'application.
 
+### Indeed et Cloudflare
+
+Indeed protège sa connexion par un contrôle Cloudflare qui, depuis une adresse IP
+de centre de données, tourne indéfiniment sans jamais aboutir — y compris quand
+c'est un humain qui clique. Ce n'est pas une question de navigateur : le verdict
+se joue d'abord sur la réputation de l'IP, et celle d'un VPS est mauvaise par
+construction.
+
+Deux conséquences pratiques :
+
+- Mettre **Indeed à 0** dans la campagne. Les cinq autres sources (LinkedIn,
+  HelloWork, APEC, WTTJ, France Travail) couvrent largement le marché français.
+- `BOT_CHROME_CHANNEL=chrome` bascule sur un vrai Google Chrome plutôt que sur
+  le Chromium de test, si l'image l'embarque (`npx playwright install chrome`).
+  Ça peut suffire sur un contrôle léger ; ça ne changera rien au problème d'IP.
+
+Importer les cookies obtenus depuis son propre navigateur ne marche pas non plus :
+le jeton `cf_clearance` de Cloudflare est lié à l'adresse IP qui l'a obtenu.
+
 **Ce que l'outil ne fait pas** : franchir une 2FA ou un captcha. Quand la
 plateforme en présente un, la candidature s'arrête et te rend la main — c'est
 une limite assumée, pas un manque. Un login automatisé sur LinkedIn ou Indeed

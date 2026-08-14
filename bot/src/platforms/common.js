@@ -67,7 +67,9 @@ export function normalize(offer, source) {
       offer.contractType || guessContract(offer.contractHint, offer.title, description.slice(0, 400)),
     remote: offer.remote || guessRemote(offer.title, offer.location, description),
     salary: cleanHtml(offer.salary || '').trim(),
-    keywords: (offer.keywords || []).filter((word) => typeof word === 'string').slice(0, 12),
+    keywords: (offer.keywords || []).filter((word) => typeof word === "string").slice(0, 12),
+    publishedAt: offer.publishedAt || undefined,
+    applicantCount: Number.isFinite(Number(offer.applicantCount)) ? Number(offer.applicantCount) : null,
   };
 }
 
@@ -127,6 +129,33 @@ export const textFrom = (root, selectors) => {
   }
   return '';
 };
+
+/**
+ * « il y a 3 jours », « 2 weeks ago », « 5 h » → date absolue.
+ *
+ * Les plateformes affichent presque toujours une ancienneté relative plutôt
+ * qu'une date. La convertir tout de suite évite d'avoir à réinterpréter
+ * « hier » des semaines plus tard, quand il ne veut plus rien dire.
+ */
+export function parseRelativeDate(texte) {
+  const t = stripAccents(String(texte || "")).toLowerCase();
+  if (!t) return undefined;
+
+  const m = /(\d+)\s*(minute|min|heure|hour|h|jour|day|j|semaine|week|mois|month|an|year)/.exec(t);
+  if (!m) return /aujourd|today|instant|just now/.test(t) ? new Date() : undefined;
+
+  const n = Number(m[1]);
+  const unites = {
+    minute: 60e3, min: 60e3,
+    heure: 3600e3, hour: 3600e3, h: 3600e3,
+    jour: 864e5, day: 864e5, j: 864e5,
+    semaine: 6048e5, week: 6048e5,
+    mois: 2592e6, month: 2592e6,
+    an: 31536e6, year: 31536e6,
+  };
+  const ms = unites[m[2]];
+  return ms ? new Date(Date.now() - n * ms) : undefined;
+}
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -22,6 +22,26 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const DEFAULT_PAGE_SIZE = 60;
 const MAX_PAGE_SIZE = 200;
 
+// Unités acceptées pour l'ancienneté, en millisecondes.
+const UNITES = {
+  minute: 60_000,
+  heure: 3_600_000,
+  jour: 86_400_000,
+  semaine: 604_800_000,
+  mois: 2_592_000_000, // 30 jours — suffisant pour un filtre de fraîcheur
+};
+
+/**
+ * « Publiée il y a moins de N <unité> » → date plancher.
+ * Format attendu : `publishedWithin=3&publishedUnit=jour`.
+ */
+function depuisQuand(value, unit) {
+  const n = Number(value);
+  const ms = UNITES[unit];
+  if (!Number.isFinite(n) || n <= 0 || !ms) return null;
+  return new Date(Date.now() - n * ms);
+}
+
 /**
  * GET /offers — liste paginée.
  *
@@ -53,12 +73,34 @@ export const listOffers = asyncHandler(async (req, res) => {
     ];
   }
 
+  // Fraîcheur : on retient aussi les offres sans date connue quand la source
+  // ne la donne pas — les écarter reviendrait à masquer des annonces valables
+  // pour un champ manquant.
+  const plancher = depuisQuand(req.query.publishedWithin, req.query.publishedUnit);
+  if (plancher) {
+    filter.$and = [
+      ...(filter.$and || []),
+      { $or: [{ publishedAt: { $gte: plancher } }, { publishedAt: null, createdAt: { $gte: plancher } }] },
+    ];
+  }
+
+  // Concurrence : « moins de N candidats ». Une offre au compteur inconnu n'est
+  // pas une offre à zéro candidat — elle sort du filtre plutôt que de le fausser.
+  const maxCandidats = Number(req.query.maxApplicants);
+  if (Number.isFinite(maxCandidats) && maxCandidats >= 0) {
+    filter.applicantCount = { $ne: null, $lte: maxCandidats };
+  }
+
   const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const page = Math.max(Number(req.query.page) || 1, 1);
 
+  // Trier par fraîcheur quand on filtre dessus : la date de collecte n'a plus
+  // d'intérêt dès qu'on raisonne en date de publication.
+  const tri = plancher || req.query.sort === 'published' ? { publishedAt: -1, createdAt: -1 } : { createdAt: -1 };
+
   const [offers, total] = await Promise.all([
     JobOffer.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(tri)
       .skip((page - 1) * limit)
       .limit(limit),
     JobOffer.countDocuments(filter),
@@ -107,6 +149,12 @@ const sanitize = (offer) => ({
   remote: REMOTE.includes(offer.remote) ? offer.remote : 'non_precise',
   salary: String(offer.salary || '').trim(),
   keywords: Array.isArray(offer.keywords) ? offer.keywords.map(String).slice(0, 20) : [],
+  // Date de la plateforme, distincte de la date de collecte.
+  publishedAt: offer.publishedAt ? new Date(offer.publishedAt) : undefined,
+  // `null` signifie « inconnu » : on ne le confond pas avec zéro candidat.
+  applicantCount: Number.isFinite(Number(offer.applicantCount))
+    ? Number(offer.applicantCount)
+    : null,
 });
 
 /**

@@ -1,4 +1,4 @@
-import { normalize, humanPause, jsonLdJobs, dismissConsent } from './common.js';
+import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
 
 /**
  * HelloWork.
@@ -74,7 +74,8 @@ async function readCards(page) {
           company: parsed?.[3] || paragraphs[1]?.textContent.trim() || '',
           location: parsed?.[2] || text(card, ['[data-cy="localisationCard"]']),
           contractHint: parsed?.[4] || text(card, ['[data-cy="contractCard"]']),
-          salary: text(card, ['[data-cy="salaryCard"]']),
+          salary: text(card, ["[data-cy=\"salaryCard\"]"]),
+          publishedRaw: text(card, ["[data-cy=\"publicationCard\"]", "time"]),
           // L'URL est /fr-fr/emplois/80029410.html : pas de tiret avant l'identifiant.
           externalId: href.match(/\/emplois\/(\d+)\.html/)?.[1] || '',
           sourceUrl: href.split('?')[0],
@@ -118,6 +119,7 @@ export async function search(context, query) {
       if (!cards.length) break;
 
       for (const card of cards) {
+        card.publishedAt = parseRelativeDate(card.publishedRaw);
         const key = card.externalId || card.sourceUrl;
         if (!key || seen.has(key)) continue;
         seen.add(key);

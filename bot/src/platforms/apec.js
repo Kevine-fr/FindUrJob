@@ -103,6 +103,7 @@ export async function search(context, query) {
             ? `https://www.apec.fr/candidat/recherche-emploi.html/emploi/detail-offre/${item.numeroOffre}`
             : '',
           // Le type de contrat arrive en code numérique : on retrouve le libellé.
+          publishedAt: item.datePublication || item.dateValidation || undefined,
           contractHint:
             Object.entries(CONTRACTS).find(([, code]) => code === String(item.typeContrat))?.[0] ||
             '',

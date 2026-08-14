@@ -1,4 +1,4 @@
-import { normalize, cleanHtml, humanPause, dismissConsent } from './common.js';
+import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate } from './common.js';
 
 /**
  * LinkedIn.
@@ -55,8 +55,13 @@ async function readCards(page) {
           company: text('.base-search-card__subtitle, h4'),
           location: text('.job-search-card__location'),
           salary: text('.job-search-card__salary-info'),
-          sourceUrl: href.split('?')[0],
+          sourceUrl: href.split("?")[0],
           externalId: id,
+          // LinkedIn date ses cartes en absolu (datetime) ou en relatif.
+          publishedRaw:
+            card.querySelector("time")?.getAttribute("datetime") ||
+            card.querySelector("time, .job-search-card__listdate, .job-search-card__listdate--new")?.textContent?.trim() ||
+            "",
         };
       })
       .filter((card) => card.title && card.externalId);
@@ -75,11 +80,29 @@ async function fetchDescription(page, offerId) {
       const criteria = [...document.querySelectorAll('.description__job-criteria-item')].map(
         (item) => item.textContent.replace(/\s+/g, ' ').trim()
       );
-      return { description: block?.innerHTML || '', contractHint: criteria.join(' · ') };
+      // « 27 candidats » / « Plus de 100 candidatures » : le chiffre qui dit
+      // si l on arrive tôt ou dans la foule.
+      const texte = document.body.innerText || "";
+      // Les espaces insécables des milliers deviennent des espaces ordinaires.
+      const candidats = /(\d[\d\s]{0,6})\s*(candidat|applicant)/i.exec(
+        texte.replace(/ /g, ' ')
+      );
+      return {
+        description: block?.innerHTML || "",
+        contractHint: criteria.join(" · "),
+        applicantCount: candidats ? Number(candidats[1].replace(/\s/g, '')) : null,
+      };
     });
   } catch {
     return { description: '', contractHint: '' };
   }
+}
+
+/** Date ISO fournie telle quelle, sinon ancienneté relative à décoder. */
+function absOrRelative(brut) {
+  if (!brut) return undefined;
+  const iso = new Date(brut);
+  return Number.isNaN(iso.getTime()) ? parseRelativeDate(brut) : iso;
 }
 
 export async function search(context, query) {
@@ -122,7 +145,9 @@ export async function search(context, query) {
       await humanPause(400, 1100);
     }
 
-    return kept.map((card) => normalize(card, name));
+    return kept.map((card) =>
+      normalize({ ...card, publishedAt: absOrRelative(card.publishedRaw) }, name)
+    );
   } finally {
     await page.close().catch(() => {});
   }

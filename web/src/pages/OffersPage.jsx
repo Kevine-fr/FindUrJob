@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS } from '../lib/status.js';
+import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
 import { useToast } from '../components/Toast.jsx';
 import AddOfferForm from '../components/AddOfferForm.jsx';
 import OfferFilters, { EMPTY_FILTERS, toQuery } from '../components/OfferFilters.jsx';
@@ -190,6 +191,19 @@ export default function OffersPage() {
                 <h3>{offer.title}</h3>
                 <div className="meta">
                   {offer.company || 'Entreprise ?'} · {offer.location || 'Lieu ?'}
+                </div>
+
+                {/* Fraîcheur et concurrence : les deux signaux qui décident s'il
+                    vaut la peine de postuler — donc avant le reste. */}
+                <div className="signals">
+                  <span className={`signal signal-${fraicheur(offer.publishedAt)}`}>
+                    {ilYA(offer.publishedAt) || 'date inconnue'}
+                  </span>
+                  {candidats(offer.applicantCount) && (
+                    <span className={`signal signal-${concurrence(offer.applicantCount)}`}>
+                      {candidats(offer.applicantCount)}
+                    </span>
+                  )}
                 </div>
                 <div className="row">
                   <span className="chip chip-accent">

@@ -96,6 +96,16 @@ export function getContext(platform, { headless = !process.env.DISPLAY, user } =
 
     const context = await chromium.launchPersistentContext(dir, {
       headless,
+      /*
+       * Chromium embarqué par défaut ; `BOT_CHROME_CHANNEL=chrome` bascule sur
+       * un vrai Google Chrome s'il est installé dans l'image.
+       *
+       * Cloudflare distingue « Chrome for Testing » d'un Chrome de série. Ça
+       * peut suffire sur un contrôle léger — mais pas sur une adresse IP de
+       * centre de données, où le verdict se joue surtout sur la réputation de
+       * l'IP, pas sur le navigateur.
+       */
+      ...(process.env.BOT_CHROME_CHANNEL ? { channel: process.env.BOT_CHROME_CHANNEL } : {}),
       args: [
         '--no-sandbox',
         '--disable-dev-shm-usage',

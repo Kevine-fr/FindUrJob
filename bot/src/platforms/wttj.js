@@ -115,7 +115,10 @@ export async function search(context, query) {
             slugSociete && hit.slug
               ? `https://www.welcometothejungle.com/fr/companies/${slugSociete}/jobs/${hit.slug}`
               : '',
-          contractHint: hit.contract_type || '',
+          contractHint: hit.contract_type || "",
+          publishedAt: hit.published_at
+            ? new Date(typeof hit.published_at === "number" ? hit.published_at * 1000 : hit.published_at)
+            : undefined,
           remote: /full|fulltime|total/i.test(hit.remote || '') ? 'teletravail' : undefined,
         },
         name

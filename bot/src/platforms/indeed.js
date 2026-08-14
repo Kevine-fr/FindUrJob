@@ -1,4 +1,4 @@
-import { normalize, humanPause, dismissConsent } from './common.js';
+import { normalize, humanPause, dismissConsent, parseRelativeDate } from './common.js';
 
 /**
  * Indeed.
@@ -79,7 +79,8 @@ async function readCards(page) {
           company: text(card, ['[data-testid="company-name"]', '.companyName', '.company_location a']),
           location: text(card, ['[data-testid="text-location"]', '.companyLocation']),
           salary: text(card, ['[data-testid="attribute_snippet_testid"]', '.salary-snippet-container']),
-          description: text(card, ['[data-testid="belowJobSnippet"]', '.job-snippet']),
+          description: text(card, ["[data-testid=\"belowJobSnippet\"]", ".job-snippet"]),
+          publishedRaw: text(card, ["[data-testid=\"myJobsStateDate\"]", ".date"]),
           externalId: jk,
           sourceUrl: jk ? `${location.origin}/viewjob?jk=${jk}` : link?.href || '',
         };
@@ -124,7 +125,9 @@ export async function search(context, query) {
       await humanPause(1200, 2600);
     }
 
-    return collected.slice(0, wanted).map((card) => normalize(card, name));
+    return collected
+      .slice(0, wanted)
+      .map((card) => normalize({ ...card, publishedAt: parseRelativeDate(card.publishedRaw) }, name));
   } finally {
     await page.close().catch(() => {});
   }

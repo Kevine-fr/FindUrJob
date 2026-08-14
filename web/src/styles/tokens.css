@@ -616,6 +616,78 @@ img {
   overflow: auto;
 }
 
+/* --- Fraîcheur et concurrence ------------------------------------------- */
+
+/* Les deux signaux qui décident s'il vaut la peine de postuler. La couleur
+   n'est jamais seule porteuse : le texte dit toujours la valeur. */
+.signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.signal::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 6px;
+}
+.signal-fraiche,
+.signal-faible {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.signal-recente,
+.signal-moyenne {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.signal-ancienne,
+.signal-forte {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+/* Sans donnée, pas de couleur : une teinte laisserait croire à un jugement. */
+.signal-inconnue::before {
+  opacity: 0.35;
+}
+
+/* Dans la liste des repères du détail, le signal reste aligné à droite. */
+.facts dd.signal {
+  margin-left: auto;
+}
+
+/* Saisie libre d'un filtre : nombre + unité, à côté des raccourcis. */
+.filter-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.filter-custom .input {
+  width: 68px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.filter-custom .select {
+  width: auto;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
 /* --- Détail d'une offre ------------------------------------------------ */
 
 .back-link {

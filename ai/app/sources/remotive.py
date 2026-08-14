@@ -75,6 +75,7 @@ class RemotiveSource:
                     contractType=guess_contract(item.get("job_type", "")),
                     remote="teletravail",  # toutes les annonces de Remotive le sont
                     salary=item.get("salary", "") or "",
+                    publishedAt=item.get("publication_date"),
                     keywords=[tag for tag in (item.get("tags") or []) if isinstance(tag, str)][:12],
                 )
             )

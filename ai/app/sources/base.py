@@ -30,6 +30,14 @@ class NormalizedOffer:
     salary: str = ""
     keywords: list[str] = field(default_factory=list)
 
+    # Date de publication **sur la plateforme**, en ISO 8601. À ne pas confondre
+    # avec la date de collecte : une annonce vieille de trois semaines découverte
+    # aujourd'hui n'est pas une annonce fraîche.
+    publishedAt: str | None = None
+    # Nombre de candidats déjà déclarés. `None` = inconnu, jamais zéro : peu de
+    # sources l'exposent, et confondre les deux fausserait tout filtre.
+    applicantCount: int | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 

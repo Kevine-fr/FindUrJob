@@ -139,6 +139,7 @@ class FranceTravailSource:
                         contract_code, guess_contract(item.get("typeContratLibelle", ""))
                     ),
                     remote=guess_remote(item.get("intitule", ""), description),
+                    publishedAt=item.get("dateCreation") or item.get("dateActualisation"),
                     salary=(item.get("salaire") or {}).get("libelle", "") or "",
                 )
             )

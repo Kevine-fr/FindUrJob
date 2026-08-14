@@ -90,6 +90,7 @@ class AdzunaSource:
                     contractType=guess_contract(contract, title, description[:400]),
                     remote=guess_remote(title, description),
                     salary=_salary(item),
+                    publishedAt=item.get("created"),
                 )
             )
         return offers

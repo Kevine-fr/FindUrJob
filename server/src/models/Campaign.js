@@ -45,6 +45,20 @@ const campaignSchema = new mongoose.Schema(
      */
     mode: { type: String, enum: ['preparer', 'envoyer'], default: 'preparer' },
 
+    /*
+     * Quel CV part avec la candidature.
+     *
+     * `adaptatif` : le moteur réécrit le CV pour chaque offre — meilleur ciblage,
+     * mais un appel au modèle par candidature, donc un coût par candidature.
+     * `classique` : le CV de l'onglet « Mon CV » est joint tel quel — gratuit,
+     * instantané, et suffisant quand on postule en volume sur un même métier.
+     *
+     * Le repli vers `classique` est aussi automatique quand le moteur est
+     * indisponible (crédits épuisés, panne) : mieux vaut une candidature partie
+     * avec le CV de référence qu'une candidature qui n'part pas du tout.
+     */
+    cvMode: { type: String, enum: ['adaptatif', 'classique'], default: 'adaptatif' },
+
     // Volume visé, source par source. Le total tenté à chaque exécution est la
     // somme de ces limites, plafonnée par `dailyLimit`.
     targets: {

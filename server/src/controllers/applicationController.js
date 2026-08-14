@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware.js';
 import { tailorCv } from '../services/tailoringService.js';
 import { renderCvPdf } from '../services/botService.js';
 import { buildTailoredCvHtml } from '../services/cvDocument.js';
+import { buildLetterHtml } from '../services/letterDocument.js';
 import { APPLICATION_STATUSES } from '../utils/constants.js';
 
 const POPULATE = ['offer', 'cvVersion'];
@@ -118,4 +119,38 @@ export const tailorApplication = asyncHandler(async (req, res) => {
   await application.save();
 
   res.status(201).json(await application.populate(POPULATE));
+});
+
+/**
+ * GET /applications/:id/letter.pdf — la lettre telle qu'elle part.
+ *
+ * Rendue à la demande plutôt que stockée : elle est courte, l'impression prend
+ * moins d'une seconde, et une lettre corrigée ne doit pas rester figée sur une
+ * version périmée comme le serait un PDF conservé en base.
+ */
+export const getLetterPdf = asyncHandler(async (req, res) => {
+  const application = await Application.findOne({
+    _id: req.params.id,
+    user: req.user.id,
+  }).populate('offer');
+
+  if (!application) return res.status(404).json({ error: 'Candidature introuvable' });
+  if (!application.coverLetter?.trim()) {
+    return res.status(404).json({ error: "Aucune lettre sur cette candidature." });
+  }
+
+  const { buffer } = await renderCvPdf(
+    buildLetterHtml(application.coverLetter, { offre: application.offer?.title })
+  );
+
+  const nom = `lettre-${(application.offer?.title || 'candidature')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .toLowerCase()}.pdf`;
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Length': String(buffer.length),
+    'Content-Disposition': `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${nom}"`,
+  });
+  res.end(buffer);
 });

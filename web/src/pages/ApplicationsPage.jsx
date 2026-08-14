@@ -228,6 +228,13 @@ export default function ApplicationsPage() {
                   {typeof a.matchScore === 'number' && (
                     <span className="chip">Match {a.matchScore}%</span>
                   )}
+                  {/* La plateforme décide où finir la candidature à la main :
+                      elle vaut d'être lisible sans ouvrir la fiche. */}
+                  {a.offer?.source && (
+                    <span className="chip chip-source">
+                      {SOURCE_LABELS[a.offer.source] || a.offer.source}
+                    </span>
+                  )}
                 </div>
                 <h3 style={{ marginTop: 10 }}>{a.offer?.title || 'Offre supprimée'}</h3>
                 <div className="meta">
@@ -246,8 +253,12 @@ export default function ApplicationsPage() {
                     </span>
                   )}
                 </div>
-                <div className="meta" style={{ marginTop: 8 }}>
-                  Maj {new Date(a.updatedAt).toLocaleDateString('fr-FR')}
+                {/* « Maj 14/08/2026 » demandait un calcul mental pour répondre
+                    à la seule question qui compte : est-ce récent ? */}
+                <div className="card-foot">
+                  <span className="meta" title={new Date(a.updatedAt).toLocaleString('fr-FR')}>
+                    {ilYA(a.updatedAt) || '—'}
+                  </span>
                 </div>
               </div>
             );

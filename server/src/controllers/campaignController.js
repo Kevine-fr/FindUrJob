@@ -33,7 +33,7 @@ export const getCampaign = asyncHandler(async (req, res) => {
 export const updateCampaign = asyncHandler(async (req, res) => {
   const campaign = await Campaign.forUser(req.user.id);
   const {
-    enabled, cron: expression, timezone, mode, dailyLimit, minScore, targets,
+    enabled, cron: expression, timezone, mode, cvMode, dailyLimit, minScore, targets,
     maxAgeValue, maxAgeUnit, maxApplicants,
   } = req.body || {};
 
@@ -51,6 +51,7 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   if (enabled !== undefined) campaign.enabled = Boolean(enabled);
   if (timezone) campaign.timezone = timezone;
   if (mode) campaign.mode = mode;
+  if (cvMode) campaign.cvMode = cvMode;
 
   // Les nombres arrivent parfois vides d'un champ de saisie effacé : on retombe
   // sur la valeur en place plutôt que d'écrire NaN en base.

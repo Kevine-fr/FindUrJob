@@ -19,6 +19,40 @@ import { BOT_PLATFORMS } from '../utils/constants.js';
  * La fonction ne lève jamais : une campagne qui échoue doit laisser une trace
  * lisible dans la page, pas faire tomber le planificateur.
  */
+/**
+ * Le dossier « classique » : le CV de référence, sans passer par le modèle.
+ *
+ * Sert deux cas — le mode choisi explicitement, et le repli quand le moteur est
+ * indisponible. La lettre reste volontairement sobre : sans modèle pour la
+ * rédiger, mieux vaut trois phrases justes qu'un texte générique enflé.
+ */
+function dossierClassique(profile, score) {
+  const nom = profile.fullName || '';
+  const contact = [profile.email, profile.phone].filter(Boolean).join(' · ');
+
+  return {
+    content: profile.masterCv || '',
+    coverLetter: [
+      'Madame, Monsieur,',
+      '',
+      "Votre annonce a retenu mon attention et je vous adresse ma candidature.",
+      'Vous trouverez mon parcours détaillé dans le CV joint.',
+      '',
+      'Je reste disponible pour en échanger.',
+      '',
+      'Cordialement,',
+      '',
+      nom,
+      contact,
+    ]
+      .filter((ligne) => ligne !== undefined)
+      .join('\n')
+      .trim(),
+    score: typeof score === 'number' ? score : 0,
+    keywords: [],
+  };
+}
+
 export async function runCampaign({ user, trigger = 'planifié', dryRun = false } = {}) {
   if (!user) throw new Error("runCampaign : utilisateur manquant.");
   const campaign = await Campaign.forUser(user);
@@ -182,7 +216,36 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
             continue;
           }
 
-          const result = await tailorCv({ offer, profile });
+          /*
+           * Adaptatif ou classique — et repli automatique.
+           *
+           * En `classique`, on joint le CV de l'onglet « Mon CV » sans appeler
+           * le modèle : gratuit, instantané, et suffisant quand on postule en
+           * volume sur un même métier.
+           *
+           * En `adaptatif`, si le moteur lâche (crédits épuisés, panne), on
+           * bascule sur ce même CV plutôt que d'abandonner la candidature :
+           * un dossier parti avec le CV de référence vaut mieux qu'un dossier
+           * qui ne part pas.
+           */
+          let result;
+          let cvClassique = campaign.cvMode === 'classique';
+
+          if (cvClassique) {
+            result = dossierClassique(profile, prefiltre);
+          } else {
+            try {
+              result = await tailorCv({ offer, profile });
+            } catch (aiError) {
+              if (!profile.masterCv?.trim()) throw aiError;
+              cvClassique = true;
+              result = dossierClassique(profile, prefiltre);
+              summary.errors.push(
+                `IA indisponible (${aiError.message}) — CV de référence utilisé.`
+              );
+            }
+          }
+
           const score = typeof result.score === 'number' ? result.score : 0;
 
           // Le score définitif peut différer de la présélection (le moteur voit
@@ -196,7 +259,9 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
           const at = offer.company ? ` @ ${offer.company}` : '';
           const cv = await CVVersion.create({
             user,
-            label: `CV — ${offer.title}${at}`,
+            // Le libellé dit d'où vient le document : un CV de référence joint
+            // tel quel ne doit pas se faire passer pour un CV reciblé.
+            label: `${cvClassique ? 'CV de référence' : 'CV'} — ${offer.title}${at}`,
             kind: 'cible',
             offer: offer._id,
             content: result.content,

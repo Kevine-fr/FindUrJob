@@ -13,6 +13,7 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
 
   const cvId = app.cvVersion?._id;
   const pdfUrl = cvId ? `${API_BASE}/cv-versions/${cvId}/pdf` : null;
+  const lettreUrl = `${API_BASE}/applications/${app._id}/letter.pdf`;
 
   const changeStatus = async (status) => {
     if (status === app.status) return;
@@ -123,9 +124,32 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
               </div>
             )
           ) : app.coverLetter ? (
-            <pre className="cv-preview" style={{ maxHeight: 'none' }}>
-              {app.coverLetter}
-            </pre>
+            <>
+              <div className="dossier-actions">
+                <div className="muted" style={{ fontSize: 13, minWidth: 0 }}>
+                  Lettre jointe à la candidature
+                </div>
+                <div className="inline">
+                  <a className="btn btn-sm" href={lettreUrl} target="_blank" rel="noreferrer">
+                    Ouvrir ↗
+                  </a>
+                  <a className="btn btn-primary btn-sm" href={`${lettreUrl}?download=1`}>
+                    Télécharger
+                  </a>
+                </div>
+              </div>
+
+              {/* La lettre dans sa mise en page réelle : c'est ce document que
+                  le recruteur reçoit, pas le bloc de texte brut. */}
+              <div className="pdf-frame">
+                <iframe src={lettreUrl} title="Lettre de motivation" />
+              </div>
+
+              <details className="cv-source">
+                <summary>Voir le texte de la lettre</summary>
+                <pre className="cv-preview">{app.coverLetter}</pre>
+              </details>
+            </>
           ) : (
             <div className="empty" style={{ padding: '32px 16px' }}>
               <strong>Aucune lettre</strong>

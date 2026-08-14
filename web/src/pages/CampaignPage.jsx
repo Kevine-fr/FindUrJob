@@ -3,7 +3,7 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { SOURCE_LABELS } from '../lib/status.js';
 import { JOURS, build, parse, describe } from '../lib/cronBuilder.js';
-import { UNITES } from '../lib/freshness.js';
+import { UNITES, ilYA } from '../lib/freshness.js';
 
 const HEURES = [6, 7, 8, 9, 10, 12, 14, 17, 19, 21];
 
@@ -120,6 +120,7 @@ export default function CampaignPage() {
           enabled: campaign.enabled,
           cron: campaign.cron,
           mode: campaign.mode,
+          cvMode: campaign.cvMode,
           dailyLimit: campaign.dailyLimit,
           minScore: campaign.minScore,
           maxAgeValue: campaign.maxAgeValue,
@@ -473,6 +474,28 @@ export default function CampaignPage() {
                 </div>
               </div>
             )}
+
+            {/* Le CV joint décide du coût autant que du ciblage : le choix
+                mérite d'être explicite plutôt que subi. */}
+            <div className="section-label">Quel CV joindre</div>
+            <select
+              className="select"
+              value={campaign.cvMode || 'adaptatif'}
+              onChange={(event) => set('cvMode')(event.target.value)}
+            >
+              <option value="adaptatif">
+                CV adaptatif — réécrit par l'IA pour chaque offre
+              </option>
+              <option value="classique">
+                CV classique — celui de l'onglet « Mon CV », joint tel quel
+              </option>
+            </select>
+
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+              {campaign.cvMode === 'classique'
+                ? "Aucun appel à l'IA : les candidatures sont gratuites et immédiates. Le ciblage repose alors sur le score, pas sur la réécriture."
+                : "Un appel au modèle par candidature. Si l'IA devient indisponible (crédits épuisés, panne), le CV de « Mon CV » prend le relais automatiquement plutôt que d'abandonner la candidature."}
+            </p>
           </div>
         </div>
 
@@ -517,16 +540,25 @@ export default function CampaignPage() {
       <div className="panel">
         <h2>Dernière exécution</h2>
         {campaign.lastRunAt ? (
-          <>
-            <div className="meta">
-              {new Date(campaign.lastRunAt).toLocaleString('fr-FR')}
-              {campaign.running && ' — en cours…'}
+          <div className="run-card">
+            <div className={`run-state${campaign.running ? ' is-running' : ''}`}>
+              <span className="run-dot" />
+              {campaign.running ? 'En cours' : 'Terminée'}
             </div>
-            <p style={{ marginBottom: 0 }}>{campaign.lastResult || 'Aucun résultat.'}</p>
-            {campaign.lastError && (
-              <p style={{ color: 'var(--danger)', fontSize: 13 }}>{campaign.lastError}</p>
-            )}
-          </>
+
+            <div className="run-body">
+              {/* Le résultat d'abord : c'est la réponse à « qu'a fait ma
+                  campagne ? ». L'horodatage vient après, en appui. */}
+              <p className="run-result">{campaign.lastResult || 'Aucun résultat.'}</p>
+              <div className="meta" title={new Date(campaign.lastRunAt).toLocaleString('fr-FR')}>
+                {ilYA(campaign.lastRunAt) || '—'}
+                {campaign.remainingToday !== null && campaign.remainingToday !== undefined && (
+                  <> · {campaign.remainingToday} restante(s) aujourd'hui</>
+                )}
+              </div>
+              {campaign.lastError && <div className="run-error">{campaign.lastError}</div>}
+            </div>
+          </div>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             Jamais exécutée. « Lancer maintenant » fait exactement ce que fera la version

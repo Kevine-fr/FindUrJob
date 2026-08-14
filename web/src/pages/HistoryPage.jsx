@@ -9,6 +9,14 @@ const TYPE_FILTERS = [
   { value: 'cv', label: 'CV générés' },
 ];
 
+/**
+ * Ce qui a coincé, en un clic.
+ *
+ * Un envoi qui échoue se répare presque toujours (session expirée, formulaire
+ * modifié) : encore faut-il pouvoir isoler ces évènements au milieu du reste.
+ */
+const ECHEC = 'echec_envoi';
+
 function formatDate(value) {
   const date = new Date(value);
   return date.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
@@ -144,6 +152,25 @@ export default function HistoryPage() {
                   {STATUS_META[value].label}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Raccourci vers les échecs : c'est ce qu'on vient chercher ici. */}
+        {events.some((e) => e.status === ECHEC) && (
+          <div className="filter-group">
+            <span className="filter-label">Raccourci</span>
+            <div className="filter-chips">
+              <button
+                className={'filter-chip' + (status === ECHEC ? ' active' : '')}
+                onClick={() => setStatus(status === ECHEC ? '' : ECHEC)}
+                style={status === ECHEC ? undefined : { borderColor: STATUS_META[ECHEC].color }}
+              >
+                Envois échoués
+                <em className="filter-count">
+                  {events.filter((e) => e.status === ECHEC).length}
+                </em>
+              </button>
             </div>
           </div>
         )}

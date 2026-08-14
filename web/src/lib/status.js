@@ -3,6 +3,9 @@
 export const STATUS_META = {
   brouillon: { label: 'Brouillon', color: '#62667a' },
   a_postuler: { label: 'À postuler', color: '#2d5bff' },
+  // Distinct de « refusé » : là, c'est l'envoi qui a échoué, pas l'employeur
+  // qui a dit non. Confondre les deux masque un problème réparable.
+  echec_envoi: { label: 'Envoi échoué', color: '#eb6834' },
   postule: { label: 'Postulé', color: '#7a5af8' },
   relance: { label: 'Relancé', color: '#d99400' },
   entretien: { label: 'Entretien', color: '#1f9d57' },
@@ -14,6 +17,7 @@ export const STATUS_META = {
 export const STATUS_ORDER = [
   'brouillon',
   'a_postuler',
+  'echec_envoi',
   'postule',
   'relance',
   'entretien',

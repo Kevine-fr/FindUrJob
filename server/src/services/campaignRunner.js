@@ -57,8 +57,17 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
       SearchPreference.forUser(user),
     ]);
 
-    // Les offres déjà suivies ne sont pas re-candidatées.
-    const known = await Application.find({ user }).distinct('offer');
+    /*
+     * Les offres déjà suivies ne sont pas re-candidatées — sauf celles dont
+     * l'envoi a échoué.
+     *
+     * Un échec vient presque toujours d'une cause passagère ou réparable :
+     * session expirée, formulaire modifié, CV refusé. Les exclure comme les
+     * autres condamnait ces candidatures à ne jamais repartir, même une fois la
+     * cause levée. On les repêche, et on réutilise la candidature existante
+     * plutôt que d'en créer une seconde sur la même offre.
+     */
+    const known = await Application.find({ user, status: { $ne: 'echec_envoi' } }).distinct('offer');
 
     const baseFilter = { _id: { $nin: known }, user };
     if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
@@ -176,31 +185,65 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
             summary.errors.push(`${source} : CV non imprimé (${pdfError.message})`);
           }
 
-          const application = await Application.create({
+          // Nouvelle tentative sur un échec précédent : on repart de la même
+          // candidature, avec le CV fraîchement reciblé. En créer une seconde
+          // ferait deux entrées pour une seule offre.
+          const existante = await Application.findOne({
             user,
             offer: offer._id,
-            status: 'a_postuler',
-            cvVersion: cv._id,
-            coverLetter: result.coverLetter,
-            matchScore: score,
-            notes: `Préparée automatiquement (campagne ${trigger}).`,
+            status: 'echec_envoi',
           });
+
+          const application = existante
+            ? Object.assign(existante, {
+                status: 'a_postuler',
+                cvVersion: cv._id,
+                coverLetter: result.coverLetter,
+                matchScore: score,
+              })
+            : await Application.create({
+                user,
+                offer: offer._id,
+                status: 'a_postuler',
+                cvVersion: cv._id,
+                coverLetter: result.coverLetter,
+                matchScore: score,
+                notes: `Préparée automatiquement (campagne ${trigger}).`,
+              });
+
+          if (existante) {
+            application.timeline.push({
+              status: 'a_postuler',
+              note: `Nouvelle tentative (campagne ${trigger}).`,
+            });
+          }
 
           done += 1;
 
-          // Seules les plateformes pilotées au navigateur peuvent envoyer :
-          // ailleurs, l'annonce renvoie vers un site tiers sans session.
-          // Et sans CV imprimé, on ne candidate pas : une candidature sans
-          // pièce jointe dessert plus qu'elle ne sert.
-          const sendable =
-            campaign.mode === 'envoyer' &&
-            botConfigured() &&
-            BOT_PLATFORMS.includes(source) &&
-            Boolean(cvPdf);
+          /*
+           * Pourquoi on n'essaie pas d'envoyer — et non un simple « non ».
+           *
+           * Une candidature qui reste éternellement en « à postuler » sans que
+           * rien n'explique pourquoi est le pire des deux mondes : le travail
+           * est fait, l'utilisateur ne sait pas ce qui manque. On écrit donc la
+           * raison dans le fil, là où elle se lit.
+           */
+          const blocage =
+            campaign.mode !== 'envoyer'
+              ? 'La campagne est en mode « préparer seulement » : bascule-la sur « envoyer » pour que les candidatures partent.'
+              : !botConfigured()
+                ? "Le navigateur piloté n'est pas configuré (BOT_URL absent) : aucun envoi possible."
+                : !BOT_PLATFORMS.includes(source)
+                  ? `${source} ne reçoit pas de candidature automatisée : l'annonce renvoie vers un site tiers.`
+                  : !cvPdf
+                    ? "Le CV n'a pas pu être imprimé en PDF : on n'envoie pas de candidature sans pièce jointe."
+                    : null;
 
-          if (!sendable) {
+          if (blocage) {
+            application.timeline.push({ status: 'a_postuler', note: blocage });
             summary.prepared += 1;
             summary.perSource[source].prepared += 1;
+            await application.save();
             continue;
           }
 
@@ -251,18 +294,23 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               });
               summary.ready += 1;
             } else {
-              // « manual » : la plateforme demande des réponses qu'on ne devine pas.
+              // « manual » : l'envoi a bien été tenté, et il n'a pas abouti —
+              // formulaire absent, CV refusé, question de l'employeur. Le noter
+              // « à postuler » le rendait indiscernable d'une préparation
+              // réussie : c'est précisément ce qu'on veut voir.
+              application.status = 'echec_envoi';
               application.notes += ` — à finir à la main : ${outcome.message || ''}`;
               application.timeline.push({
-                status: 'a_postuler',
+                status: 'echec_envoi',
                 note: outcome.message || 'À finir à la main.',
               });
               summary.manual += 1;
               summary.perSource[source].manual += 1;
             }
           } catch (sendError) {
+            application.status = 'echec_envoi';
             application.notes += ` — envoi impossible : ${sendError.message}`;
-            application.timeline.push({ status: 'a_postuler', note: sendError.message });
+            application.timeline.push({ status: 'echec_envoi', note: sendError.message });
             summary.prepared += 1;
             summary.perSource[source].prepared += 1;
             summary.errors.push(`${source} : ${sendError.message}`);

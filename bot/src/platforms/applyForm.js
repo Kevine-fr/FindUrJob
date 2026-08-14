@@ -195,20 +195,27 @@ export async function applyForm(
     // Le champ fichier ne prouve rien : la plateforme peut le vider après un
     // transfert en arrière-plan. On attend soit sa valeur, soit la trace du
     // téléversement (champ caché renseigné, nom du fichier affiché).
-    const accepte = await page
-      .waitForFunction(
-        (nom) => {
-          const form = [...document.querySelectorAll('form')].find((f) =>
-            f.querySelector('input[type="file"]')
-          );
-          if (!form) return false;
-          if (form.querySelector('input[type="file"]')?.value) return true;
-          const caches = [...form.querySelectorAll('input[type="hidden"]')];
-          if (caches.some((el) => /resume|cv|file|upload|attach/i.test(el.name) && el.value)) return true;
-          return form.textContent.includes(nom);
-        },
-        cvFile.name,
-        { timeout: 30_000 }
+    //
+    // La surveillance porte sur **ce** formulaire, pas sur « le premier de la
+    // page qui a un champ fichier » : une page qui en contient plusieurs (dépôt
+    // de CV dans l'en-tête, formulaire caché) ferait alors surveiller le mauvais
+    // et conclure à tort que le CV a été refusé.
+    const accepte = await formulaire
+      .elementHandle()
+      .then((handle) =>
+        page.waitForFunction(
+          ([form, nom]) => {
+            if (!form) return false;
+            if (form.querySelector('input[type="file"]')?.value) return true;
+            const caches = [...form.querySelectorAll('input[type="hidden"]')];
+            if (caches.some((el) => /resume|cv|file|upload|attach/i.test(el.name) && el.value)) {
+              return true;
+            }
+            return form.textContent.includes(nom);
+          },
+          [handle, cvFile.name],
+          { timeout: 30_000 }
+        )
       )
       .then(() => true)
       .catch(() => false);

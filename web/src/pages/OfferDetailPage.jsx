@@ -149,7 +149,7 @@ export default function OfferDetailPage() {
               </>
             )}
 
-            <div className="row" style={{ marginTop: 18 }}>
+            <div className="stack" style={{ marginTop: 18 }}>
               <button
                 className={`btn btn-primary btn-block${busy ? ' is-busy' : ''}`}
                 onClick={follow}

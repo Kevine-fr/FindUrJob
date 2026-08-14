@@ -2339,9 +2339,20 @@ img {
   border-color: transparent;
 }
 
-/* Pile d'actions pleine largeur (fiche offre). La classe était utilisée dans le
-   balisage sans exister ici : les deux boutons se touchaient. */
+/* Rangée horizontale : pastilles d'une carte, boutons côte à côte. La classe
+   était utilisée sans exister ici — les éléments flottaient en ligne par leur
+   seul caractère inline, sans gouttière maîtrisée. Elle reste horizontale : son
+   nom le dit, et trois écrans en dépendent. */
 .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Pile d'actions pleine largeur (colonne de la fiche offre) : là, les deux
+   boutons sont `btn-block` et doivent s'empiler, pas se partager la ligne. */
+.stack {
   display: flex;
   flex-direction: column;
   gap: 9px;

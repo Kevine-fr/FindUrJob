@@ -205,6 +205,20 @@ class TailorMeta(BaseModel):
     scoreBreakdown: ScoreBreakdown = Field(default_factory=ScoreBreakdown)
 
 
+class ScoreResponse(BaseModel):
+    """Score seul, sans generation.
+
+    Le score est deterministe : il ne depend que de l’offre, du profil et des
+    mots-cles extraits. Le calculer sans appeler le modele permet d’ecarter les
+    offres sous le seuil avant d’engager la moindre depense — c’est l’essentiel
+    de l’economie sur une campagne.
+    """
+
+    score: int
+    keywords: list[str]
+    breakdown: ScoreBreakdown
+
+
 class TailorResponse(BaseModel):
     """Contrat attendu par `server/src/services/tailoringService.js`.
 

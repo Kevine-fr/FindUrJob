@@ -13,7 +13,7 @@ from anthropic import AsyncAnthropic
 
 from ..config import Settings
 from ..keywords import Keyword
-from ..prompts import SYSTEM_PROMPT, build_user_prompt
+from ..prompts import SYSTEM_PROMPT, build_profile_block, build_user_prompt
 from ..schemas import OfferIn, ProfileIn
 from .base import Generation, ProviderError
 
@@ -102,18 +102,28 @@ class AnthropicProvider:
             keywords,
             max_description_chars=self._settings.ai_max_description_chars,
             max_cv_chars=self._settings.ai_max_cv_chars,
+            profile_in_prefix=True,
+        )
+        profile_block = build_profile_block(
+            profile, max_cv_chars=self._settings.ai_max_cv_chars
         )
 
         try:
             response = await self._client.messages.create(
                 model=self.model,
                 max_tokens=self._settings.ai_max_tokens,
+                # Deux blocs, une seule césure de cache — placée sur le dernier,
+                # elle met en cache les consignes ET le dossier du candidat.
+                # L'ordre compte : le cache est un préfixe, donc le stable
+                # (consignes, puis profil) doit précéder le variable (l'offre,
+                # qui reste dans le message utilisateur).
                 system=[
+                    {"type": "text", "text": SYSTEM_PROMPT},
                     {
                         "type": "text",
-                        "text": SYSTEM_PROMPT,
+                        "text": profile_block,
                         "cache_control": {"type": "ephemeral"},
-                    }
+                    },
                 ],
                 messages=[{"role": "user", "content": user_prompt}],
                 output_config={
@@ -143,16 +153,24 @@ class AnthropicProvider:
         except json.JSONDecodeError as exc:
             raise ProviderError(f"réponse non conforme au schéma JSON ({exc})") from exc
 
+        # Les compteurs partent dans le message, pas dans `extra` : le format de
+        # log par défaut ignore `extra`, si bien que la consommation réelle —
+        # et l'efficacité du cache — restaient invisibles en production.
         usage = getattr(response, "usage", None)
         if usage is not None:
+            entree = getattr(usage, "input_tokens", 0) or 0
+            ecrit = getattr(usage, "cache_creation_input_tokens", 0) or 0
+            relu = getattr(usage, "cache_read_input_tokens", 0) or 0
+            total = entree + ecrit + relu
             logger.info(
-                "génération anthropic ok",
-                extra={
-                    "model": self.model,
-                    "input_tokens": getattr(usage, "input_tokens", None),
-                    "output_tokens": getattr(usage, "output_tokens", None),
-                    "cache_read": getattr(usage, "cache_read_input_tokens", None),
-                },
+                "génération %s — entrée=%s (plein=%s cache_écrit=%s cache_relu=%s, %s%% en cache) sortie=%s",
+                self.model,
+                total,
+                entree,
+                ecrit,
+                relu,
+                round(100 * relu / total) if total else 0,
+                getattr(usage, "output_tokens", 0),
             )
 
         raw_keywords = payload.get("keywords") or []

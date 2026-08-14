@@ -109,6 +109,31 @@ export async function extractCv({ filename, buffer }) {
   return { text, chars: text.length, pages: 0, filename, warnings: [] };
 }
 
+/**
+ * Score une offre sans rien générer.
+ *
+ * Le score est déterministe côté moteur : quelques millisecondes, aucun appel
+ * au modèle, aucun coût. La campagne s’en sert pour écarter les offres sous le
+ * seuil **avant** de payer une génération qu’elle jetterait ensuite.
+ *
+ * Sans moteur configuré, on renvoie `null` : l’appelant traite alors l’offre
+ * comme non filtrable plutôt que de la rejeter sur un score inventé.
+ */
+export async function scoreOffer({ offer, profile }) {
+  const aiUrl = process.env.PYTHON_AI_URL;
+  if (!aiUrl) return null;
+
+  const res = await fetch(`${aiUrl}/score`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offer, profile }),
+  });
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  return typeof data.score === 'number' ? data.score : null;
+}
+
 export async function tailorCv({ offer, profile }) {
   const aiUrl = process.env.PYTHON_AI_URL;
 

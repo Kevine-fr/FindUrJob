@@ -4,7 +4,7 @@ import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import SearchPreference from '../models/SearchPreference.js';
-import { tailorCv } from './tailoringService.js';
+import { tailorCv, scoreOffer } from './tailoringService.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
@@ -135,6 +135,20 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
 
     summary.perSource = {};
 
+    /*
+     * Une même annonce republiée ne se paie pas deux fois.
+     *
+     * Les agrégateurs republient : « Développeur Java Fullstack F/H » chez le
+     * même employeur revient sous plusieurs identifiants, parfois via plusieurs
+     * sources. Chacun déclenchait sa propre génération — deux CV facturés pour
+     * un seul poste. On dédoublonne sur intitulé + employeur, le temps de la
+     * passe : deux vraies offres homonymes chez le même employeur sont bien plus
+     * rares qu'une republication.
+     */
+    const vues = new Set();
+    const empreinte = (offer) =>
+      `${(offer.title || '').trim().toLowerCase()}|${(offer.company || '').trim().toLowerCase()}`;
+
     for (const { source, quota, pool } of candidates) {
       let done = 0;
       summary.perSource[source] = { prepared: 0, sent: 0, manual: 0, belowScore: 0 };
@@ -142,13 +156,37 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
       for (const offer of pool) {
         if (done >= quota) break;
         if (summary.prepared + summary.sent >= left) break;
+
+        const cle = empreinte(offer);
+        if (cle !== '|' && vues.has(cle)) continue;
+        vues.add(cle);
         summary.examined += 1;
 
         try {
-          // Le score vient du moteur IA, avec le CV ciblé : une seule passe.
+          /*
+           * Filtrer AVANT de générer.
+           *
+           * Le score est déterministe et se calcule en quelques millisecondes,
+           * sans modèle. On l'obtenait pourtant en générant d'abord le CV
+           * complet, pour jeter le résultat quand il tombait sous le seuil :
+           * une passe de 36 offres toutes sous le seuil payait 36 générations
+           * Opus pour n'en garder aucune, et durait une vingtaine de minutes.
+           *
+           * Sans moteur configuré, `scoreOffer` rend `null` : on ne filtre pas
+           * plutôt que de rejeter sur un score inventé.
+           */
+          const prefiltre = await scoreOffer({ offer, profile });
+          if (prefiltre !== null && prefiltre < campaign.minScore) {
+            summary.belowScore += 1;
+            summary.perSource[source].belowScore += 1;
+            continue;
+          }
+
           const result = await tailorCv({ offer, profile });
           const score = typeof result.score === 'number' ? result.score : 0;
 
+          // Le score définitif peut différer de la présélection (le moteur voit
+          // le CV reciblé) : on revérifie, sans payer deux fois pour autant.
           if (score < campaign.minScore) {
             summary.belowScore += 1;
             summary.perSource[source].belowScore += 1;

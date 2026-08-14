@@ -33,6 +33,7 @@ from .schemas import (
     SearchRequest,
     SearchResponse,
     TailorMeta,
+    ScoreResponse,
     TailorRequest,
     TailorResponse,
 )
@@ -196,6 +197,24 @@ def _merge_keywords(extracted: list[Keyword], suggested: list[str], limit: int) 
         if len(merged) >= limit:
             break
     return merged
+
+
+@app.post("/score", response_model=ScoreResponse)
+async def score(payload: TailorRequest, request: Request) -> ScoreResponse:
+    """Score une offre sans rien generer.
+
+    Meme entree que /tailor, mais aucun appel au modele : le calcul est local
+    et prend quelques millisecondes. La campagne s’en sert pour ecarter les
+    offres sous le seuil avant de payer une generation qu’elle jetterait.
+    """
+    settings = request.app.state.settings
+    keywords = extract_keywords(payload.offer, limit=max(settings.ai_max_keywords, 24))
+    scored = compute_score(payload.offer, payload.profile, keywords)
+    return ScoreResponse(
+        score=scored.score,
+        keywords=[kw.term for kw in keywords],
+        breakdown=scored.breakdown,
+    )
 
 
 @app.post("/tailor", response_model=TailorResponse)

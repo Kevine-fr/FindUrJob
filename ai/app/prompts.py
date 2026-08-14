@@ -135,6 +135,47 @@ def build_profile_payload(profile: ProfileIn) -> dict:
     )
 
 
+def _cv_section(profile: ProfileIn, max_cv_chars: int) -> str:
+    """Le CV déposé, présenté en clair plutôt que noyé dans le JSON du profil."""
+    if not profile.masterCv.strip():
+        return (
+            "# CV actuel du candidat\n\n"
+            "Aucun CV n'a été déposé : appuie-toi uniquement sur les champs "
+            "structurés ci-dessus.\n"
+        )
+
+    fence = "```"
+    return (
+        "# CV actuel du candidat — DOCUMENT À RÉÉCRIRE\n\n"
+        "Voici le CV tel que la personne l'utilise aujourd'hui. C'est ce document "
+        "que tu dois réécrire pour l'offre donnée : toutes ses expériences et "
+        "formations doivent se retrouver dans ta version, réorganisées et "
+        "reformulées.\n\n"
+        f"{fence}\n{truncate(profile.masterCv, max_cv_chars)}\n{fence}\n"
+    )
+
+
+def build_profile_block(profile: ProfileIn, *, max_cv_chars: int = 24000) -> str:
+    """La partie du prompt qui ne change pas d'une offre à l'autre.
+
+    Le profil et le CV maître pèsent l'essentiel des jetons d'entrée, et sont
+    identiques pour toutes les offres d'une même passe. Isolés ici, ils partent
+    dans un bloc système marqué en cache : écrits une fois, relus ensuite à un
+    dixième du prix. Auparavant ils suivaient l'offre dans le message
+    utilisateur — donc *après* la partie variable — et le cache ne pouvait rien
+    retenir : chaque offre repayait le CV entier au prix fort.
+    """
+    profile_json = json.dumps(build_profile_payload(profile), ensure_ascii=False, indent=2)
+    cv_section = _cv_section(profile, max_cv_chars)
+
+    return f"""\
+# Fiche du candidat (seule source de vérité, avec le CV ci-dessous)
+
+{profile_json}
+
+{cv_section}"""
+
+
 def build_user_prompt(
     offer: OfferIn,
     profile: ProfileIn,
@@ -142,6 +183,7 @@ def build_user_prompt(
     *,
     max_description_chars: int,
     max_cv_chars: int = 24000,
+    profile_in_prefix: bool = False,
 ) -> str:
     offer_json = json.dumps(
         build_offer_payload(offer, max_description_chars=max_description_chars),
@@ -151,20 +193,9 @@ def build_user_prompt(
     profile_json = json.dumps(build_profile_payload(profile), ensure_ascii=False, indent=2)
     keyword_line = ", ".join(kw.term for kw in keywords[:15]) or "(aucun mot-clé exploitable)"
 
-    # Le CV déposé est le document à réécrire : il est présenté en clair, pas
-    # noyé dans le JSON du profil.
+    cv_section = _cv_section(profile, max_cv_chars)
+
     if profile.masterCv.strip():
-        cv_section = f"""\
-# CV actuel du candidat — DOCUMENT À RÉÉCRIRE
-
-Voici le CV tel que la personne l'utilise aujourd'hui. C'est ce document que tu
-dois réécrire pour l'offre ci-dessus : toutes ses expériences et formations
-doivent se retrouver dans ta version, réorganisées et reformulées.
-
-```
-{truncate(profile.masterCv, max_cv_chars)}
-```
-"""
         task = """\
 Réécris ce CV pour cette offre. Le champ `content` doit contenir le CV complet,
 prêt à envoyer : mêmes faits, ordre et formulations retravaillés pour répondre
@@ -172,17 +203,26 @@ aux mots-clés ci-dessus. N'omets aucune expérience du CV source, n'invente
 rien.
 """
     else:
-        cv_section = """\
-# CV actuel du candidat
-
-Aucun CV n'a été déposé : appuie-toi uniquement sur les champs structurés
-ci-dessus.
-"""
         task = """\
 Rédige le CV et la lettre à partir des seules informations structurées
-ci-dessus. Si le dossier est trop pauvre pour répondre à l'offre, produis un
+fournies. Si le dossier est trop pauvre pour répondre à l'offre, produis un
 document honnête et court plutôt qu'un texte gonflé.
 """
+
+    # Quand le dossier du candidat voyage déjà dans le préfixe mis en cache, le
+    # message utilisateur ne porte plus que l'offre : c'est tout l'intérêt de la
+    # séparation, et le répéter ici annulerait l'économie.
+    dossier = (
+        ""
+        if profile_in_prefix
+        else f"""
+# Fiche du candidat (seule source de vérité, avec le CV ci-dessous)
+
+{profile_json}
+
+{cv_section}
+"""
+    )
 
     return f"""\
 # Offre
@@ -192,13 +232,7 @@ document honnête et court plutôt qu'un texte gonflé.
 # Mots-clés prioritaires extraits de l'offre
 
 {keyword_line}
-
-# Fiche du candidat (seule source de vérité, avec le CV ci-dessous)
-
-{profile_json}
-
-{cv_section}
-
+{dossier}
 # Travail demandé
 
 {task}"""

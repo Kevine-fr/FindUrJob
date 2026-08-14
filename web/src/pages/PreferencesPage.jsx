@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import { CONTRACT_LABELS, REMOTE_LABELS, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
 import { TagsField } from '../components/CvFields.jsx';
+import { UNITES } from '../lib/freshness.js';
 
 function ChipGroup({ label, hint, options, selected, onToggle }) {
   return (
@@ -127,6 +128,70 @@ export default function PreferencesPage() {
           value={prefs.locations || []}
           onChange={setList('locations')}
         />
+
+        {/* Critères par défaut : repris tels quels par « Utiliser mes
+            préférences » sur la page Offres, et par la campagne. */}
+        <div className="filter-group" style={{ alignItems: 'flex-start' }}>
+          <span className="filter-label">
+            Fraîcheur
+            <em className="filter-hint">publiées depuis moins de</em>
+          </span>
+          <div className="inline" style={{ gap: 8 }}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              style={{ width: 84 }}
+              placeholder="0"
+              value={prefs.maxAgeValue ?? ''}
+              onChange={(e) => {
+                setPrefs({ ...prefs, maxAgeValue: e.target.value === '' ? 0 : Number(e.target.value) });
+                setSaved(false);
+              }}
+            />
+            <select
+              className="select"
+              style={{ width: 'auto' }}
+              value={prefs.maxAgeUnit || 'jour'}
+              onChange={(e) => {
+                setPrefs({ ...prefs, maxAgeUnit: e.target.value });
+                setSaved(false);
+              }}
+            >
+              {UNITES.map((u) => (
+                <option key={u.key} value={u.key}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+            <span className="filter-hint">0 = pas de limite</span>
+          </div>
+        </div>
+
+        <div className="filter-group" style={{ alignItems: 'flex-start' }}>
+          <span className="filter-label">
+            Concurrence
+            <em className="filter-hint">au plus … candidats</em>
+          </span>
+          <div className="inline" style={{ gap: 8 }}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              style={{ width: 84 }}
+              placeholder="sans limite"
+              value={prefs.maxApplicants ?? ''}
+              onChange={(e) => {
+                setPrefs({
+                  ...prefs,
+                  maxApplicants: e.target.value === '' ? null : Number(e.target.value),
+                });
+                setSaved(false);
+              }}
+            />
+            <span className="filter-hint">vide = sans limite</span>
+          </div>
+        </div>
 
         <ChipGroup
           label="Contrats"

@@ -79,6 +79,7 @@ export const overview = asyncHandler(async (req, res) => {
     parStatut,
     parContrat,
     parTeletravail,
+    fraicheur,
     scores,
     poidsPdf,
   ] = await Promise.all([
@@ -99,6 +100,25 @@ export const overview = asyncHandler(async (req, res) => {
     repartition(Application, 'status'),
     repartition(JobOffer, 'contractType'),
     repartition(JobOffer, 'remote'),
+    JobOffer.aggregate([
+      {
+        $group: {
+          _id: {
+            $switch: {
+              branches: [
+                { case: { $eq: [{ $ifNull: ["$publishedAt", null] }, null] }, then: "inconnue" },
+                { case: { $gte: ["$publishedAt", jours(2)] }, then: "moins de 2 jours" },
+                { case: { $gte: ["$publishedAt", jours(7)] }, then: "moins d une semaine" },
+                { case: { $gte: ["$publishedAt", jours(30)] }, then: "moins d un mois" },
+              ],
+              default: "plus d un mois",
+            },
+          },
+          n: { $sum: 1 },
+        },
+      },
+      { $sort: { n: -1 } },
+    ]),
     Application.aggregate([
       { $match: { matchScore: { $ne: null } } },
       { $group: { _id: null, moyenne: { $avg: '$matchScore' }, n: { $sum: 1 } } },
@@ -130,6 +150,9 @@ export const overview = asyncHandler(async (req, res) => {
       statut: parStatut,
       contrat: parContrat,
       teletravail: parTeletravail,
+      // Fraîcheur du stock : un vivier majoritairement ancien explique un
+      // faible taux de réponse mieux que n importe quelle autre métrique.
+      fraicheur: fraicheur.map((l) => ({ key: l._id, value: l.n })),
     },
   });
 });

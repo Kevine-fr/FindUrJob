@@ -157,6 +157,13 @@ export default function AdminPage() {
           <h2>Télétravail</h2>
           <BarList data={repartitions.teletravail} labels={REMOTE_LABELS} color={SERIES[5]} />
         </div>
+
+        {/* Un vivier majoritairement ancien explique un faible taux de réponse
+            mieux que n'importe quelle autre métrique. */}
+        <div className="panel">
+          <h2>Fraîcheur du vivier</h2>
+          <BarList data={repartitions.fraicheur || []} color={SERIES[3]} />
+        </div>
       </div>
 
       {/* ---- Comptes ---- */}

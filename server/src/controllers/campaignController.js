@@ -28,8 +28,10 @@ export const getCampaign = asyncHandler(async (req, res) => {
 /** PUT /campaign — enregistre les réglages et reprogramme dans la foulée. */
 export const updateCampaign = asyncHandler(async (req, res) => {
   const campaign = await Campaign.forUser(req.user.id);
-  const { enabled, cron: expression, timezone, mode, dailyLimit, minScore, targets } =
-    req.body || {};
+  const {
+    enabled, cron: expression, timezone, mode, dailyLimit, minScore, targets,
+    maxAgeValue, maxAgeUnit, maxApplicants,
+  } = req.body || {};
 
   if (expression !== undefined) {
     if (!cron.validate(expression)) {
@@ -51,6 +53,13 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   const asNumber = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
   if (dailyLimit !== undefined) campaign.dailyLimit = asNumber(dailyLimit, campaign.dailyLimit);
   if (minScore !== undefined) campaign.minScore = asNumber(minScore, campaign.minScore);
+  if (maxAgeValue !== undefined) campaign.maxAgeValue = Math.max(0, asNumber(maxAgeValue, 0));
+  if (maxAgeUnit) campaign.maxAgeUnit = maxAgeUnit;
+  // Chaîne vide = « pas de limite » : on distingue explicitement de zéro.
+  if (maxApplicants !== undefined) {
+    campaign.maxApplicants =
+      maxApplicants === "" || maxApplicants === null ? null : Math.max(0, asNumber(maxApplicants, 0));
+  }
 
   if (Array.isArray(targets)) {
     campaign.targets = targets

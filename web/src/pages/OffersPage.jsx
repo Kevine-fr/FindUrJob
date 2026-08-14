@@ -95,6 +95,11 @@ export default function OffersPage() {
         contractType: prefs.contractTypes || [],
         remote: prefs.remotes || [],
         source: prefs.sources || [],
+        // Les critères de fraîcheur et de concurrence viennent aussi des
+        // préférences : on ne les repose pas à chaque recherche.
+        publishedWithin: prefs.maxAgeValue || '',
+        publishedUnit: prefs.maxAgeUnit || 'jour',
+        maxApplicants: prefs.maxApplicants ?? '',
       });
       toast.success('Filtres alignés sur tes préférences.');
     } catch (err) {

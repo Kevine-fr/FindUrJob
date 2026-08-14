@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, API_BASE } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from './Toast.jsx';
+import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
 
 export default function ApplicationDetail({ application, onBack, onChange }) {
   const toast = useToast();
@@ -181,6 +182,18 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
                   <dd>{app.matchScore}%</dd>
                 </div>
               )}
+              <div>
+                <dt>Offre publiée</dt>
+                <dd className={`signal signal-${fraicheur(app.offer?.publishedAt)}`}>
+                  {ilYA(app.offer?.publishedAt) || 'date inconnue'}
+                </dd>
+              </div>
+              <div>
+                <dt>Candidats</dt>
+                <dd className={`signal signal-${concurrence(app.offer?.applicantCount)}`}>
+                  {candidats(app.offer?.applicantCount) || 'non communiqué'}
+                </dd>
+              </div>
               {app.appliedAt && (
                 <div>
                   <dt>Envoyée le</dt>

@@ -61,6 +61,40 @@ export async function runCampaign({ user, trigger = 'planifié' } = {}) {
     if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
     if (prefs.remotes?.length) baseFilter.remote = { $in: prefs.remotes };
 
+    /*
+     * Fraîcheur : la campagne vise en priorité les annonces récentes.
+     *
+     * Une offre sans date connue reste éligible (repli sur la date de collecte) :
+     * l'écarter reviendrait à ignorer des sources entières qui ne datent pas
+     * leurs annonces.
+     */
+    const UNITES_MS = {
+      minute: 60_000,
+      heure: 3_600_000,
+      jour: 86_400_000,
+      semaine: 604_800_000,
+      mois: 2_592_000_000,
+    };
+    if (campaign.maxAgeValue > 0) {
+      const plancher = new Date(
+        Date.now() - campaign.maxAgeValue * (UNITES_MS[campaign.maxAgeUnit] || UNITES_MS.jour)
+      );
+      baseFilter.$or = [
+        { publishedAt: { $gte: plancher } },
+        { publishedAt: null, createdAt: { $gte: plancher } },
+      ];
+    }
+
+    // Concurrence : contrairement au filtre de la page Offres, on garde ici les
+    // offres au compteur inconnu — sinon la campagne se priverait de presque
+    // tout, peu de plateformes exposant ce chiffre.
+    if (Number.isFinite(campaign.maxApplicants)) {
+      baseFilter.$and = [
+        ...(baseFilter.$and || []),
+        { $or: [{ applicantCount: null }, { applicantCount: { $lte: campaign.maxApplicants } }] },
+      ];
+    }
+
     // Une file par source, chacune avec son propre quota. On part des offres
     // déjà en base : la synchronisation est un geste séparé, pour que la
     // campagne reste rapide et prévisible.
@@ -78,7 +112,8 @@ export async function runCampaign({ user, trigger = 'planifié' } = {}) {
       const take = Math.min(target.limit, budget);
       // On en tire plus que le quota : beaucoup seront écartées au score.
       const pool = await JobOffer.find({ ...baseFilter, source: target.source })
-        .sort({ createdAt: -1 })
+        // Les plus fraîches d abord : à quota égal, autant viser les récentes.
+        .sort({ publishedAt: -1, createdAt: -1 })
         .limit(take * 6);
       candidates.push({ source: target.source, quota: take, pool });
       budget -= take;

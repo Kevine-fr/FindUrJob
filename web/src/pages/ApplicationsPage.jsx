@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { STATUS_META } from '../lib/status.js';
+import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
 import ApplicationDetail from '../components/ApplicationDetail.jsx';
 
 export default function ApplicationsPage() {
@@ -87,6 +88,19 @@ export default function ApplicationsPage() {
                 <h3 style={{ marginTop: 10 }}>{a.offer?.title || 'Offre supprimée'}</h3>
                 <div className="meta">
                   {a.offer?.company || '—'} · {a.offer?.location || '—'}
+                </div>
+
+                {/* Une annonce qui vieillit pendant qu'on hésite : c'est
+                    l'information qui dit s'il faut relancer ou passer. */}
+                <div className="signals">
+                  <span className={`signal signal-${fraicheur(a.offer?.publishedAt)}`}>
+                    {ilYA(a.offer?.publishedAt) || 'date inconnue'}
+                  </span>
+                  {candidats(a.offer?.applicantCount) && (
+                    <span className={`signal signal-${concurrence(a.offer?.applicantCount)}`}>
+                      {candidats(a.offer.applicantCount)}
+                    </span>
+                  )}
                 </div>
                 <div className="meta" style={{ marginTop: 8 }}>
                   Maj {new Date(a.updatedAt).toLocaleDateString('fr-FR')}

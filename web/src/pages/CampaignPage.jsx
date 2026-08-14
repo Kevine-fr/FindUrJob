@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { SOURCE_LABELS } from '../lib/status.js';
 import { JOURS, build, parse, describe } from '../lib/cronBuilder.js';
+import { UNITES } from '../lib/freshness.js';
 
 const HEURES = [6, 7, 8, 9, 10, 12, 14, 17, 19, 21];
 
@@ -99,6 +100,9 @@ export default function CampaignPage() {
           mode: campaign.mode,
           dailyLimit: campaign.dailyLimit,
           minScore: campaign.minScore,
+          maxAgeValue: campaign.maxAgeValue,
+          maxAgeUnit: campaign.maxAgeUnit,
+          maxApplicants: campaign.maxApplicants,
           targets: campaign.targets,
         }),
         {
@@ -324,6 +328,56 @@ export default function CampaignPage() {
                 <label>Score minimum (%)</label>
                 <NumberField value={campaign.minScore} min={0} max={100} onChange={set('minScore')} />
                 <span className="filter-hint">En dessous, l'offre est ignorée.</span>
+              </div>
+            </div>
+
+            {/* Fraîcheur et concurrence : ce qui pèse le plus sur les chances
+                de réponse, à effort de candidature égal. */}
+            <div className="grid-2">
+              <div className="field">
+                <label>Offres publiées depuis moins de</label>
+                <div className="inline" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                  <NumberField
+                    value={campaign.maxAgeValue}
+                    min={0}
+                    max={999}
+                    onChange={set('maxAgeValue')}
+                    style={{ width: 84 }}
+                  />
+                  <select
+                    className="select"
+                    value={campaign.maxAgeUnit}
+                    onChange={(event) => set('maxAgeUnit')(event.target.value)}
+                    style={{ width: 'auto' }}
+                  >
+                    {UNITES.map((u) => (
+                      <option key={u.key} value={u.key}>
+                        {u.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span className="filter-hint">
+                  0 = pas de limite. Les offres sans date connue restent éligibles.
+                </span>
+              </div>
+
+              <div className="field">
+                <label>Au plus … candidats</label>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  placeholder="sans limite"
+                  value={campaign.maxApplicants ?? ''}
+                  onChange={(event) =>
+                    set('maxApplicants')(event.target.value === '' ? null : Number(event.target.value))
+                  }
+                />
+                <span className="filter-hint">
+                  Vide = sans limite. Les offres au compteur inconnu sont gardées : peu de
+                  plateformes l'exposent.
+                </span>
               </div>
             </div>
 

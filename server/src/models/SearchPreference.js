@@ -20,6 +20,21 @@ const searchPreferenceSchema = new mongoose.Schema(
     minScore: { type: Number, default: 0, min: 0, max: 100 },
     // Plafond de candidatures par jour : garde-fou volontaire.
     dailyQuota: { type: Number, default: 10, min: 1, max: 100 },
+
+    /*
+     * Fraîcheur et concurrence attendues par défaut.
+     *
+     * Servent de valeurs de départ à la page Offres : plutôt que de reposer les
+     * mêmes critères à chaque recherche, on les déclare une fois ici.
+     * `maxAgeValue: 0` = aucun filtre.
+     */
+    maxAgeValue: { type: Number, default: 0, min: 0, max: 999 },
+    maxAgeUnit: {
+      type: String,
+      enum: ["minute", "heure", "jour", "semaine", "mois"],
+      default: "jour",
+    },
+    maxApplicants: { type: Number, default: null, min: 0 },
   },
   { timestamps: true }
 );

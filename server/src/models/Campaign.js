@@ -59,6 +59,24 @@ const campaignSchema = new mongoose.Schema(
     // vaut trois candidatures pertinentes que trente hors sujet.
     minScore: { type: Number, default: 60, min: 0, max: 100 },
 
+    /*
+     * Fraîcheur et concurrence : les deux critères qui font le plus pour les
+     * chances de réponse. Postuler à une annonce d'un mois avec 300 candidats
+     * coûte le même effort qu'à une annonce d'hier — pour un résultat tout autre.
+     *
+     * `maxAgeValue: 0` désactive le critère.
+     */
+    maxAgeValue: { type: Number, default: 0, min: 0, max: 999 },
+    maxAgeUnit: {
+      type: String,
+      enum: ['minute', 'heure', 'jour', 'semaine', 'mois'],
+      default: 'jour',
+    },
+    // `null` = pas de limite. Une offre au compteur inconnu n'est jamais écartée
+    // ici : la plupart des sources ne l'exposent pas, et la campagne se
+    // priverait de presque tout.
+    maxApplicants: { type: Number, default: null, min: 0 },
+
     // Suivi de la dernière exécution, pour que la page dise ce qui s'est passé.
     lastRunAt: { type: Date },
     lastResult: { type: String, default: '' },

@@ -41,6 +41,42 @@ TAILOR_SCHEMA: dict = {
 }
 
 
+def explain_failure(exc: Exception) -> str:
+    """Traduit l'échec en une phrase qui dit quoi faire.
+
+    Ne remonter que le nom de la classe d'exception — `BadRequestError` — donnait
+    un message qui ressemblait à une panne de l'application alors que la cause
+    était administrative, et laissait croire pendant des jours que le moteur
+    tournait mal. La cause exacte se lit dans le corps renvoyé par l'API : on la
+    fait remonter, traduite quand on la reconnaît.
+    """
+    detail = str(getattr(exc, "message", "") or exc)
+
+    # Les cas qu'on sait nommer, du plus fréquent au plus rare.
+    reconnus = [
+        ("credit balance is too low",
+         "crédits Anthropic épuisés — recharge le compte sur console.anthropic.com "
+         "(Plans & Billing). La clé est valide, mais aucun appel ne peut aboutir."),
+        ("invalid x-api-key",
+         "clé API refusée : vérifie ANTHROPIC_API_KEY dans ai/.env."),
+        ("authentication",
+         "authentification refusée : vérifie ANTHROPIC_API_KEY dans ai/.env."),
+        ("rate_limit",
+         "limite de débit atteinte : réessaie dans quelques instants."),
+        ("not_found_error",
+         f"modèle « {getattr(exc, 'model', '')} » inconnu : vérifie AI_MODEL dans ai/.env."),
+        ("overloaded",
+         "service Anthropic momentanément surchargé : réessaie dans quelques instants."),
+    ]
+    minuscule = detail.lower()
+    for motif, message in reconnus:
+        if motif in minuscule:
+            return message
+
+    # Inconnu : on rend le message brut de l'API plutôt qu'un nom de classe.
+    return f"appel au modèle impossible — {detail[:300] or type(exc).__name__}"
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -86,10 +122,8 @@ class AnthropicProvider:
                 },
             )
         except Exception as exc:  # réseau, quota, authentification, paramètre refusé…
-            # Le détail (corps de l'erreur, request_id) reste dans les logs ;
-            # ce qui remonte à l'appelant tient en une ligne lisible.
             logger.warning("échec de l'appel au modèle %s : %s", self.model, exc)
-            raise ProviderError(f"appel au modèle impossible ({type(exc).__name__})") from exc
+            raise ProviderError(explain_failure(exc)) from exc
 
         stop_reason = getattr(response, "stop_reason", None)
         if stop_reason == "refusal":

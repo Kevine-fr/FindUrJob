@@ -11,9 +11,13 @@ from .keywords import Keyword
 from .schemas import OfferIn, ProfileIn
 from .textutils import contains_term, padded, stem_text, strip_accents
 
+# « moteur IA non configuré » était faux dès qu'une clé était présente mais que
+# l'appel échouait pour une autre raison — crédits épuisés, quota, panne. La
+# note laissait alors croire à un réglage manquant, et la vraie cause (lisible
+# dans les alertes de la réponse) passait inaperçue.
 _OFFLINE_NOTE = (
-    "_Brouillon hors-ligne : réorganisation du profil sans reformulation "
-    "(moteur IA non configuré). À relire et compléter._"
+    "_Brouillon hors-ligne : profil réorganisé sans reformulation, l'IA n'ayant pas "
+    "pu être appelée. Voir l'alerte associée pour la cause exacte. À relire et compléter._"
 )
 
 # Mentions administratives d'un intitulé : inutiles dans un CV ou une lettre.

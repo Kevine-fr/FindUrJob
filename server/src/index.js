@@ -4,6 +4,7 @@ import { connectDb } from './config/db.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
 import { adoptOrphans } from './utils/adoptOrphans.js';
 import { dedupeApplications } from './utils/dedupeApplications.js';
+import { syncIndexes } from './utils/syncIndexes.js';
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/findurjob';
@@ -18,6 +19,9 @@ connectDb(MONGO_URI)
   // Avant que l'index unique ne se construise : Mongo le refuserait sur des
   // doublons préexistants, et la protection manquerait sans le dire.
   .then(() => dedupeApplications().catch((e) => console.error('dédoublonnage :', e.message)))
+  // Après le dédoublonnage : un index unique ne se construit pas sur des
+  // données qui le violent déjà.
+  .then(() => syncIndexes())
   .then(startScheduler);
 
 const server = app.listen(PORT, () => {

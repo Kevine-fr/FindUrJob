@@ -39,6 +39,19 @@ const jobOfferSchema = new mongoose.Schema(
 );
 
 // Empêche les doublons quand un externalId est fourni pour une même source.
-jobOfferSchema.index({ source: 1, externalId: 1 }, { unique: true, sparse: true });
+/*
+ * Une offre appartient à un compte : l'unicité se compte **par compte**.
+ *
+ * L'index portait sur `{source, externalId}` seuls — hérité d'avant le
+ * multi-comptes, quand la base n'avait qu'un propriétaire. Résultat : la
+ * première personne à collecter une annonce LinkedIn la verrouillait pour
+ * toutes les autres, dont la recherche échouait en « Doublon détecté ». Le
+ * code applicatif filtrait pourtant déjà par `user` : seul l'index était resté
+ * global.
+ *
+ * `sparse` reste nécessaire — beaucoup de sources ne fournissent pas
+ * d'`externalId`, et ces offres sont alors dédoublonnées sur titre + société.
+ */
+jobOfferSchema.index({ user: 1, source: 1, externalId: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model('JobOffer', jobOfferSchema);

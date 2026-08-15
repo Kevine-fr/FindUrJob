@@ -60,7 +60,21 @@ export function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: `Identifiant invalide : ${err.value}` });
   }
   if (err.code === 11000) {
-    return res.status(409).json({ error: 'Doublon détecté', keyValue: err.keyValue });
+    /*
+     * Dire *sur quoi* porte le conflit.
+     *
+     * « Doublon détecté » seul ne distinguait pas un vrai doublon d'un index mal
+     * cloisonné : la recherche d'offres d'un nouveau compte échouait sur une
+     * unicité restée globale, et le message ne laissait rien deviner. Nommer les
+     * champs en conflit rend la cause lisible sans ouvrir les logs.
+     */
+    const champs = Object.keys(err.keyValue || {});
+    return res.status(409).json({
+      error: champs.length
+        ? `Doublon détecté sur ${champs.join(' + ')}`
+        : 'Doublon détecté',
+      keyValue: err.keyValue,
+    });
   }
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Erreur serveur' });

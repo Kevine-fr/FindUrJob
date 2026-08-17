@@ -1,4 +1,5 @@
 import { asyncHandler } from '../middleware.js';
+import Profile from '../models/Profile.js';
 import { renderCvPdf } from '../services/botService.js';
 
 // Un document de CV avec photo intégrée reste sous le mégaoctet ; au-delà,
@@ -33,6 +34,22 @@ export const exportCvPdf = asyncHandler(async (req, res) => {
 
   const { buffer, fit } = await renderCvPdf(html);
   const name = `${slug(filename)}.pdf`;
+
+  /*
+   * On retient au passage le document imprimé.
+   *
+   * C'est le CV de l'onglet « Mon CV », dans sa mise en page réelle — celui que
+   * la campagne doit joindre en mode « CV classique ». Le capturer ici évite de
+   * dépendre d'un enregistrement du profil : imprimer son CV pour le relire est
+   * un geste bien plus fréquent, et il suffit désormais à armer la campagne.
+   */
+  try {
+    const profile = await Profile.forUser(req.user.id);
+    profile.masterCvHtml = html;
+    await profile.save();
+  } catch {
+    /* l'impression reste le service rendu : un échec d'archivage ne l'annule pas */
+  }
 
   res.set({
     'Content-Type': 'application/pdf',

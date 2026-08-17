@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
-import { SOURCE_LABELS } from '../lib/status.js';
+import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS } from '../lib/status.js';
 import { JOURS, build, parse, describe } from '../lib/cronBuilder.js';
 import { UNITES, ilYA } from '../lib/freshness.js';
 
@@ -121,6 +121,8 @@ export default function CampaignPage() {
           cron: campaign.cron,
           mode: campaign.mode,
           cvMode: campaign.cvMode,
+          contractTypes: campaign.contractTypes,
+          remotes: campaign.remotes,
           dailyLimit: campaign.dailyLimit,
           minScore: campaign.minScore,
           maxAgeValue: campaign.maxAgeValue,
@@ -477,6 +479,54 @@ export default function CampaignPage() {
 
             {/* Le CV joint décide du coût autant que du ciblage : le choix
                 mérite d'être explicite plutôt que subi. */}
+            {/* Ces filtres sont propres à la campagne : on explore large dans
+                l’onglet Offres, on candidate étroit ici. */}
+            <div className="section-label">Types de contrat visés</div>
+            <div className="filter-chips">
+              {Object.entries(CONTRACT_LABELS).map(([valeur, libelle]) => {
+                const actif = (campaign.contractTypes || []).includes(valeur);
+                return (
+                  <button
+                    key={valeur}
+                    className={`filter-chip${actif ? ' active' : ''}`}
+                    onClick={() =>
+                      set('contractTypes')(
+                        actif
+                          ? campaign.contractTypes.filter((v) => v !== valeur)
+                          : [...(campaign.contractTypes || []), valeur]
+                      )
+                    }
+                  >
+                    {libelle}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="filter-hint">Aucun coché = tous les contrats.</span>
+
+            <div className="section-label">Mode de travail visé</div>
+            <div className="filter-chips">
+              {Object.entries(REMOTE_LABELS).map(([valeur, libelle]) => {
+                const actif = (campaign.remotes || []).includes(valeur);
+                return (
+                  <button
+                    key={valeur}
+                    className={`filter-chip${actif ? ' active' : ''}`}
+                    onClick={() =>
+                      set('remotes')(
+                        actif
+                          ? campaign.remotes.filter((v) => v !== valeur)
+                          : [...(campaign.remotes || []), valeur]
+                      )
+                    }
+                  >
+                    {libelle}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="filter-hint">Aucun coché = tous les modes.</span>
+
             <div className="section-label">Quel CV joindre</div>
             <select
               className="select"

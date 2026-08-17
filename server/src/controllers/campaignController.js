@@ -3,7 +3,7 @@ import Campaign from '../models/Campaign.js';
 import { asyncHandler } from '../middleware.js';
 import { runCampaign } from '../services/campaignRunner.js';
 import { reschedule, describeSchedule } from '../scheduler.js';
-import { BOT_PLATFORMS, SOURCES } from '../utils/constants.js';
+import { BOT_PLATFORMS, SOURCES, CONTRACT_TYPES, REMOTE } from '../utils/constants.js';
 
 /**
  * Vue publique enrichie de ce que le front ne peut pas deviner : quelles
@@ -34,7 +34,7 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   const campaign = await Campaign.forUser(req.user.id);
   const {
     enabled, cron: expression, timezone, mode, cvMode, dailyLimit, minScore, targets,
-    maxAgeValue, maxAgeUnit, maxApplicants,
+    maxAgeValue, maxAgeUnit, maxApplicants, contractTypes, remotes,
   } = req.body || {};
 
   if (expression !== undefined) {
@@ -52,6 +52,11 @@ export const updateCampaign = asyncHandler(async (req, res) => {
   if (timezone) campaign.timezone = timezone;
   if (mode) campaign.mode = mode;
   if (cvMode) campaign.cvMode = cvMode;
+  // Listes vides autorisées : « aucun filtre » est un choix, pas un oubli.
+  if (Array.isArray(contractTypes)) {
+    campaign.contractTypes = contractTypes.filter((t) => CONTRACT_TYPES.includes(t));
+  }
+  if (Array.isArray(remotes)) campaign.remotes = remotes.filter((r) => REMOTE.includes(r));
 
   // Les nombres arrivent parfois vides d'un champ de saisie effacé : on retombe
   // sur la valeur en place plutôt que d'écrire NaN en base.

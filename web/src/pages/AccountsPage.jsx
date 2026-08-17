@@ -27,6 +27,12 @@ const PLATFORMS = {
   },
   francetravail: {
     label: 'France Travail',
+    // France Travail n’identifie pas par e-mail mais par un identifiant
+    // numérique. Un champ `type="email"` refusait la saisie côté navigateur :
+    // la connexion enregistrée était donc impossible, seule la reprise en main
+    // fonctionnait.
+    identifiant: { label: 'Identifiant France Travail', type: 'text',
+      aide: 'Ton identifiant numérique, pas une adresse e-mail.' },
     color: '#ec4a2c',
     short: 'ft',
     note: 'Authentification renforcée (code par courriel ou SMS) : passe par la reprise en main, la session est ensuite conservée.',
@@ -144,13 +150,13 @@ function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
       )}
 
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>Email</label>
+        <label>{meta.identifiant?.label || 'Email'}</label>
         <input
           className="input"
-          type="email"
+          type={meta.identifiant?.type || 'email'}
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          placeholder={`Ton identifiant ${meta.label}`}
+          placeholder={meta.identifiant?.aide || `Ton identifiant ${meta.label}`}
           autoComplete="off"
         />
       </div>

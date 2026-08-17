@@ -7,6 +7,7 @@ import SearchPreference from '../models/SearchPreference.js';
 import { tailorCv, scoreOffer } from './tailoringService.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
+import { tryRevive } from './sessionRevival.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 /**
@@ -111,8 +112,17 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
     const known = await Application.find({ user }).distinct('offer');
 
     const baseFilter = { _id: { $nin: known }, user };
-    if (prefs.contractTypes?.length) baseFilter.contractType = { $in: prefs.contractTypes };
-    if (prefs.remotes?.length) baseFilter.remote = { $in: prefs.remotes };
+    /*
+     * Les filtres de la campagne priment sur ceux de la recherche.
+     *
+     * On explore large dans l’onglet Offres et on candidate étroit en campagne :
+     * hériter des mêmes critères empêchait de viser les CDI en télétravail sans
+     * restreindre du même coup toute la collecte.
+     */
+    const contrats = campaign.contractTypes?.length ? campaign.contractTypes : prefs.contractTypes;
+    const modes = campaign.remotes?.length ? campaign.remotes : prefs.remotes;
+    if (contrats?.length) baseFilter.contractType = { $in: contrats };
+    if (modes?.length) baseFilter.remote = { $in: modes };
 
     /*
      * Fraîcheur : la campagne vise en priorité les annonces récentes.
@@ -386,7 +396,8 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
           try {
             // Le PDF voyage avec la demande : le bot n'a aucun fichier à aller
             // chercher, et les deux services n'ont pas de disque en commun.
-            const outcome = await botApply(source, offer, {
+            const envoyer = () =>
+              botApply(source, offer, {
               filename: `CV-${(profile.fullName || 'candidat').replace(/\s+/g, '-')}.pdf`,
               content: cvPdf.toString('base64'),
             }, user, {
@@ -400,6 +411,29 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               coverLetter: result.coverLetter || "",
               dryRun,
             });
+
+            /*
+             * Session expirée : on la rouvre une fois, puis on réessaie.
+             *
+             * Le bot répond 409 quand aucune session n'est ouverte. Les
+             * identifiants étant déjà enregistrés et chiffrés, laisser la
+             * candidature échouer obligeait à rouvrir l'onglet Comptes pour un
+             * clic que le serveur peut faire lui-même — France Travail expirant
+             * plus vite que les autres, c'était le cas le plus fréquent.
+             *
+             * Une seule tentative : insister sur une plateforme qui réclame une
+             * vérification à deux facteurs ne la ferait pas céder, et
+             * déclencherait surtout des alertes de sécurité sur le compte.
+             */
+            let outcome;
+            try {
+              outcome = await envoyer();
+            } catch (sessionError) {
+              if (sessionError.status !== 409) throw sessionError;
+              if (!(await tryRevive(source, user))) throw sessionError;
+              summary.errors.push(`${source} : session expirée, rouverte automatiquement.`);
+              outcome = await envoyer();
+            }
 
             if (outcome.status === 'sent') {
               application.status = 'postule';

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { BOT_PLATFORMS, SOURCES } from '../utils/constants.js';
+import { BOT_PLATFORMS, SOURCES, CONTRACT_TYPES, REMOTE } from '../utils/constants.js';
 
 /**
  * Combien de candidatures viser par source, à chaque exécution.
@@ -58,6 +58,17 @@ const campaignSchema = new mongoose.Schema(
      * avec le CV de référence qu'une candidature qui n'part pas du tout.
      */
     cvMode: { type: String, enum: ['adaptatif', 'classique'], default: 'adaptatif' },
+
+    /*
+     * Filtres propres à la campagne.
+     *
+     * Ils étaient hérités des préférences de recherche, ce qui liait deux
+     * usages distincts : on explore large dans l’onglet Offres, on candidate
+     * étroit en campagne. Vides, ces listes laissent passer tous les contrats
+     * et tous les modes de travail — le comportement d’avant.
+     */
+    contractTypes: { type: [String], enum: CONTRACT_TYPES, default: [] },
+    remotes: { type: [String], enum: REMOTE, default: [] },
 
     // Volume visé, source par source. Le total tenté à chaque exécution est la
     // somme de ces limites, plafonnée par `dailyLimit`.

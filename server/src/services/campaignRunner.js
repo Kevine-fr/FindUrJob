@@ -27,6 +27,9 @@ import { BOT_PLATFORMS } from '../utils/constants.js';
  * rédiger, mieux vaut trois phrases justes qu'un texte générique enflé.
  */
 function dossierClassique(profile, score) {
+  // `masterCvHtml` est le document de l'onglet « Mon CV », enregistré tel qu'il
+  // s'imprime. `masterCv` (texte libre) n'est qu'un repli : il ne porte ni la
+  // mise en page ni les rubriques, et donnait un PDF méconnaissable.
   const nom = profile.fullName || '';
   const contact = [profile.email, profile.phone].filter(Boolean).join(' · ');
 
@@ -87,7 +90,9 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
 
   try {
     const [profile, prefs] = await Promise.all([
-      Profile.forUser(user),
+      Profile.forUser(user).then((p) =>
+        Profile.findById(p._id).select("+masterCvHtml +cvFile")
+      ),
       SearchPreference.forUser(user),
     ]);
 
@@ -277,9 +282,27 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
            */
           let cvPdf = null;
           try {
-            const { buffer } = await renderCvPdf(
-              buildTailoredCvHtml(result.content, { accent: profile.cvOptions?.accent })
-            );
+            /*
+             * En classique, on imprime le document de « Mon CV » tel quel.
+             *
+             * Le passer par `buildTailoredCvHtml` revenait à re-composer un CV
+             * depuis du texte : mise en page perdue, rubriques dans le désordre,
+             * colonnes inversées. Le HTML enregistré porte déjà le gabarit.
+             */
+            let buffer;
+
+            if (cvClassique && profile.cvFile?.length) {
+              // CV importé : on joint le fichier d'origine sans le repasser par
+              // une impression, qui n'y ajouterait rien et pourrait le dégrader.
+              buffer = profile.cvFile;
+            } else {
+              const html =
+                cvClassique && profile.masterCvHtml
+                  ? profile.masterCvHtml
+                  : buildTailoredCvHtml(result.content, { accent: profile.cvOptions?.accent });
+              ({ buffer } = await renderCvPdf(html));
+            }
+
             cvPdf = buffer;
             cv.pdf = buffer;
             cv.pdfBytes = buffer.length;

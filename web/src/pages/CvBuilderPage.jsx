@@ -118,7 +118,10 @@ export default function CvBuilderPage() {
   const save = async () => {
     setBusy(true);
     try {
-      await toast.promise(api.profile.update(profile).then(keep), {
+      // On joint le document tel qu’il s’imprime : c’est lui que la campagne
+      // enverra en mode « CV classique », plutôt qu’une réécriture du texte.
+      const aEnregistrer = { ...profile, masterCvHtml: buildCvDocument(profile, options) };
+      await toast.promise(api.profile.update(aEnregistrer).then(keep), {
         loading: 'Enregistrement…',
         success: 'Profil enregistré.',
         error: (error) => `Enregistrement impossible : ${error.message}`,

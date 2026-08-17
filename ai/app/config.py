@@ -29,7 +29,12 @@ class Settings(BaseSettings):
     # --- Paramètres du modèle ------------------------------------------
     ai_model: str = "claude-opus-5"
     ai_effort: EffortLevel = "medium"
-    ai_max_tokens: int = 8000
+    # Plafond de sortie. Sur Claude Opus 5, le raisonnement est actif par défaut
+    # et **partage ce budget** avec le texte : à 8000, un CV riche voyait sa fin
+    # rognée — formation et dernières expériences disparaissaient sans erreur,
+    # le modèle ayant abrégé pour tenir. Un CV complet + lettre + mots-clés en
+    # JSON demande confortablement le double.
+    ai_max_tokens: int = 16000
     ai_timeout_seconds: float = 90.0
     ai_max_retries: int = 2
 

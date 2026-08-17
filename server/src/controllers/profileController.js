@@ -44,6 +44,9 @@ export const uploadCv = asyncHandler(async (req, res) => {
 
   const profile = await Profile.forUser(req.user.id);
   profile.masterCv = result.text;
+  // Le document lui-même, pour l’aperçu et pour la candidature en mode classique.
+  profile.cvFile = req.body;
+  profile.cvMime = /.pdf$/i.test(filename) ? 'application/pdf' : 'application/octet-stream';
   profile.cvFileName = filename;
   profile.cvUploadedAt = new Date();
   profile.cvChars = result.chars || result.text.length;
@@ -89,4 +92,29 @@ export const deleteCv = asyncHandler(async (req, res) => {
   profile.cvWarnings = [];
   await profile.save();
   res.json(profile);
+});
+
+/**
+ * GET /profile/cv-file — le CV importé, tel qu'il a été déposé.
+ *
+ * Sert l'aperçu de l'onglet « Mon CV » quand la personne a importé un document
+ * plutôt que de saisir ses rubriques : c'est ce fichier qui sera joint aux
+ * candidatures en mode classique, donc c'est lui qu'il faut montrer.
+ */
+export const getCvFile = asyncHandler(async (req, res) => {
+  const profile = await Profile.forUser(req.user.id);
+  const complet = await Profile.findById(profile._id).select('+cvFile');
+
+  if (!complet?.cvFile?.length) {
+    return res.status(404).json({ error: 'Aucun CV importé.' });
+  }
+
+  res.set({
+    'Content-Type': complet.cvMime || 'application/pdf',
+    'Content-Length': String(complet.cvFile.length),
+    'Content-Disposition': `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${
+      (complet.cvFileName || 'cv').replace(/"/g, '')
+    }"`,
+  });
+  res.end(complet.cvFile);
 });

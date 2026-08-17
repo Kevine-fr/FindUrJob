@@ -47,6 +47,16 @@ CE QUE TU PRODUIS
    TOUTES les expériences et formations du CV source doivent se retrouver dans
    ta réécriture. Tu changes l'ordre, la formulation et le relief ; tu ne
    supprimes pas un poste et tu n'en inventes pas.
+
+   RUBRIQUES OBLIGATOIRES : `## Formation` figure toujours, même brève, ainsi
+   que `## Langues`, `## Liens` et `## Centres d'intérêt` quand le dossier les
+   renseigne. Un CV sans formation est écarté par les recruteurs : c'est la
+   rubrique la plus souvent perdue quand on abrège, et celle qu'il faut garder
+   en priorité.
+
+   Si la place manque, RACCOURCIS les puces — deux au lieu de quatre, une ligne
+   au lieu de trois. Ne supprime jamais une rubrique ni un poste entier pour
+   gagner de la place : un parcours amputé se remarque, des puces resserrées non.
 2. `coverLetter` — la lettre, en texte brut : objet, « Madame, Monsieur, »,
    250 mots maximum, 3 paragraphes courts (pourquoi ce poste, ce que le dossier
    apporte concrètement, disponibilité), puis « Cordialement, » et le nom.

@@ -127,6 +127,29 @@ const profileSchema = new mongoose.Schema(
 
     masterCv: { type: String, default: '' }, // CV maître : texte réécrit par offre
 
+    /*
+     * Le CV de l’onglet « Mon CV », tel qu’il s’imprime.
+     *
+     * Le gabarit deux colonnes vit dans le navigateur : le serveur ne sait pas
+     * le reconstruire. On garde donc le HTML produit à l’enregistrement, ce qui
+     * permet à la campagne de joindre exactement le document que la personne a
+     * conçu — et non une réécriture du champ texte `masterCv`, qui donnait un
+     * PDF méconnaissable en mode « CV classique ».
+     */
+    masterCvHtml: { type: String, default: '', select: false },
+
+    /*
+     * Le fichier importé, conservé tel quel.
+     *
+     * Seul le texte extrait était gardé : l’aperçu de l’onglet « Mon CV » se
+     * construisant depuis les rubriques, il ne bougeait jamais après un import,
+     * et la campagne ne pouvait pas joindre le document d’origine. On garde donc
+     * les octets — c’est le seul moyen de montrer, et d’envoyer, exactement ce
+     * que la personne a déposé.
+     */
+    cvFile: { type: Buffer, select: false },
+    cvMime: { type: String, default: '' },
+
     // Métadonnées du CV déposé (le fichier n'est pas conservé, seul son texte l'est)
     cvFileName: { type: String, default: '' },
     cvUploadedAt: { type: Date },

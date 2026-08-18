@@ -12,6 +12,19 @@ const searchPreferenceSchema = new mongoose.Schema(
     excludedKeywords: { type: [String], default: [] }, // pour écarter des annonces
     locations: { type: [String], default: [] },
 
+    /*
+     * Collecte automatique des offres.
+     *
+     * La campagne ne postule qu’aux offres **déjà en base** : sans collecte
+     * régulière, elle épuise le vivier puis tourne à vide sans rien signaler
+     * d’anormal. Programmer la recherche évite d’avoir à remplir la base à la
+     * main pour que les candidatures continuent.
+     */
+    autoSync: { type: Boolean, default: false },
+    syncCron: { type: String, default: "0 7 * * 1-5" },
+    lastSyncAt: { type: Date },
+    lastSyncResult: { type: String, default: "" },
+
     contractTypes: { type: [{ type: String, enum: CONTRACT_TYPES }], default: [] },
     remotes: { type: [{ type: String, enum: REMOTE }], default: [] },
     sources: { type: [{ type: String, enum: SOURCES }], default: [] },

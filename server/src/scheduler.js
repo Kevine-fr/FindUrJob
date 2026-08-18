@@ -1,5 +1,7 @@
 import cron from 'node-cron';
 import Campaign from './models/Campaign.js';
+import SearchPreference from './models/SearchPreference.js';
+import { collectOffers } from './controllers/offerController.js';
 import { runCampaign } from './services/campaignRunner.js';
 
 /**
@@ -54,7 +56,60 @@ export async function reschedule() {
     tasks.set(user, task);
   }
 
-  console.log(`campagnes : ${tasks.size} programmée(s)`);
+
+  /*
+   * La collecte d'offres a son propre rythme.
+   *
+   * Elle est distincte de la campagne : on veut un vivier frais le matin, et
+   * candidater plus tard dans la journée. Les lier forcerait à choisir entre
+   * chercher trop souvent ou postuler trop rarement.
+   */
+  const prefs = await SearchPreference.find({ autoSync: true });
+
+  for (const pref of prefs) {
+    if (!pref.user) continue;
+
+    if (!cron.validate(pref.syncCron)) {
+      console.warn(`collecte ${pref.user} : expression invalide (${pref.syncCron})`);
+      continue;
+    }
+
+    const user = pref.user.toString();
+    const task = cron.schedule(
+      pref.syncCron,
+      () => {
+        collectOffers(user)
+          .then(async (bilan) => {
+            console.log(`collecte ${user} :`, JSON.stringify(bilan));
+            // Le bilan s'affiche dans la page Préférences : sans trace, une
+            // collecte programmée est indiscernable d'une collecte absente.
+            await SearchPreference.updateOne(
+              { _id: pref._id },
+              {
+                lastSyncAt: new Date(),
+                lastSyncResult:
+                  `${bilan.imported} nouvelle(s), ${bilan.updated} mise(s) à jour, ` +
+                  `${bilan.found} trouvée(s).`,
+              }
+            );
+          })
+          .catch(async (error) => {
+            console.error(`collecte ${user} :`, error.message);
+            await SearchPreference.updateOne(
+              { _id: pref._id },
+              { lastSyncAt: new Date(), lastSyncResult: `Échec : ${error.message}` }
+            );
+          });
+      },
+      { timezone: 'Europe/Paris' }
+    );
+
+    // Clé distincte de celle de la campagne : un même compte peut avoir les
+    // deux tâches, et `stopAll` doit pouvoir arrêter les deux.
+    tasks.set(`sync:${user}`, task);
+  }
+
+  console.log(`campagnes : ${campaigns.length} programmée(s) · collectes : ${prefs.length}`);
   return describeSchedule();
 }
 

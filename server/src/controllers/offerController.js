@@ -216,9 +216,15 @@ async function gather(criteria, wantedSources, user) {
  * Sans corps, la recherche reprend les préférences enregistrées. Les offres
  * déjà connues (même source + même externalId) sont mises à jour, pas dupliquées.
  */
-export const syncOffers = asyncHandler(async (req, res) => {
-  const prefs = await SearchPreference.forUser(req.user.id);
-  const body = req.body || {};
+/**
+ * Collecte les offres pour un compte et les enregistre.
+ *
+ * Extrait du gestionnaire HTTP pour que le planificateur puisse l’appeler :
+ * la campagne ne postule qu’aux offres **déjà en base**, donc sans collecte
+ * régulière elle finit par tourner à vide sur un vivier périmé.
+ */
+export async function collectOffers(userId, body = {}) {
+  const prefs = await SearchPreference.forUser(userId);
 
   const criteria = {
     keywords: body.keywords ?? prefs.keywords ?? [],
@@ -229,7 +235,7 @@ export const syncOffers = asyncHandler(async (req, res) => {
   };
 
   const wantedSources = (body.sources ?? []).filter((source) => SOURCES.includes(source));
-  const { offers: found, report } = await gather(criteria, wantedSources, req.user.id);
+  const { offers: found, report } = await gather(criteria, wantedSources, userId);
 
   const excluded = (prefs.excludedKeywords || []).map((word) => word.toLowerCase()).filter(Boolean);
 
@@ -255,23 +261,28 @@ export const syncOffers = asyncHandler(async (req, res) => {
       ? { source: offer.source, externalId: offer.externalId }
       : { source: offer.source, title: offer.title, company: offer.company };
 
-    const existing = await JobOffer.findOne({ ...identity, user: req.user.id });
+    const existing = await JobOffer.findOne({ ...identity, user: userId });
     if (existing) {
       existing.set(offer);
       await existing.save();
       updated += 1;
     } else {
-      await JobOffer.create({ ...offer, user: req.user.id });
+      await JobOffer.create({ ...offer, user: userId });
       imported += 1;
     }
   }
 
-  res.json({
+  return {
     imported,
     updated,
     skipped,
     found: found.length,
     sources: report,
     criteria: { ...criteria, sources: wantedSources },
-  });
+  };
+}
+
+/** POST /offers/sync — la même collecte, déclenchée à la main. */
+export const syncOffers = asyncHandler(async (req, res) => {
+  res.json(await collectOffers(req.user.id, req.body || {}));
 });

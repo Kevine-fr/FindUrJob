@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ilYA } from '../lib/freshness.js';
 import { api } from '../api/client.js';
 import { CONTRACT_LABELS, REMOTE_LABELS, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from '../components/Toast.jsx';
@@ -211,6 +212,48 @@ export default function PreferencesPage() {
           selected={prefs.sources || []}
           onToggle={toggle('sources')}
         />
+
+        {/* ---- Collecte automatique ---- */}
+        <div className="section-label">Collecte automatique</div>
+        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+          La campagne ne postule qu&apos;aux offres <strong>déjà collectées</strong>. Sans collecte
+          régulière, elle épuise le vivier puis tourne à vide. Programmer la recherche évite d&apos;avoir
+          à remplir la base à la main.
+        </p>
+
+        <label className="check" style={{ marginBottom: 10 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(prefs.autoSync)}
+            onChange={(e) => setPrefs((p) => ({ ...p, autoSync: e.target.checked }))}
+          />
+          Chercher des offres automatiquement
+        </label>
+
+        {prefs.autoSync && (
+          <div className="field">
+            <label>
+              Rythme de la collecte
+              <em className="filter-hint">minute heure jour mois jour-semaine</em>
+            </label>
+            <input
+              className="input"
+              value={prefs.syncCron ?? '0 7 * * 1-5'}
+              onChange={(e) => setPrefs((p) => ({ ...p, syncCron: e.target.value }))}
+              style={{ fontFamily: 'ui-monospace, monospace', maxWidth: 260 }}
+            />
+            <span className="filter-hint">
+              Par défaut : 7 h du lundi au vendredi. Vise avant l&apos;heure de ta campagne, pour
+              qu&apos;elle trouve un vivier frais.
+            </span>
+          </div>
+        )}
+
+        {prefs.lastSyncAt && (
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            Dernière collecte {ilYA(prefs.lastSyncAt) || '—'} — {prefs.lastSyncResult || 'sans résultat.'}
+          </p>
+        )}
 
         <div className="grid-2" style={{ marginTop: 18 }}>
           <div className="field">

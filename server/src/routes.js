@@ -20,16 +20,18 @@ const router = Router();
 /*
  * Santé et version.
  *
- * La version vient du `package.json` du serveur — une seule source, celle que
- * le déploiement embarque. `APP_COMMIT` est renseigné par la CI quand elle
- * connaît le SHA : savoir « 0.1.0 » ne suffit pas à identifier ce qui tourne
- * réellement quand on déploie plusieurs fois par jour.
+ * `APP_VERSION` est écrite par la CI dans le `.env` : c’est la version du
+ * déploiement, celle qui bouge à chaque livraison. Le `package.json` ne sert
+ * plus que de repli en développement, où aucune CI n’est passée.
+ *
+ * `APP_COMMIT` complète : savoir « 0.1.0 » ne suffit pas à identifier ce qui
+ * tourne réellement quand on déploie plusieurs fois par jour.
  */
 router.get('/health', (req, res) =>
   res.json({
     status: 'ok',
     service: 'findurjob-api',
-    version: pkg.version,
+    version: process.env.APP_VERSION || pkg.version,
     commit: (process.env.APP_COMMIT || '').slice(0, 7),
     builtAt: process.env.APP_BUILT_AT || '',
     time: new Date().toISOString(),

@@ -117,6 +117,7 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       # Version réellement déployée, écrite par la CI. Sans elles, l'espace
       # compte n'affiche que la version du package.json, sans révision.
+      - APP_VERSION=${APP_VERSION:-}
       - APP_COMMIT=${APP_COMMIT:-}
       - APP_BUILT_AT=${APP_BUILT_AT:-}
       # Envoi des courriels (confirmation d'adresse, mot de passe oublié).

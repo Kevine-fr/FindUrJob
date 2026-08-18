@@ -271,20 +271,9 @@ export default function PreferencesPage() {
               En dessous, l'offre est ignorée par les campagnes.
             </p>
           </div>
-          <div className="field">
-            <label>Candidatures par jour au maximum</label>
-            <input
-              className="input"
-              type="number"
-              min="1"
-              max="100"
-              value={prefs.dailyQuota ?? 10}
-              onChange={setNumber('dailyQuota')}
-            />
-            <p className="muted" style={{ fontSize: 13, margin: '4px 0 0' }}>
-              Un volume raisonnable passe inaperçu et convertit mieux.
-            </p>
-          </div>
+          {/* Le plafond quotidien vit dans la page Campagne, avec le reste des
+              garde-fous : deux réglages du même nom à deux endroits, dont un
+              seul lu par le moteur, ne pouvaient que se contredire. */}
         </div>
       </div>
     </>

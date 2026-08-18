@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
-import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
+import { STATUS_META, SOURCE_LABELS } from '../lib/status.js';
 import { SearchField, ChipGroup, FilterFooter } from '../components/FilterBar.jsx';
 
 const TYPE_FILTERS = [
@@ -16,6 +16,16 @@ const TYPE_FILTERS = [
  * modifié) : encore faut-il pouvoir isoler ces évènements au milieu du reste.
  */
 const ECHEC = 'echec_envoi';
+
+/*
+ * Les seuls statuts que l’application écrit elle-même.
+ *
+ * « Relancé », « Entretien », « Offre », « Refusé », « Abandonné » et
+ * « Postulé » se posent à la main depuis la fiche d’une candidature : ils
+ * n’apparaissent donc jamais dans un fil produit par les campagnes, et
+ * proposer de filtrer dessus ne menait qu’à des listes vides.
+ */
+const STATUTS_HISTORIQUE = ['brouillon', 'a_postuler', 'echec_envoi', 'a_verifier'];
 
 function formatDate(value) {
   const date = new Date(value);
@@ -143,7 +153,7 @@ export default function HistoryPage() {
               >
                 Tous
               </button>
-              {STATUS_ORDER.map((value) => (
+              {STATUTS_HISTORIQUE.map((value) => (
                 <button
                   key={value}
                   className={'filter-chip' + (status === value ? ' active' : '')}

@@ -118,6 +118,15 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {/* Un mot de passe perdu ne doit pas être un cul-de-sac. */}
+        {!inscription && !setupNeeded && (
+          <p className="auth-switch">
+            <a className="back-link" href="/mot-de-passe">
+              Mot de passe oublié ?
+            </a>
+          </p>
+        )}
+
         {/* Pendant l'installation, il n'y a rien à quoi se connecter. */}
         {!setupNeeded && (
           <p className="auth-switch">

@@ -115,6 +115,19 @@ services:
       # Origines autorisées à porter un cookie de session (application + admin).
       # Obligatoire avec des cookies : le navigateur refuse le joker.
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # Version réellement déployée, écrite par la CI. Sans elles, l'espace
+      # compte n'affiche que la version du package.json, sans révision.
+      - APP_COMMIT=${APP_COMMIT:-}
+      - APP_BUILT_AT=${APP_BUILT_AT:-}
+      # Envoi des courriels (confirmation d'adresse, mot de passe oublié).
+      # Sans SMTP_HOST, les liens sont journalisés au lieu d'être envoyés :
+      # le parcours reste terminable en développement.
+      - APP_URL=${APP_URL:-http://localhost:5173}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
       # Les événements de fichiers ne traversent pas le montage Windows → Linux :
       # sans scrutation, nodemon ne redémarre jamais après une modification.
       - CHOKIDAR_USEPOLLING=true

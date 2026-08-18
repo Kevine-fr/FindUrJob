@@ -9,6 +9,9 @@ import CvBuilderPage from './pages/CvBuilderPage.jsx';
 import AccountsPage from './pages/AccountsPage.jsx';
 import CampaignPage from './pages/CampaignPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
+import AccountPage from './pages/AccountPage.jsx';
+import PasswordPage from './pages/PasswordPage.jsx';
+import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import { useAuth } from './lib/auth.jsx';
 
@@ -183,7 +186,22 @@ export default function App() {
     );
   }
 
-  if (!user) return <LoginPage />;
+  /*
+   * Deux routes restent ouvertes sans session.
+   *
+   * Elles s’atteignent par un lien de courriel : renvoyer vers l’écran de
+   * connexion perdrait le jeton présent dans l’URL, et la personne ne pourrait
+   * précisément pas se connecter — c’est la raison de sa venue.
+   */
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/mot-de-passe" element={<PasswordPage />} />
+        <Route path="/verifier-email" element={<VerifyEmailPage />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
+  }
 
   return (
     <div className="app">
@@ -220,10 +238,12 @@ export default function App() {
         <div className="nav-spacer" />
         <InstallButton />
         <div className="nav-foot">
-          <div className="nav-user" title={user?.email}>
+          {/* Le bloc identité mène à l’espace compte : c’est là qu’on cherche
+              son profil, pas dans un menu séparé. */}
+          <NavLink className="nav-user" to="/compte" title={user?.email}>
             <span className="nav-avatar">{(user?.fullName || user?.email || '?').charAt(0).toUpperCase()}</span>
             <span className="nav-user-name">{user?.fullName || user?.email}</span>
-          </div>
+          </NavLink>
           <button className="btn btn-ghost btn-sm btn-block" onClick={logout}>
             Se déconnecter
           </button>
@@ -243,6 +263,8 @@ export default function App() {
             <Route path="/campagne" element={<CampaignPage />} />
             <Route path="/comptes" element={<AccountsPage />} />
             <Route path="/mon-cv" element={<CvBuilderPage />} />
+            <Route path="/compte" element={<AccountPage />} />
+            <Route path="/verifier-email" element={<VerifyEmailPage />} />
             {/* La console n'existe que pour un administrateur : sans ce garde,
                 l'URL suffirait à en afficher la coquille (l'API, elle, refuse). */}
             <Route

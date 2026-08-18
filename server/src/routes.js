@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Router } from 'express';
 import * as auth from './controllers/authController.js';
 import * as admin from './controllers/adminController.js';
@@ -12,10 +13,27 @@ import * as accounts from './controllers/accountController.js';
 import * as cvExport from './controllers/cvExportController.js';
 import * as campaign from './controllers/campaignController.js';
 
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
 const router = Router();
 
+/*
+ * Santé et version.
+ *
+ * La version vient du `package.json` du serveur — une seule source, celle que
+ * le déploiement embarque. `APP_COMMIT` est renseigné par la CI quand elle
+ * connaît le SHA : savoir « 0.1.0 » ne suffit pas à identifier ce qui tourne
+ * réellement quand on déploie plusieurs fois par jour.
+ */
 router.get('/health', (req, res) =>
-  res.json({ status: 'ok', service: 'findurjob-api', time: new Date().toISOString() })
+  res.json({
+    status: 'ok',
+    service: 'findurjob-api',
+    version: pkg.version,
+    commit: (process.env.APP_COMMIT || '').slice(0, 7),
+    builtAt: process.env.APP_BUILT_AT || '',
+    time: new Date().toISOString(),
+  })
 );
 
 // --- Authentification (seules routes ouvertes) --------------------------
@@ -24,6 +42,12 @@ router.post('/auth/login', auth.login);
 router.post('/auth/logout', auth.logout);
 router.get('/auth/me', auth.me);
 router.patch('/auth/me', requireAuth, auth.updateMe);
+router.delete('/auth/me', requireAuth, auth.deleteMe);
+router.post('/auth/verify/send', requireAuth, auth.sendVerification);
+router.post('/auth/verify', auth.verifyEmail);
+router.post('/auth/password/forgot', auth.forgotPassword);
+router.post('/auth/password/reset', auth.resetPassword);
+router.post('/auth/password/change', requireAuth, auth.changePassword);
 
 /*
  * Tout ce qui suit appartient à quelqu'un.

@@ -2459,3 +2459,25 @@ img {
     gap: 10px;
   }
 }
+
+/* ---- Espace compte ---- */
+
+/* Le bloc identité devient un lien : il doit réagir comme les autres entrées
+   de navigation, sans en prendre la couleur active permanente. */
+.nav-user {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--fast) var(--ease);
+}
+.nav-user:hover {
+  background: var(--paper);
+}
+
+/* La suppression de compte se distingue nettement du reste : on ne veut pas
+   qu'elle se confonde avec un réglage ordinaire. */
+.danger-zone {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+.danger-zone h2 {
+  color: var(--danger);
+}

@@ -77,7 +77,22 @@ export const api = {
       req('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
     logout: () => req('/auth/logout', { method: 'POST' }),
     update: (body) => req('/auth/me', { method: 'PATCH', body: JSON.stringify(body) }),
+
+    // --- Compte ---
+    remove: (body) => req('/auth/me', { method: 'DELETE', body: JSON.stringify(body) }),
+    sendVerification: () => req('/auth/verify/send', { method: 'POST' }),
+    verifyEmail: (token) =>
+      req('/auth/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+    forgotPassword: (email) =>
+      req('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email }) }),
+    resetPassword: (token, password) =>
+      req('/auth/password/reset', { method: 'POST', body: JSON.stringify({ token, password }) }),
+    changePassword: (current, password) =>
+      req('/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) }),
   },
+
+  // La version de ce qui tourne réellement, servie par /health.
+  version: () => req('/health'),
 
   offers: {
     // Réponse paginée : { offers, total, page, pages, limit }

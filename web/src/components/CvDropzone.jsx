@@ -41,6 +41,46 @@ export default function CvDropzone({ profile, onChange }) {
           `CV importé (${(result.cvChars || 0).toLocaleString('fr-FR')} caractères).`,
         error: (error) => `Import impossible : ${error.message}`,
       });
+
+      /*
+       * Les rubriques reconnues ne remplacent rien sans accord explicite.
+       *
+       * Un import écrase potentiellement des heures de saisie. Le serveur les
+       * renvoie comme proposition ; c'est ici, et seulement après un « oui »,
+       * qu'elles sont appliquées. Le gabarit du CV ne change pas — seules les
+       * données changent, donc l'aperçu reste celui qu'on a conçu.
+       */
+      const champs = updated.fields;
+      const compte = champs
+        ? (champs.experiences?.length || 0) + (champs.education?.length || 0)
+        : 0;
+
+      if (compte > 0) {
+        const remplacer = window.confirm(
+          `${file.name} a été lu.\n\n` +
+            `${champs.experiences?.length || 0} expérience(s) et ` +
+            `${champs.education?.length || 0} formation(s) y ont été reconnues.\n\n` +
+            `Remplacer les rubriques actuelles de ton CV par celles-ci ?\n\n` +
+            `Le format de ton CV ne change pas : seules les informations sont ` +
+            `reprises. Tes rubriques actuelles seront perdues.`
+        );
+
+        if (remplacer) {
+          // On ne fusionne pas : mélanger deux CV produit des doublons que
+          // personne ne relit. Remplacer est franc, et c'est ce qu'on a annoncé.
+          onChange?.({ ...updated, ...champs });
+          toast.success('Rubriques remplacées par celles du CV importé.');
+          return;
+        }
+        toast.info('Rubriques conservées : seul le texte source a été mis à jour.');
+      } else if (champs === null) {
+        toast.info(
+          "Le texte a été importé, mais les rubriques n'ont pas pu en être extraites " +
+            "(moteur IA indisponible). Ton CV actuel est inchangé.",
+          { duration: 9000 }
+        );
+      }
+
       onChange?.(updated);
     } catch {
       /* déjà signalé par le toast */

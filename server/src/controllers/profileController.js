@@ -54,7 +54,15 @@ export const uploadCv = asyncHandler(async (req, res) => {
   profile.cvWarnings = result.warnings || [];
   await profile.save();
 
-  res.status(201).json(profile);
+  /*
+   * Les rubriques reconnues repartent avec la réponse, **sans être écrites**.
+   *
+   * C’est l’interface qui demande confirmation avant de remplacer le profil :
+   * un import écrase des heures de saisie, et le faire en silence serait une
+   * perte de données déguisée en fonctionnalité. Le champ est donc une
+   * proposition, pas un effet de bord.
+   */
+  res.status(201).json({ ...profile.toObject(), fields: result.fields || null });
 });
 
 // POST /profile/compose — construit le CV à partir des champs du formulaire

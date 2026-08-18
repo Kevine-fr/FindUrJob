@@ -22,6 +22,7 @@ from .config import get_settings
 from .cv_extract import UnsupportedFile, extract
 from .guards import inspect, is_usable
 from .keywords import Keyword, extract_keywords
+from .parsing import parse_cv
 from .providers import ProviderError, build_provider
 from .providers.offline import OfflineProvider
 from .rendering import render_master_cv
@@ -177,6 +178,11 @@ async def extract_cv(request: Request, file: UploadFile = File(...)) -> ExtractC
         pages=result.pages,
         filename=file.filename or "",
         warnings=result.warnings,
+        # Rubriques structurées : c’est ce qui permet de garder le gabarit du
+        # CV conçu ici et de n’en remplacer que les données. `None` quand le
+        # moteur est hors-ligne ou que l’extraction n’aboutit pas : l’appelant
+        # conserve alors le texte brut plutôt que de perdre l’import.
+        fields=await parse_cv(request.app.state.provider, result.text),
     )
 
 

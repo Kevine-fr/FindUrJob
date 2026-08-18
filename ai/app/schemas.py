@@ -269,6 +269,8 @@ class ExtractCvResponse(BaseModel):
     pages: int = 0
     filename: str = ""
     warnings: list[str] = []
+    # Rubriques reconnues dans le document, quand le moteur a pu les extraire.
+    fields: dict | None = None
 
 
 class HealthResponse(BaseModel):

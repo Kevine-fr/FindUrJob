@@ -95,16 +95,22 @@ def test_requete_bien_formee(sample_offer, sample_profile):
 
     sent = provider._client.messages.last_kwargs  # noqa: SLF001
     assert sent["model"] == "claude-opus-5"
-    # Le prompt système est constant et mis en cache : il ne varie pas par offre.
-    assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
+    # Le cache est un préfixe : la césure se pose sur le DERNIER bloc stable,
+    # et couvre alors tout ce qui précède — consignes puis dossier du candidat.
+    # La marquer sur le premier bloc ne mettrait en cache que les consignes.
     assert "n'invente aucun fait" in sent["system"][0]["text"]
+    assert "cache_control" not in sent["system"][0]
+    assert sent["system"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "Camille Dupont" in sent["system"][-1]["text"]
     # Sortie contrainte par schéma, pas de Markdown à deviner.
     assert sent["output_config"]["format"]["type"] == "json_schema"
     assert sent["output_config"]["effort"] == "medium"
-    # L'offre et le profil arrivent bien dans le message utilisateur.
+    # Le message utilisateur ne porte que l'offre — la partie qui change à
+    # chaque appel. Y remettre le profil le sortirait du préfixe caché et ferait
+    # repayer le dossier du candidat en entier à chaque candidature.
     user_prompt = sent["messages"][0]["content"]
     assert "Atelier Numérique" in user_prompt
-    assert "Camille Dupont" in user_prompt
+    assert "Camille Dupont" not in user_prompt
 
 
 def test_refus_du_modele(sample_offer, sample_profile):

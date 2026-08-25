@@ -106,7 +106,18 @@ jobs:
           echo "Demarrage des conteneurs..."
           # Un seul build, sur le compose de production. `--no-cache` global
           # retelechargeait Chromium (~1 Go) a chaque deploiement.
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          #
+          # En cas d'echec, compose n'annonce que « container X is unhealthy »
+          # sans dire pourquoi : on sort les journaux avant de rendre la main,
+          # faute de quoi il faut rejouer le demarrage a la main sur le VPS
+          # pour apprendre ce qui a plante.
+          if ! docker compose -f docker-compose.prod.yml up -d --build --remove-orphans; then
+            echo "Echec du demarrage. Etat des services :"
+            docker compose -f docker-compose.prod.yml ps
+            echo "Journaux :"
+            docker compose -f docker-compose.prod.yml logs --tail=60 ai bot server web
+            exit 1
+          fi
 
           echo "Verification de la sante des services..."
           for i in $(seq 1 30); do

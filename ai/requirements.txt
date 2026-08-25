@@ -6,6 +6,14 @@ uvicorn[standard]>=0.30,<1.0
 pydantic>=2.7,<3.0
 pydantic-settings>=2.3,<3.0
 
+# Client HTTP des connecteurs d'offres (`app/sources/`).
+#
+# Il arrivait jusqu'ici par ricochet, le SDK Anthropic l'installant pour son
+# propre usage. La version 1.0.0 du SDK est passée à `httpx2`, distribution
+# distincte au module distinct : `import httpx` a cessé d'exister et le moteur
+# ne démarrait plus. Une dépendance dont on importe le nom se déclare.
+httpx>=0.27,<1.0
+
 # Dépôt de CV : lecture du fichier envoyé (multipart) et extraction du texte.
 python-multipart>=0.0.9
 pypdf>=5.0

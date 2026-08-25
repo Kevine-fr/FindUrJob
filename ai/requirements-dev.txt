@@ -1,4 +1,6 @@
 -r requirements.txt
 
 pytest>=8.0,<9.0
-httpx>=0.27,<1.0
+# httpx est declare dans requirements.txt : c'est une dependance d'execution,
+# pas un outil de test. L'avoir ici seulement est ce qui a masque son absence —
+# l'etage « dev » l'installait, l'etage « runtime » de production non.

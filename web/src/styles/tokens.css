@@ -2481,3 +2481,279 @@ img {
 .danger-zone h2 {
   color: var(--danger);
 }
+
+/* ---- Carte ---- */
+
+/* La carte occupe la hauteur restante de l'écran plutôt qu'une hauteur fixe :
+   une carte de 300 px ne montre rien d'utile sur un grand écran. */
+.map-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: stretch;
+  min-height: 520px;
+  height: calc(100vh - 320px);
+}
+.map-canvas {
+  position: relative;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.slippy {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper-2);
+  cursor: grab;
+  touch-action: none; /* sinon le navigateur défile au lieu de déplacer la carte */
+}
+.slippy.is-dragging {
+  cursor: grabbing;
+}
+.slippy-tiles,
+.slippy-overlay {
+  position: absolute;
+  inset: 0;
+}
+.slippy-tiles img {
+  position: absolute;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* Les tuiles d'OpenStreetMap sont claires : en thème sombre, elles brûlent la
+   rétine à côté du reste. On les assombrit sans les inverser, une inversion
+   rendant les couleurs de terrain méconnaissables. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .slippy-tiles img {
+    filter: brightness(0.78) contrast(1.06) saturate(0.85);
+  }
+}
+/* La couche des marqueurs laisse passer le glissement ; seuls les marqueurs
+   eux-mêmes réagissent au clic. */
+.slippy-overlay {
+  pointer-events: none;
+}
+.slippy-overlay > * {
+  pointer-events: auto;
+}
+
+.slippy-zoom {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.slippy-zoom .btn {
+  width: 32px;
+  padding: 0;
+  height: 32px;
+  font-size: 17px;
+  line-height: 1;
+  background: var(--card);
+}
+.slippy-credit {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm) 0 0 0;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  text-decoration: none;
+}
+
+/* Le marqueur est centré sur son point : sans la translation, il pendrait en
+   bas à droite de la ville qu'il désigne. */
+.map-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(20 23 29 / 30%);
+  transition: transform var(--fast) var(--ease);
+}
+.map-pin:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  z-index: 2;
+}
+.map-pin.active {
+  transform: translate(-50%, -50%) scale(1.2);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  z-index: 3;
+}
+
+.map-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - 90px);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.map-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.map-legend-item.active {
+  border-color: var(--accent);
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+.map-legend-item i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.map-legend-item em {
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+/* Voile posé sur la carte quand elle n'a rien à montrer : le fond gris seul
+   ne dit pas si ça charge, si c'est vide, ou si c'est cassé. */
+.map-veil {
+  position: absolute;
+  inset: auto 0 0 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  font-size: 14px;
+}
+
+.map-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  font-size: 13px;
+}
+
+.map-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.map-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.map-side-head strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+.map-side-head .muted {
+  font-size: 12.5px;
+}
+.map-side-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.map-side-empty {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.map-offer {
+  display: block;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  text-decoration: none;
+}
+.map-offer:hover {
+  background: var(--paper);
+}
+.map-offer-title {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.map-offer-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.map-offer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.map-offer-tags em {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Sous 900 px, la colonne de droite passe dessous : à 320 px de large, elle ne
+   laisserait plus rien à la carte. */
+@media (max-width: 900px) {
+  .map-layout {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .map-canvas {
+    height: 60vh;
+  }
+  .map-side {
+    max-height: 340px;
+  }
+}

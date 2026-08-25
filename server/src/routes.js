@@ -62,6 +62,7 @@ router.use(requireAuth);
 // Offres
 router.get('/offers', offers.listOffers);
 router.post('/offers', offers.createOffer);
+router.get('/offers/map', offers.mapOffers);
 router.post('/offers/sync', offers.syncOffers); // avant /:id, sinon capté comme un id
 router.get('/offers/:id', offers.getOffer);
 router.patch('/offers/:id', offers.updateOffer);

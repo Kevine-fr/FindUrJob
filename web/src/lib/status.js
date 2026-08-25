@@ -41,6 +41,25 @@ export const SOURCE_LABELS = {
   autre: 'Autre',
 };
 
+/*
+ * Couleur par plateforme, pour la carte.
+ *
+ * Sur une carte, l'étiquette ne tient pas dans un marqueur : la couleur est le
+ * seul moyen de lire la provenance d'un coup d'œil. Elles sont choisies
+ * distinctes deux à deux — deux bleus voisins rendraient la légende inutile.
+ */
+export const SOURCE_COLORS = {
+  linkedin: '#0a66c2',
+  indeed: '#5b3df5',
+  hellowork: '#ff5f2e',
+  francetravail: '#d0342c',
+  apec: '#0aa06e',
+  welcometothejungle: '#e0a800',
+  adzuna: '#00a2b8',
+  remotive: '#e0559d',
+  autre: '#8a90a2',
+};
+
 /**
  * Plateformes sur lesquelles l'envoi automatique est possible — doit rester
  * aligné sur `BOT_PLATFORMS` côté serveur.

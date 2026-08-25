@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import OffersPage from './pages/OffersPage.jsx';
 import OfferDetailPage from './pages/OfferDetailPage.jsx';
+import MapPage from './pages/MapPage.jsx';
 import ApplicationsPage from './pages/ApplicationsPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PreferencesPage from './pages/PreferencesPage.jsx';
@@ -25,6 +26,16 @@ const NAV = [
       <svg viewBox="0 0 24 24" {...stroke}>
         <rect x="3" y="7" width="18" height="13" rx="2" />
         <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18" />
+      </svg>
+    ),
+  },
+  {
+    to: '/carte',
+    label: 'Carte',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <path d="M9 4 3.5 6.2v13.3L9 17.3l6 2.2 5.5-2.2V4L15 6.2 9 4z" />
+        <path d="M9 4v13.3M15 6.2v13.3" />
       </svg>
     ),
   },
@@ -257,6 +268,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/offres" replace />} />
             <Route path="/offres" element={<OffersPage />} />
             <Route path="/offres/:id" element={<OfferDetailPage />} />
+            <Route path="/carte" element={<MapPage />} />
             <Route path="/candidatures" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />

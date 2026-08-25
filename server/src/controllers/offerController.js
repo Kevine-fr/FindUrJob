@@ -1,4 +1,5 @@
 import JobOffer from '../models/JobOffer.js';
+import { geocode } from '../services/geocoding.js';
 import SearchPreference from '../models/SearchPreference.js';
 import { asyncHandler } from '../middleware.js';
 import { searchOffers } from '../services/tailoringService.js';
@@ -21,6 +22,14 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const DEFAULT_PAGE_SIZE = 60;
 const MAX_PAGE_SIZE = 200;
+
+// Combien d'adresses la carte résout par visite. À une requête par seconde,
+// vingt tiennent dans le temps d'une consultation sans saturer Nominatim.
+const GEO_BATCH = 20;
+
+// Au-delà, le navigateur peine à poser les marqueurs et la carte n'apprend plus
+// rien : les offres sont de toute façon groupées par ville.
+const MAP_LIMIT = 2000;
 
 // Unités acceptées pour l'ancienneté, en millisecondes.
 const UNITES = {
@@ -285,4 +294,84 @@ export async function collectOffers(userId, body = {}) {
 /** POST /offers/sync — la même collecte, déclenchée à la main. */
 export const syncOffers = asyncHandler(async (req, res) => {
   res.json(await collectOffers(req.user.id, req.body || {}));
+});
+
+/**
+ * GET /offers/map — les offres situables, pour la carte.
+ *
+ * Le géocodage est fait par petits lots plutôt qu'en une passe : Nominatim
+ * impose une requête par seconde, donc résoudre 600 offres prendrait dix
+ * minutes et la page attendrait dans le vide. On rend immédiatement ce qui est
+ * déjà situé, on résout quelques adresses de plus en arrière-plan, et la carte
+ * se remplit au fil des visites.
+ *
+ * `pending` dit combien restent à résoudre : sans ce chiffre, une carte à moitié
+ * pleine ressemble à une carte cassée.
+ */
+export const mapOffers = asyncHandler(async (req, res) => {
+  const filter = { user: req.user.id };
+
+  // Les mêmes filtres que la liste, dans la même syntaxe : une carte qui
+  // contredit la page Offres ne sert à rien.
+  const sources = asList(req.query.source);
+  const contractTypes = asList(req.query.contractType);
+  const remotes = asList(req.query.remote);
+
+  if (sources.length) filter.source = { $in: sources };
+  if (contractTypes.length) filter.contractType = { $in: contractTypes };
+  if (remotes.length) filter.remote = { $in: remotes };
+
+  if (req.query.q) {
+    const pattern = new RegExp(escapeRegex(req.query.q), 'i');
+    filter.$or = [{ title: pattern }, { company: pattern }, { keywords: pattern }];
+  }
+
+  const situees = await JobOffer.find({ ...filter, lat: { $ne: null } })
+    .select('title company location source contractType remote lat lon publishedAt applicantCount sourceUrl')
+    .sort({ publishedAt: -1 })
+    .limit(MAP_LIMIT);
+
+  // À résoudre : jamais tentées, et pourvues d'une adresse.
+  const aResoudre = await JobOffer.find({
+    ...filter,
+    geoAt: null,
+    location: { $nin: [null, ''] },
+  })
+    .select('location')
+    .limit(GEO_BATCH);
+
+  /*
+   * Le lot part en arrière-plan, sans que la réponse l'attende.
+   *
+   * Une requête HTTP ne doit pas durer trente secondes parce qu'elle géocode :
+   * l'utilisateur verrait une page figée. Les résultats arrivent à la visite
+   * suivante, ce qui est acceptable pour une carte qu'on consulte, pas pour un
+   * écran qu'on attend.
+   */
+  if (aResoudre.length) {
+    (async () => {
+      for (const offre of aResoudre) {
+        const point = await geocode(offre.location);
+        await JobOffer.updateOne(
+          { _id: offre._id },
+          point
+            ? { lat: point.lat, lon: point.lon, geoAt: new Date() }
+            : { geoAt: new Date() } // tentative notée : on ne la refera pas
+        );
+      }
+    })().catch((error) => console.error('géocodage en lot :', error.message));
+  }
+
+  const restantes = await JobOffer.countDocuments({
+    ...filter,
+    geoAt: null,
+    location: { $nin: [null, ''] },
+  });
+
+  res.json({
+    offers: situees,
+    placed: situees.length,
+    pending: Math.max(0, restantes - aResoudre.length),
+    resolving: aResoudre.length,
+  });
 });

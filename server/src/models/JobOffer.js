@@ -17,6 +17,19 @@ const jobOfferSchema = new mongoose.Schema(
     description: { type: String },
     contractType: { type: String, enum: CONTRACT_TYPES, default: 'autre' },
     remote: { type: String, enum: REMOTE, default: 'non_precise' },
+
+    /*
+     * Position sur la carte, déduite de `location`.
+     *
+     * Aucune plateforme ne fournit de coordonnées : on les résout à partir du
+     * texte de l’adresse, une fois, puis on les garde. `geoAt` distingue « pas
+     * encore tenté » de « tenté sans succès » — sans lui, on relancerait
+     * indéfiniment le géocodage des adresses introuvables, qui sont nombreuses
+     * (« Télétravail », « France entière », « Île-de-France »).
+     */
+    lat: { type: Number, default: null },
+    lon: { type: Number, default: null },
+    geoAt: { type: Date, default: null },
     salary: { type: String, trim: true },
     keywords: { type: [String], default: [] }, // extraits par le moteur IA (à venir)
 

@@ -98,6 +98,8 @@ export const api = {
     // Réponse paginée : { offers, total, page, pages, limit }
     list: (query = '') => req(`/offers${query}`),
     sync: (body = {}) => req('/offers/sync', { method: 'POST', body: JSON.stringify(body) }),
+    // Offres situées + combien restent à géocoder.
+    map: (query = '') => req(`/offers/map${query}`),
     get: (id) => req(`/offers/${id}`),
     create: (body) => req('/offers', { method: 'POST', body: JSON.stringify(body) }),
     update: (id, body) => req(`/offers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

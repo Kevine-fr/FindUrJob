@@ -2484,25 +2484,77 @@ img {
 
 /* ---- Carte ---- */
 
-/* La carte prend la hauteur restante de la fenêtre plutôt qu'une hauteur fixe :
-   à 300 px, une carte ne montre rien d'utile sur un grand écran. */
+.map-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Interrupteur segmenté : les deux états côte à côte, plutôt qu'un bouton dont
+   l'étiquette laisse deviner s'il nomme l'état courant ou sa bascule. */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-2);
+}
+.seg-btn {
+  padding: 6px 15px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+.seg-btn:hover {
+  color: var(--ink);
+}
+.seg-btn.active {
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
 .map-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(0, 1fr) 336px;
   gap: 14px;
   align-items: stretch;
   min-height: 460px;
   height: calc(100vh - 285px);
 }
+
+/* La carte est le sujet de la page : un rayon plus large et une ombre portée la
+   détachent du papier, là où la bordure sèche d'un panneau ordinaire en faisait
+   un encadré parmi d'autres. */
 .map-canvas {
   position: relative;
   min-height: 420px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--paper-2);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-lg);
+  isolation: isolate;
 }
+/* Liseré intérieur : il pose un bord net sur les tuiles sans ajouter de
+   bordure, qui laisserait un filet clair entre le cadre et la carte. */
+.map-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(20 23 29 / 10%), inset 0 20px 40px -28px rgb(20 23 29 / 45%);
+}
+
 /* MapLibre pose sa propre classe `maplibregl-map` sur ce conteneur, avec
    `position: relative`. À égalité de spécificité, c'est la dernière feuille
    chargée qui gagne : `inset: 0` cessait alors de s'appliquer, le div tombait à
@@ -2521,46 +2573,95 @@ img {
    rendant les couleurs de terrain méconnaissables. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .map-gl .maplibregl-canvas {
-    filter: brightness(0.8) contrast(1.05) saturate(0.85);
+    filter: brightness(0.76) contrast(1.06) saturate(0.82);
   }
 }
 
-/* Les contrôles de MapLibre arrivent avec leur propre habillage : on les
-   raccorde au reste de l'interface plutôt que de laisser deux styles cohabiter. */
+/* --- Contrôles MapLibre, raccordés à l'habillage de l'application --- */
 .maplibregl-ctrl-group {
+  border: 1px solid var(--line) !important;
   border-radius: var(--radius-sm) !important;
-  box-shadow: var(--shadow-sm) !important;
-  background: var(--card) !important;
+  background: color-mix(in srgb, var(--card) 88%, transparent) !important;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow) !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  width: 32px !important;
+  height: 32px !important;
+  background: none !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background: var(--paper) !important;
 }
 .maplibregl-ctrl-group button + button {
-  border-top-color: var(--line-soft) !important;
+  border-top: 1px solid var(--line-soft) !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: opacity(0.75);
+}
+.maplibregl-ctrl-scale {
+  border-color: var(--line) !important;
+  background: color-mix(in srgb, var(--card) 82%, transparent) !important;
+  color: var(--ink-soft) !important;
+  font-size: 10.5px !important;
+  backdrop-filter: blur(8px);
 }
 .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--card) 80%, transparent) !important;
   font-size: 10.5px;
+  backdrop-filter: blur(8px);
 }
 
-/* Colonne d'une ville : socle au sol, fût dont la hauteur dit le nombre
-   d'offres, pastille du compte au sommet. Ancrée par le bas côté MapLibre. */
+/* --- Colonne d'une ville --- */
+
+/*
+ * Socle au sol, fût dont la hauteur dit le nombre d'offres, pastille du compte
+ * au sommet. Ancrée par le bas côté MapLibre.
+ *
+ * ATTENTION : aucun `transform` ni aucune animation qui en pose un sur
+ * `.map-city` ou `.map-pin`. MapLibre positionne ses marqueurs en écrivant
+ * `transform` sur l'élément : une règle CSS qui touche la même propriété écrase
+ * le positionnement, et tous les marqueurs se retrouvent empilés sur leur point
+ * d'ancrage. Tout ce qui bouge est donc porté par l'enfant `-inner` / `-dot`.
+ */
 .map-city {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: block;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  filter: drop-shadow(0 3px 5px rgb(20 23 29 / 32%));
-  transition: filter var(--fast) var(--ease);
+  filter: drop-shadow(0 4px 6px rgb(20 23 29 / 30%));
+  transition: filter var(--base) var(--ease);
+  /* Les épingles passent devant les colonnes : une ville déployée ne doit pas
+     masquer les offres qu'elle vient d'ouvrir. */
+  z-index: 1;
 }
 .map-city:hover {
-  filter: drop-shadow(0 5px 9px rgb(20 23 29 / 45%));
+  filter: drop-shadow(0 7px 12px rgb(20 23 29 / 42%));
+  z-index: 2;
+}
+.map-city-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: bottom center;
+  transition: transform var(--base) var(--ease);
+  animation: pousse 0.5s var(--ease) both;
+}
+.map-city:hover .map-city-inner {
+  transform: scale(1.06);
+}
+.map-city.is-open .map-city-inner {
+  transform: scale(1.08);
 }
 .map-city-badge {
+  position: relative;
   display: grid;
   place-items: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 7px;
+  min-width: 27px;
+  height: 27px;
+  padding: 0 8px;
   border: 2px solid var(--card);
   border-radius: 999px;
   background: var(--couleur, var(--accent));
@@ -2569,78 +2670,122 @@ img {
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
+  /* Un liseré clair en haut de la pastille : elle attrape la lumière comme un
+     volume, au lieu de rester un disque plat. */
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
 }
-/* Le dégradé suffit à donner du volume au fût : deux faces, une éclairée. */
+/* Deux faces sur le fût, l'une éclairée, l'autre dans l'ombre : c'est ce
+   dégradé qui donne son volume au cylindre. */
 .map-city-bar {
-  width: 8px;
+  position: relative;
+  width: 9px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--couleur, var(--accent)) 70%, #000) 0%,
-    var(--couleur, var(--accent)) 45%,
-    color-mix(in srgb, var(--couleur, var(--accent)) 55%, #000) 100%
+    color-mix(in srgb, var(--couleur, var(--accent)) 58%, #000) 0%,
+    var(--couleur, var(--accent)) 38%,
+    color-mix(in srgb, var(--couleur, var(--accent)) 82%, #fff) 52%,
+    color-mix(in srgb, var(--couleur, var(--accent)) 50%, #000) 100%
   );
 }
 /* L'ombre au sol raccroche la colonne au point qu'elle désigne : sans elle,
    inclinée, elle semble flotter au-dessus de la carte. */
 .map-city-base {
-  width: 15px;
-  height: 6px;
-  margin-top: -2px;
+  width: 17px;
+  height: 7px;
+  margin-top: -3px;
   border-radius: 50%;
-  background: rgb(20 23 29 / 30%);
+  background: radial-gradient(ellipse at center, rgb(20 23 29 / 42%), rgb(20 23 29 / 6%) 72%);
 }
 .map-city.is-open .map-city-badge {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: pulse-ring 2s var(--ease-in-out) infinite;
 }
 
-/* Épingle d'une offre : posée en couronne autour de sa ville quand celle-ci est
-   déployée. C'est l'unité que l'on sélectionne pour voir un détail. */
+/* La colonne sort du sol : le geste dit d'où elle vient, et fait comprendre que
+   sa hauteur est une quantité. */
+@keyframes pousse {
+  from {
+    transform: scaleY(0.35);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* --- Épingle d'une offre --- */
+
+/* Posée en couronne autour de sa ville quand celle-ci est déployée. C'est
+   l'unité que l'on sélectionne pour voir un détail. */
 .map-pin {
+  display: block;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  z-index: 6;
+}
+.map-pin:hover {
+  z-index: 7;
+}
+.map-pin.is-active {
+  z-index: 8;
+}
+.map-pin-dot {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  width: 100%;
+  height: 100%;
   border: 2px solid var(--card);
   border-radius: 50%;
   background: var(--couleur, var(--accent));
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgb(20 23 29 / 32%);
-  transition: transform var(--fast) var(--ease);
+  box-shadow: 0 2px 6px rgb(20 23 29 / 32%), inset 0 1px 0 rgb(255 255 255 / 40%);
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+  /* Chaque épingle entre à son tour, dans l'ordre où elle est posée. */
+  animation: pop-in 0.32s var(--ease) both;
+  animation-delay: calc(var(--rang, 0) * 22ms);
 }
-.map-pin span {
+.map-pin-dot::after {
+  content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgb(255 255 255 / 85%);
+  background: rgb(255 255 255 / 88%);
 }
-.map-pin:hover {
-  transform: scale(1.3);
+.map-pin:hover .map-pin-dot {
+  transform: scale(1.35);
 }
-.map-pin.is-active {
-  transform: scale(1.45);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent);
+.map-pin.is-active .map-pin-dot {
+  transform: scale(1.5);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 3px 9px rgb(20 23 29 / 35%);
 }
 
+/* --- Légende --- */
 .map-legend {
   position: absolute;
-  left: 10px;
-  bottom: 34px; /* au-dessus de l'échelle de MapLibre */
+  left: 12px;
+  bottom: 38px; /* au-dessus de l'échelle de MapLibre */
   z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  max-width: calc(100% - 120px);
-  padding: 6px;
+  gap: 3px;
+  max-width: calc(100% - 130px);
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: var(--shadow);
+  animation: fade-up 0.4s var(--ease) both;
 }
 .map-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
+  gap: 6px;
+  padding: 4px 9px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: none;
@@ -2648,9 +2793,14 @@ img {
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.map-legend-item:hover {
+  background: var(--paper);
+  color: var(--ink);
 }
 .map-legend-item.active {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--ink);
   background: var(--accent-soft);
 }
@@ -2658,9 +2808,11 @@ img {
   width: 9px;
   height: 9px;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--card) 70%, transparent);
 }
 .map-legend-item em {
   font-style: normal;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-faint);
 }
 
@@ -2675,8 +2827,37 @@ img {
   padding: 24px;
   text-align: center;
   color: var(--ink-soft);
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
+  backdrop-filter: blur(3px);
   font-size: 14px;
+  animation: fade-in var(--base) var(--ease) both;
+}
+
+/* --- Barre de filtres --- */
+.map-filters {
+  margin-bottom: 12px;
+  padding: 11px 13px;
+}
+.map-filters-bar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.map-filters-count {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.map-filters-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+  animation: fade-up var(--base) var(--ease) both;
 }
 
 .map-notice {
@@ -2686,32 +2867,50 @@ img {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
-  padding: 10px 13px;
+  padding: 10px 14px;
   border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line));
+  border-left-width: 3px;
   border-radius: var(--radius-sm);
   background: var(--warn-soft);
   font-size: 13px;
 }
 
+/* --- Panneau latéral --- */
 .map-side {
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
 }
 .map-side-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 11px 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line-soft);
+}
+.map-side-titre {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+.map-side-puce {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper) 80%, transparent);
 }
 .map-side-head strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 15.5px;
 }
 .map-side-head .muted {
   font-size: 12.5px;
@@ -2720,23 +2919,106 @@ img {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  animation: fade-in var(--base) var(--ease) both;
 }
 .map-side-empty {
-  display: grid;
-  align-content: center;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   height: 100%;
-  padding: 22px;
-  text-align: center;
-  font-size: 13px;
+  padding: 20px 18px;
+  overflow-y: auto;
+  animation: fade-in var(--base) var(--ease) both;
 }
+
+/* Le chiffre en grand : ce que la page raconte tient d'abord en un nombre. */
+.map-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.map-stat strong {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.map-stat span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Classement des lieux : chaque ligne est un raccourci vers sa colonne. */
+.map-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.map-top .section-label {
+  margin-bottom: 6px;
+}
+.map-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px 26px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease);
+}
+.map-top-row:hover {
+  background: var(--paper);
+}
+.map-top-nom {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-top-jauge {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+.map-top-jauge i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  animation: jauge 0.6s var(--ease) both;
+}
+.map-top-row em {
+  color: var(--ink-soft);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+@keyframes jauge {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+}
+
 /* Les trois gestes de la carte, écrits une fois : sans eux, la rotation au clic
    droit ne se découvre que par accident. */
 .map-help {
-  margin: 10px 0 0;
-  padding: 0;
+  margin: auto 0 0;
+  padding: 12px 13px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
   list-style: none;
-  text-align: left;
   color: var(--ink-soft);
   font-size: 12.5px;
   line-height: 1.6;
@@ -2744,6 +3026,9 @@ img {
 .map-help li {
   padding-left: 15px;
   text-indent: -15px;
+}
+.map-help li + li {
+  margin-top: 4px;
 }
 .map-help li::before {
   content: '→ ';
@@ -2754,30 +3039,44 @@ img {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px;
+  padding: 15px 16px;
+  animation: fade-up var(--base) var(--ease) both;
+}
+/* La plateforme en pastille pleine plutôt qu'en étiquette parmi d'autres : elle
+   dit d'où vient l'offre avant même qu'on lise le titre. */
+.map-detail-source {
+  display: inline-block;
+  margin-bottom: 9px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .map-side-detail h2 {
-  margin: 0 0 4px;
-  font-size: 16px;
-  line-height: 1.35;
+  margin: 0 0 5px;
+  font-size: 17px;
+  line-height: 1.3;
 }
 .map-side-detail p {
-  margin: 0 0 10px;
+  margin: 0 0 11px;
   font-size: 13px;
 }
 .map-side-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 /* Une entrée de liste est un bouton (elle sélectionne sur la carte) : sans ce
    dégrossissage, elle hériterait de l'apparence d'un bouton de formulaire. */
 .map-offer {
+  position: relative;
   display: block;
   width: 100%;
-  padding: 10px 14px;
+  padding: 11px 14px;
   border: none;
   border-bottom: 1px solid var(--line-soft);
   background: none;
@@ -2786,9 +3085,27 @@ img {
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+  transition: background var(--fast) var(--ease);
+}
+/* Un filet à gauche au survol, plutôt qu'un simple aplat : il marque la ligne
+   visée sans faire clignoter tout le bloc. */
+.map-offer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
 }
 .map-offer:hover {
   background: var(--paper);
+}
+.map-offer:hover::before {
+  opacity: 1;
 }
 .map-offer-title {
   display: block;
@@ -2806,10 +3123,10 @@ img {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 6px;
+  margin-top: 7px;
 }
 .map-offer-tags em {
-  padding: 1px 7px;
+  padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--ink-soft);
@@ -2818,7 +3135,7 @@ img {
   font-weight: 600;
 }
 
-/* Sous 900 px, la colonne de droite passe dessous : à 330 px de large, elle ne
+/* Sous 900 px, la colonne de droite passe dessous : à 336 px de large, elle ne
    laisserait plus rien à la carte. */
 @media (max-width: 900px) {
   .map-layout {
@@ -2831,30 +3148,23 @@ img {
   .map-side {
     max-height: 360px;
   }
+  .map-side-empty {
+    height: auto;
+  }
 }
 
-/* Barre de filtres compacte de la carte : la recherche, un bouton qui déplie le
-   reste, et le compte de ce qui est affiché. */
-.map-filters {
-  margin-bottom: 12px;
-  padding: 11px 13px;
-}
-.map-filters-bar {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 9px;
-}
-.map-filters-count {
-  margin-left: auto;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.map-filters-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin-top: 11px;
-  padding-top: 11px;
-  border-top: 1px solid var(--line-soft);
+/* Rien de tout cela ne doit s'agiter pour qui a demandé moins d'animations. */
+@media (prefers-reduced-motion: reduce) {
+  .map-city,
+  .map-pin,
+  .map-legend,
+  .map-top-jauge i,
+  .map-side-detail,
+  .map-filters-detail {
+    animation: none;
+  }
+  .map-city.is-open .map-city-badge {
+    animation: none;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
 }

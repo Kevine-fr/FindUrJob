@@ -26,6 +26,15 @@ import {
 const CONTRATS = Object.entries(CONTRACT_LABELS).map(([value, label]) => ({ value, label }));
 const MODES = Object.entries(REMOTE_LABELS).map(([value, label]) => ({ value, label }));
 
+// Même trait que les icônes de la navigation, pour que rien ne détonne.
+const trait = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+};
+
 /*
  * Fond de carte.
  *
@@ -126,9 +135,12 @@ function positionCouronne(index) {
   }
 
   const rayon = 62 + anneau * 40;
-  // Un demi-pas de décalage par anneau : les épingles ne s'alignent pas en
-  // rayons, qui donneraient l'illusion de branches vides entre elles.
-  const angle = ((restant + (anneau % 2) * 0.5) / capacite) * 2 * Math.PI - Math.PI / 2;
+  /*
+   * Le demi-pas décale la couronne de sorte qu'aucune épingle ne tombe à la
+   * verticale du point : c'est là que monte la colonne, et l'épingle s'y
+   * retrouverait cachée derrière le fût.
+   */
+  const angle = ((restant + 0.5) / capacite) * 2 * Math.PI - Math.PI / 2;
   return [Math.cos(angle) * rayon, Math.sin(angle) * rayon];
 }
 
@@ -291,10 +303,21 @@ export default function MapPage() {
       colonne.className = 'map-city' + (ouverte ? ' is-open' : '');
       colonne.style.setProperty('--couleur', groupe.couleur);
       colonne.title = `${groupe.lieu} — ${nombre} offre${nombre > 1 ? 's' : ''}`;
+      /*
+       * L'habillage vit dans un enfant, jamais sur le marqueur lui-même.
+       *
+       * MapLibre positionne un marqueur en écrivant `transform` sur son
+       * élément. Y poser une animation ou un `scale` au survol écrase ce
+       * calcul : le marqueur retombe alors sur le point d'ancrage, et toute la
+       * couronne s'effondre en un tas. L'enfant, lui, peut être transformé
+       * autant qu'on veut.
+       */
       colonne.innerHTML =
+        '<span class="map-city-inner">' +
         `<span class="map-city-badge">${nombre}</span>` +
         `<span class="map-city-bar" style="height:${hauteurColonne(nombre)}px"></span>` +
-        '<span class="map-city-base"></span>';
+        '<span class="map-city-base"></span>' +
+        '</span>';
       /*
        * Les marqueurs vivent dans le conteneur de la toile : sans cet arrêt, le
        * clic remonte jusqu'au gestionnaire de la carte, qui referme dans la
@@ -322,7 +345,12 @@ export default function MapPage() {
         epingle.type = 'button';
         epingle.className = 'map-pin' + (offer._id === offreActive ? ' is-active' : '');
         epingle.style.setProperty('--couleur', SOURCE_COLORS[offer.source] || SOURCE_COLORS.autre);
-        epingle.innerHTML = '<span></span>';
+        // Les épingles apparaissent l'une après l'autre : le déploiement se lit
+        // comme un geste, au lieu de faire surgir trente points d'un bloc.
+        epingle.style.setProperty('--rang', String(index));
+        // Même raison que pour la colonne : le `transform` du marqueur est à
+        // MapLibre, l'habillage à l'enfant.
+        epingle.innerHTML = '<span class="map-pin-dot"></span>';
         epingle.title = `${offer.title}${offer.company ? ` — ${offer.company}` : ''}`;
         epingle.addEventListener('click', (event) => {
           event.stopPropagation();
@@ -404,6 +432,12 @@ export default function MapPage() {
       }));
   }, [data.offers]);
 
+  // Les six lieux les plus fournis, pour le classement du panneau au repos.
+  const tetes = useMemo(
+    () => [...groupes].sort((a, b) => b.offers.length - a.offers.length).slice(0, 6),
+    [groupes]
+  );
+
   const groupeActif = groupes.find((groupe) => groupe.cle === villeActive) || null;
   const offreDetail = groupeActif?.offers.find((offer) => offer._id === offreActive) || null;
   const filtreActif = Boolean(q || source || contractType || remote);
@@ -432,15 +466,28 @@ export default function MapPage() {
             Une colonne par ville, sa hauteur dit le nombre d'offres. Clique-la pour les déployer.
           </p>
         </div>
-        <div className="row">
-          <button
-            className={'btn btn-sm' + (relief ? ' btn-primary' : '')}
-            onClick={() => setRelief((valeur) => !valeur)}
-            title="Incliner la caméra"
-          >
-            {relief ? '3D' : '2D'}
-          </button>
+        <div className="map-actions">
+          {/* Un interrupteur segmenté plutôt qu'un bouton à bascule : les deux
+              états sont visibles d'un coup, sans avoir à deviner si l'étiquette
+              nomme l'état courant ou celui qu'on obtiendra en cliquant. */}
+          <div className="seg" role="group" aria-label="Angle de vue">
+            <button
+              className={'seg-btn' + (relief ? ' active' : '')}
+              onClick={() => setRelief(true)}
+            >
+              3D
+            </button>
+            <button
+              className={'seg-btn' + (!relief ? ' active' : '')}
+              onClick={() => setRelief(false)}
+            >
+              2D
+            </button>
+          </div>
           <button className="btn btn-sm" onClick={() => recadrer(true)}>
+            <svg viewBox="0 0 24 24" width="15" height="15" {...trait}>
+              <path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" />
+            </svg>
             Recadrer
           </button>
         </div>
@@ -556,15 +603,18 @@ export default function MapPage() {
                 </button>
               </div>
               <div className="map-side-detail">
+                <span
+                  className="map-detail-source"
+                  style={{ background: SOURCE_COLORS[offreDetail.source] || SOURCE_COLORS.autre }}
+                >
+                  {SOURCE_LABELS[offreDetail.source] || offreDetail.source}
+                </span>
                 <h2>{offreDetail.title}</h2>
                 <p className="muted">
                   {offreDetail.company || 'Entreprise non précisée'}
                   {offreDetail.location ? ` · ${offreDetail.location}` : ''}
                 </p>
                 <div className="map-offer-tags">
-                  <em style={{ color: SOURCE_COLORS[offreDetail.source] }}>
-                    {SOURCE_LABELS[offreDetail.source] || offreDetail.source}
-                  </em>
                   {offreDetail.contractType !== 'autre' && (
                     <em>{CONTRACT_LABELS[offreDetail.contractType]}</em>
                   )}
@@ -598,14 +648,19 @@ export default function MapPage() {
           ) : groupeActif ? (
             <>
               <div className="map-side-head">
-                <div>
-                  <strong>{groupeActif.lieu}</strong>
-                  <span className="muted">
-                    {groupeActif.offers.length} offre{groupeActif.offers.length > 1 ? 's' : ''}
-                    {groupeActif.offers.length > MAX_EPINGLES
-                      ? ` · ${MAX_EPINGLES} épinglées sur la carte`
-                      : ''}
-                  </span>
+                <div className="map-side-titre">
+                  {/* La puce reprend la couleur de la colonne : on relie d'un
+                      coup d'œil le panneau au point qu'on vient de cliquer. */}
+                  <i className="map-side-puce" style={{ background: groupeActif.couleur }} />
+                  <div>
+                    <strong>{groupeActif.lieu}</strong>
+                    <span className="muted">
+                      {groupeActif.offers.length} offre{groupeActif.offers.length > 1 ? 's' : ''}
+                      {groupeActif.offers.length > MAX_EPINGLES
+                        ? ` · ${MAX_EPINGLES} épinglées sur la carte`
+                        : ''}
+                    </span>
+                  </div>
                 </div>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -642,13 +697,46 @@ export default function MapPage() {
             </>
           ) : (
             <div className="map-side-empty">
-              <strong>
-                {data.offers.length} offre{data.offers.length > 1 ? 's' : ''} située
-                {data.offers.length > 1 ? 's' : ''}
-              </strong>
-              <span className="muted">
-                Réparties sur {groupes.length} lieu{groupes.length > 1 ? 'x' : ''}.
-              </span>
+              <div className="map-stat">
+                <strong>{data.offers.length}</strong>
+                <span>
+                  offre{data.offers.length > 1 ? 's' : ''} située
+                  {data.offers.length > 1 ? 's' : ''} sur {groupes.length} lieu
+                  {groupes.length > 1 ? 'x' : ''}
+                </span>
+              </div>
+
+              {/* Le panneau était un grand vide blanc tant que rien n'était
+                  sélectionné. Le classement remplit cette place par quelque
+                  chose d'utile : où sont les offres, et un raccourci pour y
+                  aller sans chercher la colonne à l'œil. */}
+              {tetes.length > 0 && (
+                <div className="map-top">
+                  <div className="section-label">Les lieux les plus fournis</div>
+                  {tetes.map((groupe) => (
+                    <button
+                      key={groupe.cle}
+                      className="map-top-row"
+                      onClick={() => {
+                        setVilleActive(groupe.cle);
+                        approcher(groupe);
+                      }}
+                    >
+                      <span className="map-top-nom">{groupe.lieu}</span>
+                      <span className="map-top-jauge">
+                        <i
+                          style={{
+                            width: `${Math.round((groupe.offers.length / tetes[0].offers.length) * 100)}%`,
+                            background: groupe.couleur,
+                          }}
+                        />
+                      </span>
+                      <em>{groupe.offers.length}</em>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <ul className="map-help">
                 <li>Clique une colonne pour déployer ses offres une par une.</li>
                 <li>Clic droit maintenu : faire pivoter et incliner la vue.</li>

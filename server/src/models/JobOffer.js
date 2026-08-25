@@ -62,9 +62,21 @@ const jobOfferSchema = new mongoose.Schema(
  * code applicatif filtrait pourtant déjà par `user` : seul l'index était resté
  * global.
  *
- * `sparse` reste nécessaire — beaucoup de sources ne fournissent pas
- * d'`externalId`, et ces offres sont alors dédoublonnées sur titre + société.
+ * L'index a longtemps été `sparse`, ce qui ne veut pas dire ce qu'on croit sur
+ * un index composé : Mongo n'écarte un document que si TOUS les champs sont
+ * absents. `user` et `source` étant toujours là, les offres sans `externalId`
+ * étaient bel et bien indexées, avec `externalId: null` — et la deuxième offre
+ * sans identifiant d'une même plateforme entrait en collision avec la première.
+ * D'où les « Doublon détecté » sur des offres pourtant distinctes.
+ *
+ * `partialFilterExpression` dit ce que `sparse` laissait croire : n'indexer que
+ * les offres qui portent réellement un `externalId`. Les autres — saisies à la
+ * main, ou venues d'une source qui n'en fournit pas — sont dédoublonnées sur
+ * titre + société par le code de collecte.
  */
-jobOfferSchema.index({ user: 1, source: 1, externalId: 1 }, { unique: true, sparse: true });
+jobOfferSchema.index(
+  { user: 1, source: 1, externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $type: 'string' } } }
+);
 
 export default mongoose.model('JobOffer', jobOfferSchema);

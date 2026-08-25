@@ -2484,15 +2484,15 @@ img {
 
 /* ---- Carte ---- */
 
-/* La carte occupe la hauteur restante de l'écran plutôt qu'une hauteur fixe :
-   une carte de 300 px ne montre rien d'utile sur un grand écran. */
+/* La carte prend la hauteur restante de la fenêtre plutôt qu'une hauteur fixe :
+   à 300 px, une carte ne montre rien d'utile sur un grand écran. */
 .map-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 330px;
   gap: 14px;
   align-items: stretch;
-  min-height: 520px;
-  height: calc(100vh - 320px);
+  min-height: 460px;
+  height: calc(100vh - 285px);
 }
 .map-canvas {
   position: relative;
@@ -2500,111 +2500,137 @@ img {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+  background: var(--paper-2);
   box-shadow: var(--shadow-sm);
 }
+/* MapLibre pose sa propre classe `maplibregl-map` sur ce conteneur, avec
+   `position: relative`. À égalité de spécificité, c'est la dernière feuille
+   chargée qui gagne : `inset: 0` cessait alors de s'appliquer, le div tombait à
+   zéro pixel de haut, et les marqueurs — positionnés par rapport à lui —
+   sortaient de la zone visible, invisibles au clic. D'où le sélecteur plus
+   spécifique ET des dimensions explicites, qui tiennent dans les deux cas. */
+.map-canvas .map-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
 
-.slippy {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--paper-2);
-  cursor: grab;
-  touch-action: none; /* sinon le navigateur défile au lieu de déplacer la carte */
-}
-.slippy.is-dragging {
-  cursor: grabbing;
-}
-.slippy-tiles,
-.slippy-overlay {
-  position: absolute;
-  inset: 0;
-}
-.slippy-tiles img {
-  position: absolute;
-  display: block;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-/* Les tuiles d'OpenStreetMap sont claires : en thème sombre, elles brûlent la
+/* Les tuiles d'OpenStreetMap sont claires : en thème sombre elles brûlent la
    rétine à côté du reste. On les assombrit sans les inverser, une inversion
    rendant les couleurs de terrain méconnaissables. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .slippy-tiles img {
-    filter: brightness(0.78) contrast(1.06) saturate(0.85);
+  :root:not([data-theme='light']) .map-gl .maplibregl-canvas {
+    filter: brightness(0.8) contrast(1.05) saturate(0.85);
   }
 }
-/* La couche des marqueurs laisse passer le glissement ; seuls les marqueurs
-   eux-mêmes réagissent au clic. */
-.slippy-overlay {
-  pointer-events: none;
+
+/* Les contrôles de MapLibre arrivent avec leur propre habillage : on les
+   raccorde au reste de l'interface plutôt que de laisser deux styles cohabiter. */
+.maplibregl-ctrl-group {
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-sm) !important;
+  background: var(--card) !important;
 }
-.slippy-overlay > * {
-  pointer-events: auto;
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--line-soft) !important;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10.5px;
 }
 
-.slippy-zoom {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+/* Colonne d'une ville : socle au sol, fût dont la hauteur dit le nombre
+   d'offres, pastille du compte au sommet. Ancrée par le bas côté MapLibre. */
+.map-city {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-}
-.slippy-zoom .btn {
-  width: 32px;
+  align-items: center;
   padding: 0;
-  height: 32px;
-  font-size: 17px;
-  line-height: 1;
-  background: var(--card);
+  border: none;
+  background: none;
+  cursor: pointer;
+  filter: drop-shadow(0 3px 5px rgb(20 23 29 / 32%));
+  transition: filter var(--fast) var(--ease);
 }
-.slippy-credit {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  padding: 2px 7px;
-  border-radius: var(--radius-sm) 0 0 0;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  color: var(--ink-soft);
-  font-size: 10.5px;
-  text-decoration: none;
+.map-city:hover {
+  filter: drop-shadow(0 5px 9px rgb(20 23 29 / 45%));
 }
-
-/* Le marqueur est centré sur son point : sans la translation, il pendrait en
-   bas à droite de la ville qu'il désigne. */
-.map-pin {
-  position: absolute;
-  transform: translate(-50%, -50%);
+.map-city-badge {
   display: grid;
   place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
   border: 2px solid var(--card);
-  border-radius: 50%;
+  border-radius: 999px;
+  background: var(--couleur, var(--accent));
   color: #fff;
   font-family: var(--font-body);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
+}
+/* Le dégradé suffit à donner du volume au fût : deux faces, une éclairée. */
+.map-city-bar {
+  width: 8px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--couleur, var(--accent)) 70%, #000) 0%,
+    var(--couleur, var(--accent)) 45%,
+    color-mix(in srgb, var(--couleur, var(--accent)) 55%, #000) 100%
+  );
+}
+/* L'ombre au sol raccroche la colonne au point qu'elle désigne : sans elle,
+   inclinée, elle semble flotter au-dessus de la carte. */
+.map-city-base {
+  width: 15px;
+  height: 6px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: rgb(20 23 29 / 30%);
+}
+.map-city.is-open .map-city-badge {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Épingle d'une offre : posée en couronne autour de sa ville quand celle-ci est
+   déployée. C'est l'unité que l'on sélectionne pour voir un détail. */
+.map-pin {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--couleur, var(--accent));
   cursor: pointer;
-  box-shadow: 0 2px 8px rgb(20 23 29 / 30%);
+  box-shadow: 0 2px 6px rgb(20 23 29 / 32%);
   transition: transform var(--fast) var(--ease);
 }
-.map-pin:hover {
-  transform: translate(-50%, -50%) scale(1.15);
-  z-index: 2;
+.map-pin span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 85%);
 }
-.map-pin.active {
-  transform: translate(-50%, -50%) scale(1.2);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
-  z-index: 3;
+.map-pin:hover {
+  transform: scale(1.3);
+}
+.map-pin.is-active {
+  transform: scale(1.45);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .map-legend {
   position: absolute;
   left: 10px;
-  bottom: 10px;
+  bottom: 34px; /* au-dessus de l'échelle de MapLibre */
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  max-width: calc(100% - 90px);
+  max-width: calc(100% - 120px);
   padding: 6px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--card) 92%, transparent);
@@ -2638,18 +2664,18 @@ img {
   color: var(--ink-faint);
 }
 
-/* Voile posé sur la carte quand elle n'a rien à montrer : le fond gris seul
-   ne dit pas si ça charge, si c'est vide, ou si c'est cassé. */
+/* Voile posé quand la carte n'a rien à montrer : un fond gris seul ne dit pas
+   si ça charge, si c'est vide, ou si c'est cassé. */
 .map-veil {
   position: absolute;
-  inset: auto 0 0 0;
-  top: 0;
+  inset: 0;
+  z-index: 3;
   display: grid;
   place-items: center;
   padding: 24px;
   text-align: center;
   color: var(--ink-soft);
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  background: color-mix(in srgb, var(--paper) 84%, transparent);
   font-size: 14px;
 }
 
@@ -2679,7 +2705,7 @@ img {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--line-soft);
 }
 .map-side-head strong {
@@ -2700,17 +2726,66 @@ img {
   align-content: center;
   gap: 6px;
   height: 100%;
-  padding: 20px;
+  padding: 22px;
   text-align: center;
   font-size: 13px;
 }
+/* Les trois gestes de la carte, écrits une fois : sans eux, la rotation au clic
+   droit ne se découvre que par accident. */
+.map-help {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.map-help li {
+  padding-left: 15px;
+  text-indent: -15px;
+}
+.map-help li::before {
+  content: '→ ';
+  color: var(--accent);
+}
 
+.map-side-detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+.map-side-detail h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+.map-side-detail p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.map-side-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+/* Une entrée de liste est un bouton (elle sélectionne sur la carte) : sans ce
+   dégrossissage, elle hériterait de l'apparence d'un bouton de formulaire. */
 .map-offer {
   display: block;
+  width: 100%;
   padding: 10px 14px;
+  border: none;
   border-bottom: 1px solid var(--line-soft);
+  background: none;
   color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 .map-offer:hover {
   background: var(--paper);
@@ -2743,7 +2818,7 @@ img {
   font-weight: 600;
 }
 
-/* Sous 900 px, la colonne de droite passe dessous : à 320 px de large, elle ne
+/* Sous 900 px, la colonne de droite passe dessous : à 330 px de large, elle ne
    laisserait plus rien à la carte. */
 @media (max-width: 900px) {
   .map-layout {
@@ -2751,9 +2826,35 @@ img {
     height: auto;
   }
   .map-canvas {
-    height: 60vh;
+    height: 58vh;
   }
   .map-side {
-    max-height: 340px;
+    max-height: 360px;
   }
+}
+
+/* Barre de filtres compacte de la carte : la recherche, un bouton qui déplie le
+   reste, et le compte de ce qui est affiché. */
+.map-filters {
+  margin-bottom: 12px;
+  padding: 11px 13px;
+}
+.map-filters-bar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.map-filters-count {
+  margin-left: auto;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.map-filters-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
 }

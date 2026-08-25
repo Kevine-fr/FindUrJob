@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import OffersPage from './pages/OffersPage.jsx';
 import OfferDetailPage from './pages/OfferDetailPage.jsx';
-import MapPage from './pages/MapPage.jsx';
 import ApplicationsPage from './pages/ApplicationsPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PreferencesPage from './pages/PreferencesPage.jsx';
@@ -15,6 +14,16 @@ import PasswordPage from './pages/PasswordPage.jsx';
 import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import { useAuth } from './lib/auth.jsx';
+
+/*
+ * La carte est chargée à la demande.
+ *
+ * MapLibre pèse 350 Ko compressés — plus que tout le reste de l'application
+ * réuni. Importé normalement, il partirait dans le bundle principal et
+ * ralentirait l'écran de connexion comme la page Offres, que la carte
+ * n'intéresse pas.
+ */
+const MapPage = lazy(() => import('./pages/MapPage.jsx'));
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
@@ -268,7 +277,14 @@ export default function App() {
             <Route path="/" element={<Navigate to="/offres" replace />} />
             <Route path="/offres" element={<OffersPage />} />
             <Route path="/offres/:id" element={<OfferDetailPage />} />
-            <Route path="/carte" element={<MapPage />} />
+            <Route
+              path="/carte"
+              element={
+                <Suspense fallback={<p className="muted">Chargement de la carte…</p>}>
+                  <MapPage />
+                </Suspense>
+              }
+            />
             <Route path="/candidatures" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />

@@ -169,35 +169,91 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * On refuse le pistage quand le site le propose : c'est le choix le plus sobre,
  * et il suffit pour accéder au formulaire.
  */
-export async function dismissConsent(page) {
-  const choices = [
-    'Continuer sans accepter',
-    'Tout refuser',
-    'Refuser',
-    'Continue without accepting',
-    'Reject all',
-    'Tout accepter', // en dernier : certains sites n'offrent pas le refus
-    'Accept all',
-    "J'accepte",
-  ];
+/**
+ * La session de cette plateforme est-elle réellement ouverte ?
+ *
+ * Le piège est toujours le même : on demande la page de l'espace personnel, la
+ * plateforme redirige vers son service d'authentification, et l'on juge l'URL
+ * **avant** que cette redirection n'aboutisse. C'est ce qui arrivait à France
+ * Travail : sa session était morte depuis des jours, l'application l'affichait
+ * « connectée », et les candidatures échouaient sans que rien ne l'explique.
+ * Pire, la relance automatique de session ne se déclenchait jamais, puisque
+ * personne ne signalait le problème.
+ *
+ * Deux vérifications, donc, et l'une ne remplace pas l'autre : l'adresse une
+ * fois la navigation posée, et la présence d'un champ de mot de passe visible —
+ * signe qu'on regarde un écran de connexion, quelle que soit l'URL.
+ *
+ * @param motifHorsSession Ce qu'on lit dans l'URL quand la session est fermée.
+ */
+export async function sessionOuverte(page, url, motifHorsSession) {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  // Les redirections d'authentification sont des navigations à part entière.
+  await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
 
-  // Une seule attente, le temps que la bannière s'affiche. Les contrôles qui
-  // suivent sont immédiats (`isVisible()` sans option n'attend pas) : sur une
-  // page sans bandeau, la fonction rend la main tout de suite au lieu de
-  // cumuler un délai par libellé.
-  await sleep(900);
+  if (motifHorsSession.test(page.url())) return false;
 
-  for (const label of choices) {
-    const button = page.getByRole('button', { name: label, exact: false }).first();
-    try {
-      if (await button.isVisible()) {
-        await button.click({ timeout: 3000 });
-        await sleep(700);
-        return label;
+  const formulaireDeConnexion = await page
+    .evaluate(() => {
+      const champ = document.querySelector('input[type="password"]');
+      return Boolean(champ && (champ.offsetParent !== null || champ.getClientRects().length > 0));
+    })
+    .catch(() => false);
+
+  return !formulaireDeConnexion;
+}
+
+/*
+ * Deux familles de libellés, dans cet ordre : on refuse quand c'est proposé, on
+ * n'accepte qu'à défaut. « Non merci » est le refus d'Axeptio, « OK pour moi »
+ * son acceptation — c'est le bandeau de Welcome to the Jungle.
+ */
+const CONSENT_REFUS =
+  /^\s*(continuer sans accepter|non merci|tout refuser|refuser(\s+tout)?|continue without accepting|reject all|decline)\s*$/i;
+const CONSENT_ACCEPT =
+  /^\s*(ok pour moi|tout accepter|accepter(\s+tout)?|accept all|j['’]accepte|i agree)\s*$/i;
+
+/**
+ * Ferme le bandeau de consentement, s'il y en a un.
+ *
+ * Trois pièges, rencontrés en vrai :
+ *
+ *   1. **Le bandeau arrive tard.** Celui de Welcome to the Jungle est injecté
+ *      par un script tiers et n'existe pas encore une seconde après le
+ *      chargement. Une attente fixe de 900 ms le manquait, et la page restait
+ *      recouverte : le clic sur « Postuler » n'atteignait jamais rien. D'où la
+ *      scrutation, plutôt qu'un délai deviné.
+ *   2. **Il vit parfois dans un cadre embarqué**, hors de la page principale.
+ *   3. **Il vit parfois dans un shadow DOM** — Playwright le traverse, un
+ *      `querySelector` non.
+ *
+ * Rend le libellé du bouton actionné, ou `null` s'il n'y avait rien à fermer.
+ */
+export async function dismissConsent(page, { timeout = 8000 } = {}) {
+  const echeance = Date.now() + timeout;
+
+  while (Date.now() < echeance) {
+    for (const cadre of page.frames()) {
+      for (const motif of [CONSENT_REFUS, CONSENT_ACCEPT]) {
+        const bouton = cadre
+          .locator('button, [role="button"], a')
+          .filter({ hasText: motif })
+          .first();
+        try {
+          // `isVisible()` sans option n'attend pas : sur une page sans bandeau,
+          // la boucle tourne à vide sans rien coûter.
+          if (await bouton.isVisible()) {
+            const libelle = (await bouton.innerText().catch(() => '')).trim();
+            await bouton.click({ timeout: 3000 });
+            await sleep(700);
+            return libelle || 'consentement';
+          }
+        } catch {
+          // Cadre détaché ou bouton disparu entre-temps : on repasse.
+        }
       }
-    } catch {
-      // Bannière absente ou déjà fermée : on passe au libellé suivant.
     }
+    await sleep(400);
   }
   return null;
 }

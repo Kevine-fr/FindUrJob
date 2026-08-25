@@ -1,4 +1,4 @@
-import { normalize, humanPause, dismissConsent } from './common.js';
+import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
 
 /**
@@ -137,12 +137,11 @@ export async function search(context, query) {
 export async function isLoggedIn(context) {
   const page = await context.newPage();
   try {
-    await page.goto('https://www.welcometothejungle.com/fr/me/applications', {
-      waitUntil: 'commit',
-      timeout: 30_000,
-    });
-    await page.waitForTimeout(2500);
-    return !/\/signin|\/authenticate|\/login/.test(page.url());
+    return await sessionOuverte(
+      page,
+      'https://www.welcometothejungle.com/fr/me/applications',
+      /\/signin|\/authenticate|\/login/
+    );
   } catch {
     return false;
   } finally {
@@ -206,12 +205,22 @@ export async function apply(context, offer, options = {}) {
       };
     }
 
+    /*
+     * « Postuler » est un **bouton**, pas un lien.
+     *
+     * Ne chercher qu'un lien ne cliquait rien : le formulaire ne s'ouvrait
+     * jamais, et le remplisseur se rabattait sur un dialogue vide de la page,
+     * d'où un « bouton d'envoi introuvable » qui n'avait aucun rapport. Le
+     * motif est ancré sur le mot seul — « L'envoi d'un CV est-il obligatoire
+     * pour postuler ? » est une question de la FAQ, pas une action.
+     */
     await page
-      .getByRole('link', { name: /postuler|apply/i })
+      .getByRole('button', { name: /^\s*(postuler|apply)\s*$/i })
+      .or(page.getByRole('link', { name: /^\s*(postuler|apply)\s*$/i }))
       .first()
-      .click({ timeout: 8000 })
+      .click({ timeout: 10_000 })
       .catch(() => {});
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(4000);
 
     return await applyForm(page, options);
   } catch (error) {

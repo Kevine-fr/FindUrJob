@@ -1,4 +1,4 @@
-import { normalize, humanPause, dismissConsent } from './common.js';
+import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
 
 /**
@@ -121,12 +121,11 @@ export async function search(context, query) {
 export async function isLoggedIn(context) {
   const page = await context.newPage();
   try {
-    await page.goto('https://www.apec.fr/candidat/mon-espace.html', {
-      waitUntil: 'commit',
-      timeout: 30_000,
-    });
-    await page.waitForTimeout(3000);
-    return !/connexion|authentification|login/i.test(page.url());
+    return await sessionOuverte(
+      page,
+      'https://www.apec.fr/candidat/mon-espace.html',
+      /connexion|authentification|login/i
+    );
   } catch {
     return false;
   } finally {
@@ -173,6 +172,33 @@ export async function login(context, { email, password }) {
  */
 export async function apply(context, offer, options = {}) {
   const page = await context.newPage();
+
+  /*
+   * On écoute les réponses plutôt que de lire la page.
+   *
+   * Le blocage se voit à coup sûr ici : le service `webservices/offre` répond
+   * 403 et renvoie une adresse `captcha-delivery.com`. Se fier au texte affiché
+   * (« L'offre n'est plus disponible ») était fragile — la formulation change,
+   * et l'application Angular met parfois plusieurs secondes à l'écrire, si bien
+   * qu'on repartait sur un diagnostic faux (« la session est-elle ouverte ? »)
+   * alors que la session était parfaitement valide.
+   */
+  let bloque = false;
+  page.on('response', (reponse) => {
+    if (reponse.status() === 403 && /webservices\/offre/.test(reponse.url())) bloque = true;
+  });
+  page.on('requestfinished', (requete) => {
+    if (/captcha-delivery\.com/.test(requete.url())) bloque = true;
+  });
+
+  const refus = () => ({
+    status: 'manual',
+    message:
+      "L'APEC bloque l'accès au détail de ses offres depuis un navigateur piloté " +
+      '(anti-bot DataDome) — la session, elle, est bien ouverte. Candidature à ' +
+      'faire depuis la reprise en main ou ton navigateur.',
+  });
+
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'commit', timeout: 45_000 });
     await dismissConsent(page);
@@ -191,27 +217,38 @@ export async function apply(context, offer, options = {}) {
     }
 
     /*
-     * L'APEC refuse le détail des offres à ce navigateur.
+     * L'APEC protège le détail de ses offres par un anti-bot.
      *
-     * Constaté à l'essai : sur une annonce fraîche, sortie de sa propre
-     * recherche, son webservice `offre/public` répond 403 et l'application
-     * affiche « L'offre que vous souhaitez afficher n'est plus disponible ».
-     * La recherche, elle, passe — c'est donc bien le détail qui est filtré,
-     * pas l'adresse IP en bloc. Rien à corriger côté sélecteurs : il n'y a
-     * simplement aucune page à lire.
+     * Vérifié en isolant les trois chemins possibles : URL directe, appel du
+     * webservice depuis la page elle-même (mêmes cookies, même origine), et
+     * parcours humain complet — recherche puis clic sur la carte. Les trois
+     * échouent de la même façon : `webservices/offre/public` répond 403, et le
+     * corps de la réponse renvoie vers `geo.captcha-delivery.com`, c'est-à-dire
+     * DataDome. La session est pourtant bien ouverte, et la *recherche* passe :
+     * seul le détail est filtré.
+     *
+     * Il n'y a donc rien à corriger côté sélecteurs, et rien à contourner : on
+     * le dit clairement, et on oriente vers la reprise en main, où c'est un
+     * humain qui candidate.
      */
     const texte = await page.innerText('body').catch(() => '');
-    if (/n['’]est plus disponible|offre introuvable/i.test(texte)) {
+
+    // Cas distinct du blocage : le site lui-même est indisponible. Le confondre
+    // avec l'anti-bot enverrait chercher une session à rouvrir pour rien.
+    if (/en maintenance|undergoing maintenance/i.test(texte)) {
       return {
         status: 'manual',
-        message:
-          "L'APEC refuse d'afficher le détail de ses offres à un navigateur automatisé " +
-          '(403 sur son propre service). Candidature à faire depuis ton navigateur.',
+        message: "L'APEC est en maintenance : réessaie plus tard.",
       };
     }
 
+    if (bloque || /n['’]est plus disponible|offre introuvable/i.test(texte)) return refus();
+
     const postuler = page.getByRole('button', { name: /postuler|candidater/i }).first();
     if (!(await postuler.count())) {
+      // Le blocage peut n'être signalé qu'après coup : on redemande avant de
+      // conclure à un problème de session, qui serait un diagnostic trompeur.
+      if (bloque) return refus();
       return {
         status: 'manual',
         message:

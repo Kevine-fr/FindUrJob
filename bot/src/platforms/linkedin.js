@@ -1,4 +1,4 @@
-import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate } from './common.js';
+import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
 import { applyForm } from './applyForm.js';
 
 /**
@@ -27,7 +27,17 @@ const CONTRACT_FILTER = {
   freelance: 'C',
 };
 
-function searchUrl({ keywords = [], location = '', contractTypes = [], remotes = [], easyApplyOnly = false }, start) {
+/*
+ * `easyApplyOnly` est vrai par défaut, et c'est un choix de fond.
+ *
+ * L'option existait déjà mais personne ne la passait : elle valait donc
+ * toujours `false`. La collecte ramenait en majorité des annonces dont la
+ * candidature se fait sur le site de l'employeur — la campagne les préparait,
+ * puis butait sur l'absence de formulaire. Autant ne collecter que ce sur quoi
+ * on sait réellement postuler ; un appelant qui veut parcourir large peut
+ * toujours demander l'inverse.
+ */
+function searchUrl({ keywords = [], location = '', contractTypes = [], remotes = [], easyApplyOnly = true }, start) {
   const params = new URLSearchParams({ start: String(start) });
   if (keywords.length) params.set('keywords', keywords.join(' '));
   if (location) params.set('location', location);
@@ -167,11 +177,11 @@ export async function search(context, query) {
 export async function isLoggedIn(context) {
   const page = await context.newPage();
   try {
-    await page.goto('https://www.linkedin.com/feed/', {
-      waitUntil: 'domcontentloaded',
-      timeout: 20_000,
-    });
-    return !/\/(login|uas\/login|checkpoint)/.test(page.url());
+    return await sessionOuverte(
+      page,
+      'https://www.linkedin.com/feed/',
+      /\/(login|uas\/login|checkpoint)/
+    );
   } catch {
     return false;
   } finally {
@@ -278,21 +288,26 @@ export async function apply(context, offer, options = {}) {
     await easyApply.click().catch(() => {});
 
     /*
-     * La candidature simplifiée s'ouvre dans une boîte de dialogue. Constaté à
-     * l'essai : le bouton se clique sans erreur, mais la boîte ne s'ouvre
-     * jamais dans le navigateur du robot — LinkedIn ne rend pas ce module hors
-     * de son application complète. On l'attend, et on le dit clairement plutôt
-     * que de laisser le remplisseur conclure « aucun formulaire ».
+     * La candidature simplifiée s'ouvre dans une boîte de dialogue.
+     *
+     * Elle est bâtie sur la balise `<dialog>`, **sans** attribut `role` — ses
+     * classes sont par ailleurs des empreintes illisibles, régénérées à chaque
+     * déploiement. Ne chercher que `[role="dialog"]` ne trouvait donc jamais
+     * rien, et le robot concluait à tort que LinkedIn refusait d'ouvrir son
+     * module dans un navigateur piloté. Il l'ouvre parfaitement : c'était le
+     * sélecteur qui regardait à côté.
      */
-    const modale = page.locator('[role="dialog"]').filter({ has: page.locator('input, textarea') });
-    await modale.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    const modale = page
+      .locator('dialog, [role="dialog"], [data-testid*="modal"]')
+      .filter({ has: page.locator('input, textarea, select') });
+    await modale.first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
 
     if (!(await modale.count())) {
       return {
         status: 'manual',
         message:
-          "LinkedIn n'ouvre pas sa candidature simplifiée dans le navigateur piloté. " +
-          "Ouvre l'offre depuis la reprise en main pour candidater.",
+          "LinkedIn n'a pas ouvert sa candidature simplifiée (page modifiée, ou " +
+          'vérification de sécurité). Reprends la main depuis l’onglet Comptes.',
         screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
       };
     }
@@ -310,6 +325,17 @@ export async function apply(context, offer, options = {}) {
         'button[aria-label*="Envoyer la candidature" i], button[aria-label*="Submit application" i], ' +
         'button[aria-label*="Suivant" i], button[aria-label*="Continue" i], ' +
         'button[aria-label*="Vérifier" i], button[aria-label*="Review" i]',
+      /*
+       * Les libellés visibles, parce que les attributs ne suffisent pas : le
+       * « Suivant » de LinkedIn n'a pas d'`aria-label` et n'est pas de type
+       * `submit`. Le motif est volontairement ancré — un « name » partiel
+       * attraperait aussi « Ignorer » ou le bouton de fermeture.
+       */
+      submitText:
+        /^(suivant|next|continuer|continue|v[ée]rifier|review|envoyer la candidature|submit application|soumettre)$/i,
+      // Écrans intermédiaires que l'essai a le droit de franchir pour aller
+      // vérifier que le CV se joint bien. Aucun libellé d'envoi ici.
+      advanceText: /^(suivant|next|continuer|continue|v[ée]rifier|review)$/i,
       confirmPattern:
         /candidature (bien )?(envoy|transmis)|votre candidature a été envoyée|application sent|candidature envoyée/i,
     });

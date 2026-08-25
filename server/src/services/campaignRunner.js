@@ -4,6 +4,7 @@ import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import SearchPreference from '../models/SearchPreference.js';
+import User from '../models/User.js';
 import { tailorCv, scoreOffer } from './tailoringService.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
@@ -90,11 +91,17 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
   };
 
   try {
-    const [profile, prefs] = await Promise.all([
+    /*
+     * Le compte sert de repli à l identite du profil : nom et adresse y sont
+     * toujours renseignes, alors que le profil peut ne pas l etre. Une
+     * candidature sans nom ni adresse part quand meme, et arrive anonyme.
+     */
+    const [profile, prefs, compte] = await Promise.all([
       Profile.forUser(user).then((p) =>
         Profile.findById(p._id).select("+masterCvHtml +cvFile")
       ),
       SearchPreference.forUser(user),
+      User.findById(user).select("fullName email").lean(),
     ]);
 
     /*
@@ -401,13 +408,28 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               filename: `CV-${(profile.fullName || 'candidat').replace(/\s+/g, '-')}.pdf`,
               content: cvPdf.toString('base64'),
             }, user, {
-              // Le formulaire HelloWork exige nom, prénom, e-mail et la lettre :
-              // le CV seul ne suffit pas à le faire partir.
-              applicant: {
-                firstName: (profile.fullName || "").split(" ")[0] || "",
-                lastName: (profile.fullName || "").split(" ").slice(1).join(" ") || "",
-                email: profile.email || "",
-              },
+              /*
+               * L'identité du candidat, telle que les formulaires la réclament.
+               *
+               * Le téléphone manquait, et ce n'est pas un détail : la
+               * candidature simplifiée de LinkedIn en fait un champ obligatoire
+               * dès son premier écran. Sans lui, le parcours s'arrêtait là,
+               * chaque fois, sur toutes les offres.
+               *
+               * Le nom du compte sert de repli à celui du profil : un profil
+               * incomplet faisait partir des candidatures sans nom ni adresse,
+               * ce qui est pire qu'un échec — le recruteur reçoit un dossier
+               * anonyme.
+               */
+              applicant: (() => {
+                const nom = profile.fullName || compte?.fullName || '';
+                return {
+                  firstName: nom.split(' ')[0] || '',
+                  lastName: nom.split(' ').slice(1).join(' ') || '',
+                  email: profile.email || compte?.email || '',
+                  phone: profile.phone || '',
+                };
+              })(),
               coverLetter: result.coverLetter || "",
               dryRun,
             });

@@ -33,32 +33,63 @@ const CONSENT = /cgu|cgv|condition|consent|accept|rgpd|privacy|charte|politique/
 const REFUSE = /newsletter|alerte|publicit|marketing|commercial|partenaire|offres? d/i;
 
 /**
+ * Libellés qui envoient pour de bon.
+ *
+ * Sert de garde-fou au mode essai : quoi qu'une plateforme déclare comme
+ * bouton « intermédiaire », un libellé reconnu ici n'est jamais actionné en
+ * essai. Un envoi ne se rattrape pas — un employeur ne « dé-reçoit » pas une
+ * candidature.
+ */
+const ENVOI_FINAL =
+  /envoyer|soumettre|submit|send|postuler maintenant|valider ma candidature|terminer/i;
+
+/**
  * Le formulaire de candidature de la page, s'il y en a un.
  * Priorité au formulaire portant un champ fichier ; à défaut, celui qui porte
  * un champ e-mail — certaines plateformes reprennent le CV du profil.
  */
 async function trouverFormulaire(page) {
-  const avecFichier = page.locator('form').filter({ has: page.locator('input[type="file"]') });
-  if (await avecFichier.count()) return avecFichier.first();
-
-  const avecEmail = page.locator('form').filter({ has: page.locator('input[type="email"]') });
-  if (await avecEmail.count()) return avecEmail.first();
-
   /*
-   * Repli sur la fenêtre modale.
+   * On note tous les conteneurs plausibles et on garde le plus riche.
    *
-   * Tous les sites ne construisent pas leur candidature autour d'un `<form>` :
-   * LinkedIn ouvre une boîte de dialogue faite de `div`, sans balise de
-   * formulaire. Exiger un `<form>` y renvoyait « aucun formulaire » alors que
-   * les champs étaient bien là, à l'écran. Le conteneur de dialogue joue le
-   * même rôle : c'est la portée du remplissage.
+   * Les `<form>` ne suffisent pas : LinkedIn ouvre un `<dialog>` sans balise de
+   * formulaire, et Welcome to the Jungle laisse traîner deux dialogues *vides
+   * et invisibles* en plus du vrai. Prendre « le dernier dialogue » y
+   * choisissait une coquille : le remplissage ne trouvait rien, puis échouait
+   * sur « bouton d'envoi introuvable » — un message qui désignait le mauvais
+   * coupable.
+   *
+   * D'où les deux règles : ne considérer que ce qui est **visible**, et
+   * préférer le conteneur qui porte un champ fichier, signe le plus sûr d'un
+   * formulaire de candidature.
    */
-  const dialogue = page
-    .locator('[role="dialog"], dialog')
-    .filter({ has: page.locator('input, textarea') });
-  if (await dialogue.count()) return dialogue.last();
+  const candidats = page.locator('form, dialog, [role="dialog"]');
+  const total = await candidats.count();
 
-  return null;
+  let meilleur = null;
+  let meilleureNote = 0;
+
+  for (let i = 0; i < total; i += 1) {
+    const item = candidats.nth(i);
+    if (!(await item.isVisible().catch(() => false))) continue;
+
+    const note = await item
+      .evaluate((el) => {
+        const champs = el.querySelectorAll(
+          'input:not([type="hidden"]), textarea, select'
+        ).length;
+        if (!champs) return 0;
+        return champs + (el.querySelector('input[type="file"]') ? 100 : 0);
+      })
+      .catch(() => 0);
+
+    if (note > meilleureNote) {
+      meilleureNote = note;
+      meilleur = item;
+    }
+  }
+
+  return meilleur;
 }
 
 /**
@@ -140,15 +171,44 @@ async function cocherCases(formulaire) {
   }
 }
 
-/** Les champs obligatoires encore vides — hors champs fichier (cf. plus bas). */
+/**
+ * Les champs obligatoires encore vides — hors champs fichier (cf. plus bas).
+ *
+ * `[required]` seul ne suffit pas : LinkedIn n'emploie que `aria-required`, et
+ * ses champs manquants passaient donc inaperçus jusqu'à ce que la plateforme
+ * refuse l'écran sans qu'on sache pourquoi.
+ *
+ * Ce qui est rendu, ce sont les **libellés**, pas les `name` ni les `id` : les
+ * identifiants de LinkedIn ressemblent à « «rb» » et n'apprennent rien à
+ * personne, là où « Mobile phone number » se corrige tout de suite.
+ */
 const manquants = (formulaire) =>
   formulaire
-    .evaluate((form) =>
-      [...form.querySelectorAll('input[required], textarea[required], select[required]')]
+    .evaluate((form) => {
+      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+      const obligatoire = (el) =>
+        el.required || el.getAttribute('aria-required') === 'true';
+      const nommer = (el) =>
+        (
+          el.labels?.[0]?.textContent ||
+          el.getAttribute('aria-label') ||
+          el.placeholder ||
+          el.name ||
+          el.type ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .replace(/\*$/, '')
+          .trim()
+          .slice(0, 40);
+
+      return [...form.querySelectorAll('input, textarea, select')]
+        .filter((el) => el.type !== 'hidden' && visible(el) && obligatoire(el))
         .filter((el) => (el.type === 'checkbox' ? !el.checked : el.type !== 'file' && !el.value))
-        .map((el) => el.name || el.id || el.type)
-        .slice(0, 6)
-    )
+        .map(nommer)
+        .filter(Boolean)
+        .slice(0, 6);
+    })
     .catch(() => []);
 
 /**
@@ -160,6 +220,8 @@ const manquants = (formulaire) =>
  * @param coverLetter   Lettre de motivation.
  * @param dryRun        Remplir jusqu'au bouton d'envoi, sans appuyer.
  * @param submitSelector Sélecteurs d'envoi, du plus sûr au plus large.
+ * @param submitText    Libellé du bouton d'action, quand il n'a ni `type=submit`
+ *                      ni `aria-label` exploitable.
  * @param confirmPattern Ce que la page doit dire pour qu'on parle d'envoi.
  */
 export async function applyForm(
@@ -170,6 +232,8 @@ export async function applyForm(
     coverLetter,
     dryRun = false,
     submitSelector = '[data-cy="submitButton"], button[type="submit"], input[type="submit"]',
+    submitText = null,
+    advanceText = null,
     confirmPattern = /candidature (bien )?(envoy|transmis|enregistr|re[çc]u)|merci pour votre candidature|votre candidature a bien|application (sent|submitted|received)/i,
   } = {}
 ) {
@@ -195,9 +259,54 @@ export async function applyForm(
     await humanPause(400, 900);
 
     let joint = false;
+    let depose = false;
     const upload = scope.locator('input[type="file"]').first();
+
     if (cvFile && (await upload.count())) {
       await upload.setInputFiles(cvFile).catch(() => {});
+      depose = true;
+    } else if (cvFile) {
+      /*
+       * Pas de champ fichier ? Il n'existe peut-être pas *encore*.
+       *
+       * L'écran « Resume » de LinkedIn n'en contient aucun : il affiche un
+       * bouton « Importer le CV » qui ouvre le sélecteur de fichiers du
+       * système. On concluait donc « aucun champ pour joindre le CV » sur
+       * l'écran même qui sert à le joindre, et la candidature serait partie
+       * avec le CV que LinkedIn garde en mémoire — pas celui qu'on vient
+       * d'adapter à l'offre.
+       *
+       * `filechooser` est la façon dont Playwright intercepte ce sélecteur :
+       * le fichier est fourni sans qu'aucune fenêtre système ne s'ouvre.
+       */
+      const declencheur = scope
+        .getByRole('button', {
+          name: /importer|t[ée]l[ée]verser|upload|charger|joindre|ajouter (un )?cv/i,
+        })
+        .first();
+
+      if (await declencheur.isVisible().catch(() => false)) {
+        const [selecteur] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null),
+          declencheur.click().catch(() => {}),
+        ]);
+
+        if (selecteur) {
+          await selecteur.setFiles(cvFile).catch(() => {});
+          depose = true;
+        } else {
+          // Certains sites se contentent de créer le champ au clic.
+          const apparu = scope.locator('input[type="file"]').first();
+          if (await apparu.count()) {
+            await apparu.setInputFiles(cvFile).catch(() => {});
+            depose = true;
+          }
+        }
+        await humanPause(600, 1200);
+      }
+    }
+
+    if (depose) {
 
       // Le champ fichier ne prouve rien : la plateforme peut le vider après un
       // transfert en arrière-plan et ranger une référence ailleurs. On surveille
@@ -254,10 +363,35 @@ export async function applyForm(
   }
   let cvJoint = etat.joint;
 
-  // Le bouton d'envoi est cherché sur la page, pas dans le formulaire : les
-  // parcours en plusieurs écrans le posent dans le conteneur du funnel.
-  const bouton = () => page.locator(submitSelector).last();
-  if (!(await bouton().isVisible().catch(() => false))) {
+  /*
+   * Le bouton d'action de l'écran courant.
+   *
+   * Deux façons de le reconnaître, parce qu'une seule ne suffit pas : par
+   * sélecteur (`type=submit`, attributs propres au site) et par libellé. Le
+   * « Suivant » de LinkedIn n'a ni `type=submit` ni `aria-label` — aucun
+   * sélecteur ne pouvait l'attraper, et le robot annonçait « bouton d'envoi
+   * introuvable » sur un écran qui en affichait un.
+   *
+   * On cherche d'abord **dans le conteneur** du formulaire, où il se trouve
+   * presque toujours, et on n'élargit à la page entière qu'à défaut : les
+   * parcours en plusieurs écrans posent parfois le bouton hors du `<form>`, et
+   * chercher large d'emblée risquait d'attraper un bouton de pied de page.
+   */
+  const boutonDans = (portee) => {
+    const parSelecteur = portee.locator(submitSelector);
+    return submitText
+      ? parSelecteur.or(portee.getByRole('button', { name: submitText })).last()
+      : parSelecteur.last();
+  };
+
+  // La portée suit le parcours : chaque écran a son conteneur, et le bouton du
+  // suivant ne se cherche pas dans celui du précédent.
+  let portee = premier;
+  const bouton = async () => {
+    const dedans = boutonDans(portee);
+    return (await dedans.isVisible().catch(() => false)) ? dedans : boutonDans(page);
+  };
+  if (!(await (await bouton()).isVisible().catch(() => false))) {
     return {
       status: 'manual',
       message: "Bouton d'envoi introuvable sur la page.",
@@ -266,15 +400,57 @@ export async function applyForm(
   }
 
   if (dryRun) {
+    /*
+     * L'essai traverse les écrans intermédiaires, jamais le dernier.
+     *
+     * Sans cela, l'essai s'arrêtait au premier écran et ne pouvait rien dire du
+     * CV : la candidature simplifiée de LinkedIn commence par les coordonnées
+     * et ne propose le fichier qu'à l'étape suivante. On concluait « aucun
+     * champ pour joindre le CV » sur un parcours parfaitement valide.
+     *
+     * Une seule règle protège l'essai, et elle est absolue : on ne clique que
+     * des libellés déclarés comme intermédiaires par la plateforme, et jamais
+     * un libellé d'envoi. Un doute sur un bouton = on s'arrête.
+     */
+    let etapes = 0;
+    while (advanceText && etapes < 4) {
+      const suite = boutonDans(portee).and(page.getByRole('button', { name: advanceText }));
+      const visible = await suite.isVisible().catch(() => false);
+      if (!visible) break;
+
+      const nom = (await suite.innerText().catch(() => '')).trim();
+      if (!nom || ENVOI_FINAL.test(nom)) break;
+
+      await suite.click().catch(() => {});
+      await humanPause(1800, 2800);
+      etapes += 1;
+
+      const ecran = await trouverFormulaire(page);
+      if (!ecran) break;
+      portee = ecran;
+
+      const pas = await traiterEcran(ecran);
+      if (pas.erreur) {
+        return {
+          status: 'manual',
+          message: `Essai interrompu à l'étape ${etapes + 1} : ${pas.erreur}`,
+          screenshot: await capture(),
+        };
+      }
+      cvJoint = cvJoint || pas.joint;
+    }
+
     // Le CV est le point qui décide de la valeur d'une candidature : le dire
     // explicitement évite de croire un essai concluant alors qu'il partirait nu.
-    const libelle = (await bouton().innerText().catch(() => '?')).trim();
+    const libelle = (await (await bouton()).innerText().catch(() => '?')).trim();
+    const parcours = etapes ? ` (${etapes + 1} écrans parcourus)` : '';
+
     return {
       status: cvFile && !cvJoint ? 'manual' : 'dry-run',
       message:
         cvFile && !cvJoint
-          ? `Formulaire prêt, mais aucun champ pour joindre le CV sur cet écran (bouton « ${libelle} »). Le CV se joint peut-être à l'étape suivante : à vérifier avant d'activer l'envoi.`
-          : `Prêt à envoyer — non soumis (mode essai). Bouton : « ${libelle} »${cvFile ? ', CV joint' : ''}.`,
+          ? `Formulaire prêt${parcours}, mais aucun champ pour joindre le CV (bouton « ${libelle} ») : à vérifier avant d'activer l'envoi.`
+          : `Prêt à envoyer — non soumis (mode essai)${parcours}. Bouton : « ${libelle} »${cvFile ? ', CV joint' : ''}.`,
       screenshot: await capture(),
     };
   }
@@ -283,9 +459,9 @@ export async function applyForm(
   // et on s'arrête net à la confirmation.
   let texte = '';
   for (let etape = 0; etape < 5; etape += 1) {
-    if (!(await bouton().isVisible().catch(() => false))) break;
+    if (!(await (await bouton()).isVisible().catch(() => false))) break;
 
-    await bouton().click().catch(() => {});
+    await (await bouton()).click().catch(() => {});
     await humanPause(2500, 4000);
 
     texte = await page.innerText('body').catch(() => '');
@@ -299,6 +475,7 @@ export async function applyForm(
     // Écran suivant : il peut porter le champ CV, ou ses propres questions.
     const suivant = await trouverFormulaire(page);
     if (!suivant) continue;
+    portee = suivant;
 
     const pas = await traiterEcran(suivant);
     if (pas.erreur) {

@@ -225,6 +225,30 @@ export async function apply(context, offer, options = {}) {
     await dismissConsent(page);
     await humanPause();
 
+    /*
+     * Beaucoup d'annonces HelloWork ne se candidatent pas sur HelloWork : le
+     * bouton s'y intitule « Postuler sur le site du recruteur » et mène à l'ATS
+     * de l'employeur. Le repérer d'abord évite un diagnostic trompeur — le
+     * remplisseur y trouvait un formulaire de page (recherche, alerte) et
+     * concluait « aucun champ pour joindre le CV », ce qui laissait croire à un
+     * défaut du robot alors que l'annonce n'était simplement pas candidatable
+     * ici.
+     */
+    const externe = page
+      .getByRole('link', { name: /sur le site (du|de l)/i })
+      .or(page.getByRole('button', { name: /sur le site (du|de l)/i }))
+      .first();
+    if (await externe.count()) {
+      // Le lien n'est parfois qu'une ancre (« #postuler ») : la vraie
+      // redirection se fait au clic. L'afficher n'apprendrait rien.
+      const cible = await externe.getAttribute('href').catch(() => null);
+      const utile = cible && /^https?:\/\//.test(cible) ? ` : ${cible}` : '';
+      return {
+        status: 'manual',
+        message: `L'employeur reçoit les candidatures sur son propre site${utile} — rien à remplir sur HelloWork.`,
+      };
+    }
+
     // Le libellé varie (« Postuler », « Je postule »…) : on cible le rôle et le
     // verbe plutôt qu’une classe, qui change à chaque refonte.
     const bouton = page

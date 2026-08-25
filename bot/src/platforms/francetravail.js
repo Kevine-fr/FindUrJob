@@ -1,4 +1,4 @@
-import { humanPause, dismissConsent } from './common.js';
+import { humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
 
 /**
@@ -33,13 +33,18 @@ export async function search() {
 export async function isLoggedIn(context) {
   const page = await context.newPage();
   try {
-    await page.goto('https://candidat.francetravail.fr/espacepersonnel/', {
-      waitUntil: 'commit',
-      timeout: 30_000,
-    });
-    await page.waitForTimeout(3000);
-    // Sans session, le site renvoie vers son service d'authentification.
-    return !/authentification|connexion|\/login/i.test(page.url());
+    /*
+     * La redirection vers `authentification-candidat.francetravail.fr` prend
+     * plus de trois secondes. L'ancien contrôle jugeait l'URL avant qu'elle
+     * n'aboutisse et rendait « connectée » une session morte depuis des jours :
+     * les candidatures partaient vers un mur, et la relance automatique de
+     * session ne se déclenchait jamais, faute de 409.
+     */
+    return await sessionOuverte(
+      page,
+      'https://candidat.francetravail.fr/espacepersonnel/',
+      /authentification|connexion|\/login/i
+    );
   } catch {
     return false;
   } finally {

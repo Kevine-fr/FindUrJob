@@ -40,8 +40,7 @@ const trait = {
  *
  * Les tuiles raster d'OpenStreetMap ne demandent aucune clé d'API, à la
  * différence des fonds vectoriels. MapLibre les incline et les fait pivoter
- * comme n'importe quel autre fond : le relief vient de la caméra et des
- * colonnes posées par-dessus, pas du fond lui-même.
+ * comme n'importe quel autre fond : le relief vient de la caméra, pas du fond.
  */
 const STYLE = {
   version: 8,
@@ -63,18 +62,26 @@ const STYLE = {
 
 const PITCH_3D = 52;
 
-// Au-delà, la couronne de marqueurs devient un mur illisible : on en montre une
-// part et le panneau latéral garde la liste complète.
+/*
+ * Distance, en pixels d'écran, en deçà de laquelle deux lieux sont réunis.
+ *
+ * C'est un seuil en pixels et non en kilomètres : c'est précisément ce qui rend
+ * le regroupement dynamique. Deux communes voisines se touchent à l'échelle
+ * d'un pays et se détachent d'elles-mêmes en zoomant, sans qu'on ait à fixer
+ * de paliers.
+ */
+const RAYON_AMAS = 58;
+
+// Au-delà, la couronne devient un mur illisible : on en montre une part, et le
+// panneau latéral garde la liste complète.
 const MAX_EPINGLES = 36;
 
 /**
- * Groupe les offres par point.
+ * Groupe les offres par coordonnées.
  *
- * Une adresse est résolue à la ville : les quarante annonces parisiennes
- * partagent exactement les mêmes coordonnées. Sans regroupement elles se
- * superposeraient en un seul point, les trente-neuf du dessous devenant
- * inatteignables — c'est précisément ce que la sélection offre par offre doit
- * défaire, en les écartant en couronne autour de leur ville.
+ * Les adresses sont géocodées à la ville : toutes les offres d'une même ville
+ * partagent des coordonnées *identiques*. Ce premier regroupement, lui, ne
+ * dépend pas du zoom — ces points-là ne se sépareront jamais.
  */
 function grouper(offers) {
   const groupes = new Map();
@@ -101,26 +108,72 @@ function grouper(offers) {
 }
 
 /**
- * Hauteur de la colonne d'une ville, en pixels.
+ * Réunit les lieux trop proches à l'écran pour être distingués.
  *
- * Logarithmique : une ville à cent offres ne doit pas écraser de vingt fois sa
- * hauteur une ville à cinq. Bornée, sinon la plus fournie sortirait de l'écran.
+ * Algorithme glouton : les lieux les plus fournis servent d'ancres et absorbent
+ * leurs voisins. C'est ce qui donne des amas centrés sur les métropoles plutôt
+ * que sur la première commune rencontrée.
  *
- * La colonne est dessinée en HTML plutôt qu'en extrusion MapLibre. Une
- * extrusion se mesure en mètres : pour garder une hauteur constante à l'écran
- * il fallait la recalculer à chaque zoom, et à l'échelle d'un continent elle
- * atteignait des centaines de kilomètres — au-delà de ce que MapLibre encode,
- * si bien que la couche ne dessinait plus rien du tout. En pixels, le problème
- * n'existe pas.
+ * Le coût est quadratique, mais il porte sur le nombre de *lieux distincts* —
+ * quelques dizaines, rarement plus — et non sur le nombre d'offres.
  */
-function hauteurColonne(nombre) {
-  return Math.round(Math.min(84, 14 + 16 * Math.log2(nombre + 1)));
+function amasser(groupes, projeter) {
+  const points = groupes
+    .map((groupe) => ({ groupe, ecran: projeter(groupe) }))
+    .sort((a, b) => b.groupe.offers.length - a.groupe.offers.length);
+
+  const pris = new Set();
+  const amas = [];
+
+  for (const point of points) {
+    if (pris.has(point.groupe.cle)) continue;
+    pris.add(point.groupe.cle);
+
+    const membres = [point.groupe];
+    for (const autre of points) {
+      if (pris.has(autre.groupe.cle)) continue;
+      const dx = autre.ecran.x - point.ecran.x;
+      const dy = autre.ecran.y - point.ecran.y;
+      if (dx * dx + dy * dy <= RAYON_AMAS * RAYON_AMAS) {
+        pris.add(autre.groupe.cle);
+        membres.push(autre.groupe);
+      }
+    }
+
+    const total = membres.reduce((somme, membre) => somme + membre.offers.length, 0);
+    const sources = {};
+    for (const membre of membres) {
+      for (const [cle, nombre] of Object.entries(membre.sources)) {
+        sources[cle] = (sources[cle] || 0) + nombre;
+      }
+    }
+
+    amas.push({
+      // La clé décrit ce que l'amas contient : tant qu'il contient la même
+      // chose, son marqueur est réutilisé et ne clignote pas.
+      cle: membres
+        .map((membre) => membre.cle)
+        .sort()
+        .join('|'),
+      // Le point d'ancrage reste celui du lieu principal : une moyenne
+      // pondérée tomberait entre deux villes, sur aucune des deux.
+      lat: point.groupe.lat,
+      lon: point.groupe.lon,
+      lieu: point.groupe.lieu,
+      couleur: point.groupe.couleur,
+      membres,
+      sources,
+      total,
+    });
+  }
+
+  return amas;
 }
 
 /**
- * Décalage en pixels de la n-ième épingle autour de sa ville.
+ * Décalage en pixels de la n-ième épingle autour de son point.
  *
- * En anneaux successifs, dont la capacité croît avec le rayon : un seul cercle
+ * En anneaux successifs dont la capacité croît avec le rayon : un seul cercle
  * suffirait pour huit offres, pas pour trente.
  */
 function positionCouronne(index) {
@@ -134,14 +187,55 @@ function positionCouronne(index) {
     capacite += 6;
   }
 
-  const rayon = 62 + anneau * 40;
-  /*
-   * Le demi-pas décale la couronne de sorte qu'aucune épingle ne tombe à la
-   * verticale du point : c'est là que monte la colonne, et l'épingle s'y
-   * retrouverait cachée derrière le fût.
-   */
+  const rayon = 58 + anneau * 38;
+  // Le demi-pas évite qu'une épingle tombe pile sous l'amas qui l'a ouverte.
   const angle = ((restant + 0.5) / capacite) * 2 * Math.PI - Math.PI / 2;
   return [Math.cos(angle) * rayon, Math.sin(angle) * rayon];
+}
+
+/**
+ * Couronne colorée d'un amas, en dégradé conique.
+ *
+ * Le nombre seul ne dit pas ce qu'il y a dedans. La part de chaque plateforme
+ * se lit ici d'un coup d'œil, sans avoir à ouvrir l'amas.
+ */
+function anneauDeCouleurs(sources, total) {
+  const parts = Object.entries(sources).sort((a, b) => b[1] - a[1]);
+  let cumul = 0;
+  const arrets = parts.map(([cle, nombre]) => {
+    const debut = (cumul / total) * 360;
+    cumul += nombre;
+    const couleur = SOURCE_COLORS[cle] || SOURCE_COLORS.autre;
+    return `${couleur} ${debut.toFixed(2)}deg ${((cumul / total) * 360).toFixed(2)}deg`;
+  });
+  return `conic-gradient(${arrets.join(', ')})`;
+}
+
+/** Diamètre d'un amas : logarithmique, pour que dix ne soit pas dix fois un. */
+function tailleAmas(nombre) {
+  return Math.round(Math.min(58, 30 + 7 * Math.log2(nombre)));
+}
+
+/**
+ * Épingle d'une offre : une goutte, et une mallette dedans.
+ *
+ * Un disque numéroté ne disait rien de ce qu'il désignait. La forme en goutte
+ * pointe l'adresse exacte, la mallette dit qu'il s'agit d'un poste, et la
+ * couleur d'où vient l'annonce.
+ */
+function goutteSvg(couleur) {
+  return `
+    <svg viewBox="0 0 26 34" width="26" height="34" aria-hidden="true">
+      <path d="M13 33.2C13 33.2 25 21.5 25 13A12 12 0 1 0 1 13c0 8.5 12 20.2 12 20.2z"
+            fill="${couleur}" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+      <circle cx="13" cy="13" r="7.6" fill="#fff" fill-opacity="0.94"/>
+      <g fill="none" stroke="${couleur}" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8.6" y="11" width="8.8" height="6.4" rx="1.2"/>
+        <path d="M11.2 11v-1.1a1.1 1.1 0 0 1 1.1-1.1h1.4a1.1 1.1 0 0 1 1.1 1.1V11"/>
+        <path d="M8.6 13.4h8.8"/>
+      </g>
+    </svg>`;
 }
 
 function dateCourte(value) {
@@ -162,16 +256,24 @@ export default function MapPage() {
   const [pret, setPret] = useState(false);
   const [relief, setRelief] = useState(true);
   const [filtresOuverts, setFiltresOuverts] = useState(false);
-  const [villeActive, setVilleActive] = useState(null);
+  // Ce qui est ouvert en éventail, et l'offre choisie dedans.
+  const [eventail, setEventail] = useState(null);
   const [offreActive, setOffreActive] = useState(null);
 
   const conteneur = useRef(null);
   const carte = useRef(null);
-  const marqueurs = useRef([]);
-  // Les gestionnaires d'évènements de la carte sont posés une seule fois : ils
-  // lisent les données ici plutôt que dans une clôture, qui serait figée sur le
-  // premier rendu.
+  // Marqueurs d'amas, indexés par leur contenu : on n'ajoute et ne retire que
+  // ce qui change d'une vue à l'autre, sinon la carte clignoterait à chaque
+  // déplacement.
+  const marqueurs = useRef(new Map());
+  const epingles = useRef([]);
+  /*
+   * Les gestionnaires d'évènements de la carte sont posés une seule fois, au
+   * montage : ils lisent l'état ici plutôt que dans une clôture, qui resterait
+   * figée sur le premier rendu.
+   */
   const groupesRef = useRef([]);
+  const synchroniserRef = useRef(() => {});
   const cadreFait = useRef(null);
 
   const query = useMemo(() => {
@@ -217,6 +319,77 @@ export default function MapPage() {
   const groupes = useMemo(() => grouper(data.offers || []), [data.offers]);
   groupesRef.current = groupes;
 
+  const approcher = useCallback((point, zoomMini = 10) => {
+    const map = carte.current;
+    if (!map || !point) return;
+    map.easeTo({
+      center: [point.lon, point.lat],
+      zoom: Math.max(map.getZoom(), zoomMini),
+      duration: 700,
+    });
+  }, []);
+
+  /** Ouvre un amas en éventail : ses offres, une par une, autour de son point. */
+  const deployer = useCallback(
+    (amas) => {
+      const offers = amas.membres.flatMap((membre) => membre.offers);
+      setEventail({
+        cle: amas.cle,
+        lieu: amas.membres.length > 1 ? `${amas.lieu} et alentours` : amas.lieu,
+        lat: amas.lat,
+        lon: amas.lon,
+        couleur: amas.couleur,
+        offers,
+      });
+      setOffreActive(null);
+      approcher(amas, 10);
+    },
+    [approcher]
+  );
+
+  /**
+   * Clic sur un amas.
+   *
+   * Tant que ses membres peuvent se séparer en zoomant, on zoome : c'est le
+   * geste attendu, et la séparation se fait alors toute seule. Quand l'amas
+   * n'a qu'un lieu — toutes les offres à la même adresse — aucun zoom ne les
+   * séparera jamais : on les écarte en éventail.
+   */
+  const ouvrirAmas = useCallback(
+    (amas) => {
+      const map = carte.current;
+      if (!map) return;
+
+      if (amas.membres.length > 1) {
+        const bornes = new LngLatBounds();
+        for (const membre of amas.membres) bornes.extend([membre.lon, membre.lat]);
+        const cible = map.cameraForBounds(bornes, { padding: 120, maxZoom: 16 });
+
+        // Un zoom qui ne gagne rien laisserait l'amas fermé sur lui-même :
+        // dans ce cas on l'ouvre plutôt que de ne rien faire.
+        if (cible && cible.zoom > map.getZoom() + 0.15) {
+          map.easeTo({ ...cible, pitch: map.getPitch(), bearing: map.getBearing(), duration: 800 });
+          return;
+        }
+      }
+
+      deployer(amas);
+    },
+    [deployer]
+  );
+
+  const ouvrirOffreSeule = useCallback((groupe, offer) => {
+    setEventail({
+      cle: groupe.cle,
+      lieu: groupe.lieu,
+      lat: groupe.lat,
+      lon: groupe.lon,
+      couleur: groupe.couleur,
+      offers: groupe.offers,
+    });
+    setOffreActive(offer._id);
+  }, []);
+
   // --- Création de la carte, une fois pour toutes -------------------------
   useEffect(() => {
     const map = new MapLibre({
@@ -228,12 +401,12 @@ export default function MapPage() {
       bearing: -12,
       attributionControl: { compact: true },
       // Le clic droit fait pivoter et incliner : c'est le geste attendu sur une
-      // carte 3D, et il évite d'avoir à trouver la boussole.
+      // carte inclinée, et il évite d'avoir à trouver la boussole.
       dragRotate: true,
       maxPitch: 70,
     });
     carte.current = map;
-    // Une carte se met au point à la console : angle, zoom, couches rendues.
+    // Une carte se met au point à la console : angle, zoom, amas rendus.
     // Uniquement en développement — rien n'est exposé sur le site déployé.
     if (import.meta.env.DEV) window.__carte = map;
 
@@ -241,12 +414,23 @@ export default function MapPage() {
     map.addControl(new FullscreenControl(), 'top-right');
     map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left');
 
-    map.on('load', () => setPret(true));
+    map.on('load', () => {
+      setPret(true);
+      synchroniserRef.current();
+    });
 
-    // Cliquer le fond referme ce qui est ouvert. Les colonnes et les épingles
-    // sont des marqueurs HTML : leur clic n'atteint jamais ce gestionnaire.
+    /*
+     * Le regroupement se recalcule à chaque fin de déplacement : c'est là que
+     * les amas se séparent ou se rejoignent. Pendant le mouvement, les
+     * marqueurs restent accrochés à leurs coordonnées — MapLibre s'en charge —
+     * et le recalcul n'arrive qu'une fois la vue posée.
+     */
+    map.on('moveend', () => synchroniserRef.current());
+
+    // Cliquer le fond referme ce qui est ouvert. Amas et épingles sont des
+    // marqueurs HTML : leur clic n'atteint jamais ce gestionnaire.
     map.on('click', () => {
-      setVilleActive(null);
+      setEventail(null);
       setOffreActive(null);
     });
 
@@ -257,148 +441,157 @@ export default function MapPage() {
     };
   }, []);
 
-  /**
-   * Ouvrir une ville l'amène au centre, à un zoom de ville.
-   *
-   * Les épingles s'écartent d'un rayon exprimé en pixels : à l'échelle d'un
-   * continent, la couronne recouvre trois pays et ne se lit plus comme un
-   * éventail autour d'un point. En s'approchant, elle retombe sur la ville
-   * qu'elle décrit.
-   */
-  const approcher = useCallback((groupe) => {
+  // --- Marqueurs d'amas ----------------------------------------------------
+  const synchroniser = useCallback(() => {
     const map = carte.current;
-    if (!map || !groupe) return;
-    map.easeTo({
-      center: [groupe.lon, groupe.lat],
-      zoom: Math.max(map.getZoom(), 8.5),
-      duration: 700,
-    });
-  }, []);
+    if (!map) return;
 
-  // --- Marqueurs : pastilles de ville, puis épingles de la ville ouverte ---
+    const amas = amasser(groupesRef.current, (groupe) => map.project([groupe.lon, groupe.lat]));
+    const voulus = new Map(amas.map((item) => [item.cle, item]));
+
+    for (const [cle, marqueur] of marqueurs.current) {
+      if (!voulus.has(cle)) {
+        marqueur.remove();
+        marqueurs.current.delete(cle);
+      }
+    }
+
+    for (const [cle, item] of voulus) {
+      if (marqueurs.current.has(cle)) continue;
+
+      // Une seule offre : elle mérite son épingle, pas un amas qui afficherait
+      // « 1 » — c'était le bruit qui saturait la carte.
+      const seule = item.total === 1 ? item.membres[0].offers[0] : null;
+      const bouton = document.createElement('button');
+      bouton.type = 'button';
+
+      if (seule) {
+        bouton.className = 'map-goutte';
+        bouton.dataset.offre = seule._id;
+        bouton.innerHTML = goutteSvg(SOURCE_COLORS[seule.source] || SOURCE_COLORS.autre);
+        bouton.title = `${seule.title}${seule.company ? ` — ${seule.company}` : ''}`;
+        bouton.addEventListener('click', (event) => {
+          event.stopPropagation();
+          ouvrirOffreSeule(item.membres[0], seule);
+        });
+      } else {
+        bouton.className = 'map-amas';
+        bouton.style.setProperty('--taille', `${tailleAmas(item.total)}px`);
+        bouton.style.setProperty('--anneau', anneauDeCouleurs(item.sources, item.total));
+        bouton.title =
+          item.membres.length > 1
+            ? `${item.total} offres autour de ${item.lieu} — cliquer pour les séparer`
+            : `${item.total} offres à ${item.lieu} — cliquer pour les ouvrir`;
+        bouton.innerHTML =
+          '<span class="map-amas-anneau"></span>' +
+          `<span class="map-amas-coeur">${item.total}</span>`;
+        bouton.addEventListener('click', (event) => {
+          event.stopPropagation();
+          ouvrirAmas(item);
+        });
+      }
+
+      marqueurs.current.set(
+        cle,
+        new Marker({ element: bouton, anchor: seule ? 'bottom' : 'center' })
+          .setLngLat([item.lon, item.lat])
+          .addTo(map)
+      );
+    }
+  }, [ouvrirAmas, ouvrirOffreSeule]);
+
+  synchroniserRef.current = synchroniser;
+
+  useEffect(() => {
+    if (pret) synchroniser();
+  }, [pret, synchroniser, groupes]);
+
+  /*
+   * Marque l'offre choisie en basculant une classe, sans rien reconstruire.
+   *
+   * Reconstruire les marqueurs à chaque sélection rejouerait leur animation
+   * d'entrée : l'éventail entier se remettrait à cascader chaque fois qu'on
+   * clique une épingle.
+   */
+  useEffect(() => {
+    for (const marqueur of marqueurs.current.values()) {
+      const element = marqueur.getElement();
+      element.classList.toggle('is-active', element.dataset.offre === offreActive);
+    }
+    for (const { id, marqueur } of epingles.current) {
+      marqueur.getElement().classList.toggle('is-active', id === offreActive);
+    }
+  }, [offreActive, eventail]);
+
+  // --- Éventail : les offres d'un amas, écartées une à une -----------------
   useEffect(() => {
     const map = carte.current;
     if (!pret || !map) return undefined;
 
-    for (const marqueur of marqueurs.current) marqueur.remove();
-    marqueurs.current = [];
+    for (const { marqueur } of epingles.current) marqueur.remove();
+    epingles.current = [];
 
-    const poser = (element, lngLat, { anchor = 'center', offset = [0, 0] } = {}) => {
-      const marqueur = new Marker({ element, anchor, offset }).setLngLat(lngLat).addTo(map);
-      marqueurs.current.push(marqueur);
-    };
+    if (!eventail || eventail.offers.length < 2) return undefined;
 
-    for (const groupe of groupes) {
-      const ouverte = groupe.cle === villeActive;
-      const nombre = groupe.offers.length;
-
-      /*
-       * La colonne : un socle posé au sol, un fût dont la hauteur dit le nombre
-       * d'offres, et la pastille du compte à son sommet. Ancrée par le bas, si
-       * bien que c'est bien son pied qui repose sur les coordonnées — et non son
-       * milieu, qui la ferait flotter à côté de la ville.
-       */
-      const colonne = document.createElement('button');
-      colonne.type = 'button';
-      colonne.className = 'map-city' + (ouverte ? ' is-open' : '');
-      colonne.style.setProperty('--couleur', groupe.couleur);
-      colonne.title = `${groupe.lieu} — ${nombre} offre${nombre > 1 ? 's' : ''}`;
-      /*
-       * L'habillage vit dans un enfant, jamais sur le marqueur lui-même.
-       *
-       * MapLibre positionne un marqueur en écrivant `transform` sur son
-       * élément. Y poser une animation ou un `scale` au survol écrase ce
-       * calcul : le marqueur retombe alors sur le point d'ancrage, et toute la
-       * couronne s'effondre en un tas. L'enfant, lui, peut être transformé
-       * autant qu'on veut.
-       */
-      colonne.innerHTML =
-        '<span class="map-city-inner">' +
-        `<span class="map-city-badge">${nombre}</span>` +
-        `<span class="map-city-bar" style="height:${hauteurColonne(nombre)}px"></span>` +
-        '<span class="map-city-base"></span>' +
-        '</span>';
-      /*
-       * Les marqueurs vivent dans le conteneur de la toile : sans cet arrêt, le
-       * clic remonte jusqu'au gestionnaire de la carte, qui referme dans la
-       * foulée ce qu'on vient d'ouvrir.
-       */
-      colonne.addEventListener('click', (event) => {
+    eventail.offers.slice(0, MAX_EPINGLES).forEach((offer, index) => {
+      const bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.className = 'map-goutte';
+      // Les épingles entrent l'une après l'autre : le déploiement se lit comme
+      // un geste, au lieu de faire surgir trente points d'un bloc.
+      bouton.style.setProperty('--rang', String(index));
+      bouton.innerHTML = goutteSvg(SOURCE_COLORS[offer.source] || SOURCE_COLORS.autre);
+      bouton.title = `${offer.title}${offer.company ? ` — ${offer.company}` : ''}`;
+      bouton.addEventListener('click', (event) => {
         event.stopPropagation();
-        setVilleActive(ouverte ? null : groupe.cle);
-        setOffreActive(null);
-        if (!ouverte) approcher(groupe);
+        setOffreActive(offer._id);
       });
-      poser(colonne, [groupe.lon, groupe.lat], { anchor: 'bottom' });
 
-      if (!ouverte) continue;
-
-      /*
-       * Chaque offre reçoit sa propre épingle, écartée d'un décalage en pixels.
-       *
-       * Le décalage est en pixels d'écran, pas en degrés : la couronne garde
-       * donc exactement la même forme à tous les zooms, et rien n'a besoin
-       * d'être recalculé quand la carte bouge.
-       */
-      groupe.offers.slice(0, MAX_EPINGLES).forEach((offer, index) => {
-        const epingle = document.createElement('button');
-        epingle.type = 'button';
-        epingle.className = 'map-pin' + (offer._id === offreActive ? ' is-active' : '');
-        epingle.style.setProperty('--couleur', SOURCE_COLORS[offer.source] || SOURCE_COLORS.autre);
-        // Les épingles apparaissent l'une après l'autre : le déploiement se lit
-        // comme un geste, au lieu de faire surgir trente points d'un bloc.
-        epingle.style.setProperty('--rang', String(index));
-        // Même raison que pour la colonne : le `transform` du marqueur est à
-        // MapLibre, l'habillage à l'enfant.
-        epingle.innerHTML = '<span class="map-pin-dot"></span>';
-        epingle.title = `${offer.title}${offer.company ? ` — ${offer.company}` : ''}`;
-        epingle.addEventListener('click', (event) => {
-          event.stopPropagation();
-          setOffreActive(offer._id);
-        });
-        poser(epingle, [groupe.lon, groupe.lat], { offset: positionCouronne(index) });
+      epingles.current.push({
+        id: offer._id,
+        marqueur: new Marker({
+          element: bouton,
+          anchor: 'bottom',
+          offset: positionCouronne(index),
+        })
+          .setLngLat([eventail.lon, eventail.lat])
+          .addTo(map),
       });
-    }
+    });
 
     return () => {
-      for (const marqueur of marqueurs.current) marqueur.remove();
-      marqueurs.current = [];
+      for (const { marqueur } of epingles.current) marqueur.remove();
+      epingles.current = [];
     };
-  }, [approcher, groupes, pret, villeActive, offreActive]);
+  }, [eventail, pret]);
 
   // --- Cadrage : une fois par jeu de filtres ------------------------------
-  const recadrer = useCallback(
-    (animer = true) => {
-      const map = carte.current;
-      const points = groupesRef.current;
-      if (!map || !points.length) return;
+  const recadrer = useCallback((animer = true) => {
+    const map = carte.current;
+    const points = groupesRef.current;
+    if (!map || !points.length) return;
 
-      const bornes = new LngLatBounds();
-      for (const groupe of points) bornes.extend([groupe.lon, groupe.lat]);
+    const bornes = new LngLatBounds();
+    for (const groupe of points) bornes.extend([groupe.lon, groupe.lat]);
 
-      /*
-       * L'angle courant est repassé explicitement.
-       *
-       * `fitBounds` ne se contente pas de calculer un centre et un zoom : à
-       * défaut d'indication, il remet le pitch et le bearing à zéro. Recadrer
-       * aplatissait donc la carte, et la 3D disparaissait au premier clic sur
-       * « Recadrer ».
-       */
-      map.fitBounds(bornes, {
-        padding: 90,
-        maxZoom: 11,
-        duration: animer ? 900 : 0,
-        pitch: map.getPitch(),
-        bearing: map.getBearing(),
-      });
-    },
-    []
-  );
+    /*
+     * L'angle courant est repassé explicitement : `fitBounds` ne se contente
+     * pas de calculer un centre et un zoom, il remet aussi le pitch et le
+     * bearing à zéro faute d'indication. Recadrer aplatissait donc la carte.
+     */
+    map.fitBounds(bornes, {
+      padding: 90,
+      maxZoom: 11,
+      duration: animer ? 900 : 0,
+      pitch: map.getPitch(),
+      bearing: map.getBearing(),
+    });
+  }, []);
 
   useEffect(() => {
     if (!pret || loading || cadreFait.current === query) return;
     cadreFait.current = query;
-    setVilleActive(null);
+    setEventail(null);
     setOffreActive(null);
     recadrer(true);
   }, [groupes, loading, pret, query, recadrer]);
@@ -412,11 +605,14 @@ export default function MapPage() {
     if (pret) carte.current?.resize();
   }, [filtresOuverts, pret]);
 
-  // --- Bascule 2D / 3D ----------------------------------------------------
   useEffect(() => {
     const map = carte.current;
     if (!pret || !map) return;
-    map.easeTo({ pitch: relief ? PITCH_3D : 0, bearing: relief ? map.getBearing() : 0, duration: 600 });
+    map.easeTo({
+      pitch: relief ? PITCH_3D : 0,
+      bearing: relief ? map.getBearing() : 0,
+      duration: 600,
+    });
   }, [relief, pret]);
 
   const plateformes = useMemo(() => {
@@ -438,8 +634,10 @@ export default function MapPage() {
     [groupes]
   );
 
-  const groupeActif = groupes.find((groupe) => groupe.cle === villeActive) || null;
-  const offreDetail = groupeActif?.offers.find((offer) => offer._id === offreActive) || null;
+  const offreDetail = useMemo(
+    () => (offreActive ? eventail?.offers.find((o) => o._id === offreActive) || null : null),
+    [eventail, offreActive]
+  );
   const filtreActif = Boolean(q || source || contractType || remote);
   const filtresPoses = [source, contractType, remote].filter(Boolean).length;
   const aSituer = (data.pending || 0) + (data.resolving || 0);
@@ -451,19 +649,14 @@ export default function MapPage() {
     setRemote('');
   };
 
-  const ouvrirOffre = (groupe, offer) => {
-    setVilleActive(groupe.cle);
-    setOffreActive(offer._id);
-    approcher(groupe);
-  };
-
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Carte</h1>
           <p>
-            Une colonne par ville, sa hauteur dit le nombre d'offres. Clique-la pour les déployer.
+            Les offres se regroupent par proximité. Clique un amas pour le séparer, une épingle
+            pour ouvrir l'offre.
           </p>
         </div>
         <div className="map-actions">
@@ -495,9 +688,9 @@ export default function MapPage() {
 
       {/*
         Les filtres sont repliés par défaut.
-        Déployés, leurs quatre rangées de pastilles poussaient la carte sous la
-        ligne de flottaison : on arrivait sur un écran de filtres, et il fallait
-        faire défiler pour trouver la carte qu'on était venu voir.
+        Déployés, leurs rangées de pastilles poussaient la carte sous la ligne de
+        flottaison : on arrivait sur un écran de filtres, et il fallait faire
+        défiler pour trouver la carte qu'on était venu voir.
       */}
       <div className="panel map-filters">
         <div className="map-filters-bar">
@@ -599,7 +792,7 @@ export default function MapPage() {
             <>
               <div className="map-side-head">
                 <button className="btn btn-ghost btn-sm" onClick={() => setOffreActive(null)}>
-                  ← {groupeActif.lieu}
+                  ← {eventail ? eventail.lieu : 'Retour'}
                 </button>
               </div>
               <div className="map-side-detail">
@@ -645,18 +838,18 @@ export default function MapPage() {
                 </div>
               </div>
             </>
-          ) : groupeActif ? (
+          ) : eventail ? (
             <>
               <div className="map-side-head">
                 <div className="map-side-titre">
-                  {/* La puce reprend la couleur de la colonne : on relie d'un
-                      coup d'œil le panneau au point qu'on vient de cliquer. */}
-                  <i className="map-side-puce" style={{ background: groupeActif.couleur }} />
+                  {/* La puce reprend la couleur de l'amas : on relie d'un coup
+                      d'œil le panneau au point qu'on vient de cliquer. */}
+                  <i className="map-side-puce" style={{ background: eventail.couleur }} />
                   <div>
-                    <strong>{groupeActif.lieu}</strong>
+                    <strong>{eventail.lieu}</strong>
                     <span className="muted">
-                      {groupeActif.offers.length} offre{groupeActif.offers.length > 1 ? 's' : ''}
-                      {groupeActif.offers.length > MAX_EPINGLES
+                      {eventail.offers.length} offre{eventail.offers.length > 1 ? 's' : ''}
+                      {eventail.offers.length > MAX_EPINGLES
                         ? ` · ${MAX_EPINGLES} épinglées sur la carte`
                         : ''}
                     </span>
@@ -664,7 +857,7 @@ export default function MapPage() {
                 </div>
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setVilleActive(null)}
+                  onClick={() => setEventail(null)}
                   aria-label="Fermer"
                 >
                   ×
@@ -672,11 +865,11 @@ export default function MapPage() {
               </div>
 
               <div className="map-side-list">
-                {groupeActif.offers.map((offer) => (
+                {eventail.offers.map((offer) => (
                   <button
                     key={offer._id}
                     className="map-offer"
-                    onClick={() => ouvrirOffre(groupeActif, offer)}
+                    onClick={() => setOffreActive(offer._id)}
                   >
                     <span className="map-offer-title">{offer.title}</span>
                     <span className="map-offer-meta">
@@ -709,7 +902,7 @@ export default function MapPage() {
               {/* Le panneau était un grand vide blanc tant que rien n'était
                   sélectionné. Le classement remplit cette place par quelque
                   chose d'utile : où sont les offres, et un raccourci pour y
-                  aller sans chercher la colonne à l'œil. */}
+                  aller sans chercher l'amas à l'œil. */}
               {tetes.length > 0 && (
                 <div className="map-top">
                   <div className="section-label">Les lieux les plus fournis</div>
@@ -717,10 +910,16 @@ export default function MapPage() {
                     <button
                       key={groupe.cle}
                       className="map-top-row"
-                      onClick={() => {
-                        setVilleActive(groupe.cle);
-                        approcher(groupe);
-                      }}
+                      onClick={() =>
+                        deployer({
+                          cle: groupe.cle,
+                          lat: groupe.lat,
+                          lon: groupe.lon,
+                          lieu: groupe.lieu,
+                          couleur: groupe.couleur,
+                          membres: [groupe],
+                        })
+                      }
                     >
                       <span className="map-top-nom">{groupe.lieu}</span>
                       <span className="map-top-jauge">
@@ -738,9 +937,9 @@ export default function MapPage() {
               )}
 
               <ul className="map-help">
-                <li>Clique une colonne pour déployer ses offres une par une.</li>
+                <li>Un amas se sépare en cliquant dessus, ou en zoomant.</li>
+                <li>Quand les offres partagent une adresse, elles s'ouvrent en éventail.</li>
                 <li>Clic droit maintenu : faire pivoter et incliner la vue.</li>
-                <li>La légende sert de filtre par plateforme.</li>
               </ul>
             </div>
           )}

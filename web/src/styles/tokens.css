@@ -2613,154 +2613,138 @@ img {
   backdrop-filter: blur(8px);
 }
 
-/* --- Colonne d'une ville --- */
+/* --- Marqueurs --- */
 
 /*
- * Socle au sol, fût dont la hauteur dit le nombre d'offres, pastille du compte
- * au sommet. Ancrée par le bas côté MapLibre.
- *
- * ATTENTION : aucun `transform` ni aucune animation qui en pose un sur
- * `.map-city` ou `.map-pin`. MapLibre positionne ses marqueurs en écrivant
+ * ATTENTION : aucun `transform`, ni aucune animation qui en pose un, sur
+ * `.map-amas` ou `.map-goutte`. MapLibre positionne ses marqueurs en écrivant
  * `transform` sur l'élément : une règle CSS qui touche la même propriété écrase
  * le positionnement, et tous les marqueurs se retrouvent empilés sur leur point
- * d'ancrage. Tout ce qui bouge est donc porté par l'enfant `-inner` / `-dot`.
+ * d'ancrage. Tout ce qui bouge est donc porté par un enfant.
  */
-.map-city {
-  display: block;
+
+/* Amas : la couronne dit de quelles plateformes il est fait, le cœur combien
+   d'offres il contient. */
+.map-amas {
+  display: grid;
+  place-items: center;
+  width: var(--taille, 38px);
+  height: var(--taille, 38px);
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  filter: drop-shadow(0 4px 6px rgb(20 23 29 / 30%));
-  transition: filter var(--base) var(--ease);
-  /* Les épingles passent devant les colonnes : une ville déployée ne doit pas
-     masquer les offres qu'elle vient d'ouvrir. */
-  z-index: 1;
-}
-.map-city:hover {
-  filter: drop-shadow(0 7px 12px rgb(20 23 29 / 42%));
   z-index: 2;
+  filter: drop-shadow(0 3px 7px rgb(20 23 29 / 32%));
+  transition: filter var(--fast) var(--ease);
+  animation: fade-in 0.3s var(--ease) both;
 }
-.map-city-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  transform-origin: bottom center;
-  transition: transform var(--base) var(--ease);
-  animation: pousse 0.5s var(--ease) both;
+.map-amas:hover {
+  filter: drop-shadow(0 5px 12px rgb(20 23 29 / 45%));
+  z-index: 3;
 }
-.map-city:hover .map-city-inner {
-  transform: scale(1.06);
+.map-amas > * {
+  grid-area: 1 / 1;
 }
-.map-city.is-open .map-city-inner {
-  transform: scale(1.08);
-}
-.map-city-badge {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-width: 27px;
-  height: 27px;
-  padding: 0 8px;
-  border: 2px solid var(--card);
-  border-radius: 999px;
-  background: var(--couleur, var(--accent));
-  color: #fff;
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  /* Un liseré clair en haut de la pastille : elle attrape la lumière comme un
-     volume, au lieu de rester un disque plat. */
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
-}
-/* Deux faces sur le fût, l'une éclairée, l'autre dans l'ombre : c'est ce
-   dégradé qui donne son volume au cylindre. */
-.map-city-bar {
-  position: relative;
-  width: 9px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--couleur, var(--accent)) 58%, #000) 0%,
-    var(--couleur, var(--accent)) 38%,
-    color-mix(in srgb, var(--couleur, var(--accent)) 82%, #fff) 52%,
-    color-mix(in srgb, var(--couleur, var(--accent)) 50%, #000) 100%
-  );
-}
-/* L'ombre au sol raccroche la colonne au point qu'elle désigne : sans elle,
-   inclinée, elle semble flotter au-dessus de la carte. */
-.map-city-base {
-  width: 17px;
-  height: 7px;
-  margin-top: -3px;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgb(20 23 29 / 42%), rgb(20 23 29 / 6%) 72%);
-}
-.map-city.is-open .map-city-badge {
-  animation: pulse-ring 2s var(--ease-in-out) infinite;
-}
-
-/* La colonne sort du sol : le geste dit d'où elle vient, et fait comprendre que
-   sa hauteur est une quantité. */
-@keyframes pousse {
-  from {
-    transform: scaleY(0.35);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-
-/* --- Épingle d'une offre --- */
-
-/* Posée en couronne autour de sa ville quand celle-ci est déployée. C'est
-   l'unité que l'on sélectionne pour voir un détail. */
-.map-pin {
-  display: block;
-  width: 21px;
-  height: 21px;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  z-index: 6;
-}
-.map-pin:hover {
-  z-index: 7;
-}
-.map-pin.is-active {
-  z-index: 8;
-}
-.map-pin-dot {
-  display: grid;
-  place-items: center;
+/* Le dégradé conique découpé en anneau : chaque plateforme occupe l'arc de sa
+   part. Le masque évide le centre, où vient se poser le compte. */
+.map-amas-anneau {
   width: 100%;
   height: 100%;
-  border: 2px solid var(--card);
   border-radius: 50%;
-  background: var(--couleur, var(--accent));
-  box-shadow: 0 2px 6px rgb(20 23 29 / 32%), inset 0 1px 0 rgb(255 255 255 / 40%);
-  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
-  /* Chaque épingle entre à son tour, dans l'ordre où elle est posée. */
-  animation: pop-in 0.32s var(--ease) both;
-  animation-delay: calc(var(--rang, 0) * 22ms);
+  background: var(--anneau, var(--accent));
+  -webkit-mask: radial-gradient(circle at center, transparent 58%, #000 59%);
+  mask: radial-gradient(circle at center, transparent 58%, #000 59%);
+  transition: transform var(--base) var(--ease);
 }
-.map-pin-dot::after {
+.map-amas:hover .map-amas-anneau {
+  transform: scale(1.09);
+}
+.map-amas-coeur {
+  display: grid;
+  place-items: center;
+  width: 74%;
+  height: 74%;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgb(20 23 29 / 18%);
+}
+
+/* Épingle d'une offre : une goutte qui pointe l'adresse, une mallette dedans
+   pour dire qu'il s'agit d'un poste, la couleur pour dire d'où vient l'annonce.
+   Le disque numéroté qu'elle remplace ne racontait rien de tout cela. */
+.map-goutte {
+  display: block;
+  width: 26px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  z-index: 6;
+  filter: drop-shadow(0 3px 4px rgb(20 23 29 / 34%));
+  transition: filter var(--fast) var(--ease);
+}
+.map-goutte svg {
+  display: block;
+  transform-origin: 50% 100%;
+  transition: transform var(--fast) var(--ease);
+  /* Chaque épingle entre à son tour quand un éventail s'ouvre. */
+  animation: tombe 0.34s var(--ease) both;
+  animation-delay: calc(var(--rang, 0) * 24ms);
+}
+.map-goutte:hover {
+  filter: drop-shadow(0 6px 8px rgb(20 23 29 / 45%));
+  z-index: 7;
+}
+.map-goutte:hover svg {
+  transform: scale(1.16);
+}
+.map-goutte.is-active {
+  z-index: 8;
+}
+.map-goutte.is-active svg {
+  transform: scale(1.24);
+}
+/*
+ * Halo de l epingle choisie.
+ *
+ * Un anneau plutot qu un `drop-shadow` : cette fonction n a pas de rayon
+ * d etalement, la declaration etait donc simplement ignoree et la selection ne
+ * se voyait pas. Le marqueur est deja positionne en absolu par MapLibre, ce
+ * pseudo-element s y accroche sans qu on ait a toucher a son positionnement.
+ */
+.map-goutte.is-active::before {
   content: '';
-  width: 6px;
-  height: 6px;
+  position: absolute;
+  left: 50%;
+  top: 13px;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
   border-radius: 50%;
-  background: rgb(255 255 255 / 88%);
+  /* Anneau permanent, et non pulsant : une pulsation passe la moitie de son
+     cycle transparente, et la selection disparaissait une fois sur deux. */
+  box-shadow: 0 0 0 3px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
 }
-.map-pin:hover .map-pin-dot {
-  transform: scale(1.35);
-}
-.map-pin.is-active .map-pin-dot {
-  transform: scale(1.5);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent),
-    0 3px 9px rgb(20 23 29 / 35%);
+
+/* L'épingle se pose sur son point plutôt que d'apparaître dessus. */
+@keyframes tombe {
+  from {
+    opacity: 0;
+    transform: translateY(-9px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* --- Légende --- */
@@ -3155,16 +3139,12 @@ img {
 
 /* Rien de tout cela ne doit s'agiter pour qui a demandé moins d'animations. */
 @media (prefers-reduced-motion: reduce) {
-  .map-city,
-  .map-pin,
+  .map-amas,
+  .map-goutte svg,
   .map-legend,
   .map-top-jauge i,
   .map-side-detail,
   .map-filters-detail {
     animation: none;
-  }
-  .map-city.is-open .map-city-badge {
-    animation: none;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
   }
 }

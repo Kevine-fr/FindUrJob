@@ -92,8 +92,71 @@ export async function apply(context, offer, options = {}) {
       };
     }
 
+    /*
+     * En mode essai, on coupe toute écriture avant de toucher quoi que ce soit.
+     *
+     * France Travail n'ouvre pas un formulaire : il affiche un rappel des
+     * critères de l'offre, avec un bouton « Envoyer ma candidature » dont on ne
+     * peut pas savoir, de l'extérieur, s'il envoie sur-le-champ. Plutôt que de
+     * deviner, on avorte tout ce qui n'est pas une lecture : la confirmation
+     * peut alors être franchie pour voir ce qu'il y a derrière, sans qu'aucune
+     * candidature ne puisse atteindre le recruteur.
+     */
     await postuler.click().catch(() => {});
     await humanPause(2000, 3000);
+
+    /*
+     * Le rappel des critères porte le vrai bouton d'envoi. Il n'y a rien à
+     * remplir : France Travail joint le dossier de l'espace personnel.
+     */
+    // Cherché sur le texte et non sur le rôle : France Travail habille son
+    // envoi en lien, pas en bouton, et `getByRole('button')` passait à côté.
+    const confirmer = page
+      .locator('a, button, [role="button"]')
+      .filter({ hasText: /envoyer ma candidature/i })
+      .first();
+    if (await confirmer.count()) {
+      if (options.dryRun) {
+        /*
+         * Le filet ne se pose qu'ici, et pas plus tôt : la fenêtre de rappel
+         * a elle-même besoin d'appels au serveur pour s'afficher. Coupée dès
+         * l'ouverture de la page, elle ne paraissait jamais — et l'essai
+         * concluait qu'il n'y avait pas de candidature possible.
+         */
+        await page.route('**/*', (route) => {
+          const methode = route.request().method();
+          return methode === 'GET' || methode === 'OPTIONS' ? route.continue() : route.abort();
+        });
+        await confirmer.click().catch(() => {});
+        await humanPause(2500, 3500);
+
+        // Un formulaire derrière la confirmation ? Alors il y a de quoi joindre
+        // notre CV, et c'est le remplisseur commun qui reprend la main.
+        const suite = await page
+          .locator('form input[type="file"], dialog input[type="file"]')
+          .count()
+          .catch(() => 0);
+
+        return {
+          status: 'dry-run',
+          message: suite
+            ? 'Prêt à envoyer — non soumis (mode essai). Un formulaire suit la confirmation : le CV adapté peut y être joint.'
+            : "Prêt à envoyer — non soumis (mode essai). Bouton : « Envoyer ma candidature ». " +
+              "France Travail envoie le dossier de ton espace personnel : c'est ce CV-là " +
+              "qui part, pas celui adapté à l'offre.",
+          screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+        };
+      }
+
+      await confirmer.click().catch(() => {});
+      await humanPause(3000, 4500);
+
+      const texte = await page.innerText('body').catch(() => '');
+      if (/candidature.*(envoy|transmis|enregistr)|merci pour votre candidature/i.test(texte)) {
+        return { status: 'sent', message: 'Candidature envoyée via France Travail.' };
+      }
+      // Pas de confirmation : un formulaire a pu s'ouvrir, on le laisse remplir.
+    }
 
     return await applyForm(page, options);
   } catch (error) {

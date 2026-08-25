@@ -116,6 +116,28 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
      * L'existence d'une candidature suffit à écarter l'offre, quel que soit son
      * statut. Une candidature à reprendre se termine à la main, depuis sa fiche.
      */
+    /*
+     * L identite qui accompagne chaque candidature, construite une fois.
+     *
+     * Le telephone n est pas facultatif : la candidature simplifiee de LinkedIn
+     * en fait un champ obligatoire des son premier ecran, et sans lui le
+     * parcours s arrete la, sur toutes les offres. On le dit franchement dans
+     * le bilan plutot que de laisser la campagne echouer sans motif lisible.
+     */
+    const nomComplet = profile.fullName || compte?.fullName || "";
+    const identite = {
+      firstName: nomComplet.split(" ")[0] || "",
+      lastName: nomComplet.split(" ").slice(1).join(" ") || "",
+      email: profile.email || compte?.email || "",
+      phone: profile.phone || "",
+    };
+    if (!identite.phone) {
+      summary.errors.push(
+        "Telephone absent du profil : LinkedIn refuse sa candidature simplifiee sans numero. " +
+          "A renseigner dans l onglet « Mon CV »."
+      );
+    }
+
     const known = await Application.find({ user }).distinct('offer');
 
     const baseFilter = { _id: { $nin: known }, user };
@@ -421,15 +443,7 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
                * ce qui est pire qu'un échec — le recruteur reçoit un dossier
                * anonyme.
                */
-              applicant: (() => {
-                const nom = profile.fullName || compte?.fullName || '';
-                return {
-                  firstName: nom.split(' ')[0] || '',
-                  lastName: nom.split(' ').slice(1).join(' ') || '',
-                  email: profile.email || compte?.email || '',
-                  phone: profile.phone || '',
-                };
-              })(),
+              applicant: identite,
               coverLetter: result.coverLetter || "",
               dryRun,
             });

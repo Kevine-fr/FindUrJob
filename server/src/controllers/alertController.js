@@ -50,13 +50,6 @@ function assainir(body = {}) {
   if (typeof body.cron === 'string' && cron.validate(body.cron)) propre.cron = body.cron;
   if (typeof body.timezone === 'string') propre.timezone = body.timezone.slice(0, 60);
 
-  if (body.maxPerRun !== undefined) {
-    propre.maxPerRun = Math.min(100, Math.max(1, Number(body.maxPerRun) || 20));
-  }
-  if (body.maxPerDay !== undefined) {
-    propre.maxPerDay = Math.min(500, Math.max(1, Number(body.maxPerDay) || 60));
-  }
-
   if (body.expiresAt !== undefined) {
     const date = body.expiresAt ? new Date(body.expiresAt) : null;
     propre.expiresAt = date && !Number.isNaN(date.getTime()) ? date : null;
@@ -176,8 +169,8 @@ export const unsubscribePush = asyncHandler(async (req, res) => {
 /** POST /push/test — une notification de contrôle, pour vérifier l'appareil. */
 export const testPush = asyncHandler(async (req, res) => {
   const bilan = await notifier(req.user.id, {
-    title: 'FindUrJob',
-    body: 'Les notifications fonctionnent sur cet appareil.',
+    title: 'Notifications activées',
+    body: 'Cet appareil recevra bien tes alertes.',
     url: '/alertes',
     tag: 'test',
   });

@@ -3228,15 +3228,6 @@ img {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
 }
-.alert-quota {
-  gap: 12px;
-}
-.alert-quota label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-}
 
 .alert-apercu {
   display: flex;

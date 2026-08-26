@@ -9,9 +9,8 @@ import { SOURCES, APPLICATION_STATUSES } from '../utils/constants.js';
  * C'est délibéré : on règle une alerte comme on filtre une liste, sans avoir à
  * réapprendre un second vocabulaire.
  *
- * Deux garde-fous encadrent l'envoi, parce qu'une alerte trop bavarde finit en
- * courriels non lus : un **quota** (par envoi et par jour) et une **échéance**
- * au-delà de laquelle elle s'éteint d'elle-même.
+ * Une **échéance** facultative encadre l'envoi : au-delà, l'alerte s'éteint
+ * d'elle-même plutôt que de continuer à parler d'une recherche terminée.
  */
 
 const UNITES = ['minute', 'heure', 'jour', 'semaine', 'mois'];
@@ -39,14 +38,6 @@ const alertSchema = new mongoose.Schema(
     timezone: { type: String, default: 'Europe/Paris' },
 
     /*
-     * Quotas. `maxPerRun` borne la taille d'un message, `maxPerDay` le nombre
-     * de candidatures signalées dans la journée — au-delà, l'alerte se tait
-     * jusqu'au lendemain plutôt que de noyer la boîte de réception.
-     */
-    maxPerRun: { type: Number, min: 1, max: 100, default: 20 },
-    maxPerDay: { type: Number, min: 1, max: 500, default: 60 },
-
-    /*
      * Échéance. Une alerte posée pour une recherche en cours n'a pas vocation à
      * survivre à cette recherche : passée cette date, elle ne se déclenche plus
      * et le dit dans son bilan, au lieu de disparaître sans explication.
@@ -65,20 +56,9 @@ const alertSchema = new mongoose.Schema(
     lastRunAt: { type: Date, default: null },
     lastResult: { type: String, default: '' },
     lastError: { type: String, default: '' },
-
-    // Compteur du jour, remis à zéro au changement de date.
-    sentDay: { type: String, default: '' }, // AAAA-MM-JJ
-    sentToday: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
-
-/** Ce qu'il reste de quota aujourd'hui. */
-alertSchema.methods.remainingToday = function remainingToday() {
-  const jour = new Date().toISOString().slice(0, 10);
-  const envoyees = this.sentDay === jour ? this.sentToday : 0;
-  return { jour, envoyees, left: Math.max(0, this.maxPerDay - envoyees) };
-};
 
 /** L'alerte a-t-elle dépassé son échéance ? */
 alertSchema.methods.expiree = function expiree() {

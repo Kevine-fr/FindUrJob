@@ -104,7 +104,15 @@ self.addEventListener('push', (event) => {
     charge = { body: event.data && event.data.text ? event.data.text() : '' };
   }
 
-  const titre = charge.title || 'FindUrJob';
+  /*
+   * Le titre ne reprend jamais le nom de l'application.
+   *
+   * Le navigateur ajoute déjà sa propre mention d'origine sous la notification
+   * (« from FindUrJob ») — c'est une protection contre l'usurpation, et aucune
+   * API ne permet de la retirer. Y remettre le nom en titre le faisait
+   * apparaître deux fois pour rien.
+   */
+  const titre = charge.title || 'Nouvelle correspondance';
   const options = {
     body: charge.body || '',
     icon: '/icon-192.png',

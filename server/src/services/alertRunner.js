@@ -16,6 +16,15 @@ import { APPLICATION_STATUSES } from '../utils/constants.js';
  * laisser une trace lisible dans sa fiche, pas faire tomber le planificateur.
  */
 
+/*
+ * Combien de lignes un message peut porter.
+ *
+ * Ce n est pas un quota — c est une limite de lisibilite : passe une trentaine
+ * de lignes, un courriel ne se lit plus, il se survole. Le total reel est
+ * toujours annonce, et le lien renvoie a la liste complete.
+ */
+const MAX_LIGNES = 25;
+
 const UNITES_MS = {
   minute: 60_000,
   heure: 3_600_000,
@@ -123,8 +132,8 @@ function corpsCourriel(alert, lot, total) {
   const entete =
     lot.length === total
       ? `${nom} ${verbe} à ton alerte « ${alert.name} ».`
-      : `${nom} ${verbe} à ton alerte « ${alert.name} ». En voici ${lot.length} — ` +
-        `le quota que tu as fixé.`;
+      : `${nom} ${verbe} à ton alerte « ${alert.name} ». En voici les ${lot.length} ` +
+        `plus récentes.`;
 
   return [
     entete,
@@ -158,14 +167,6 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
     }
   }
 
-  const { jour, envoyees, left } = alert.remainingToday();
-  if (!essai && left <= 0) {
-    alert.lastRunAt = new Date();
-    alert.lastResult = `Quota du jour atteint (${alert.maxPerDay}) : rien envoyé.`;
-    await alert.save();
-    return { skipped: 'quota quotidien atteint' };
-  }
-
   try {
     /*
      * Un declenchement a la main regarde tout, pas seulement le nouveau.
@@ -191,8 +192,7 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
       return { matched: 0, sent: 0, essai };
     }
 
-    // Le quota borne deux fois : la taille du message, et la journée.
-    const lot = trouvees.slice(0, Math.min(alert.maxPerRun, essai ? alert.maxPerRun : left));
+    const lot = trouvees.slice(0, MAX_LIGNES);
 
     const resultat = { matched: trouvees.length, notified: lot.length, essai, email: null, push: null };
 
@@ -219,10 +219,6 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
         });
       }
 
-      // Le compteur du jour se lit AVANT d ecrire la date : l inverse rendait
-      // la comparaison toujours vraie et le quota ne se remettait jamais a zero.
-      alert.sentToday = envoyees + lot.length;
-      alert.sentDay = jour;
       alert.lastRunAt = new Date();
       alert.lastCheckAt = new Date();
       alert.lastError = '';

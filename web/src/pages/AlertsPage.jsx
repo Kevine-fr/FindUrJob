@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
-import { STATUS_META, STATUS_ORDER, SOURCE_LABELS, SOURCE_COLORS } from '../lib/status.js';
+import { STATUS_META, SOURCE_LABELS, SOURCE_COLORS } from '../lib/status.js';
 import { UNITES, PRESETS_FRAICHEUR } from '../lib/freshness.js';
 import { activerPush, desactiverPush, abonnementActuel, pushSupporte } from '../lib/push.js';
 
@@ -8,9 +8,9 @@ import { activerPush, desactiverPush, abonnementActuel, pushSupporte } from '../
  * Alertes.
  *
  * Les critères sont exactement ceux de l'onglet Candidatures : on règle une
- * alerte comme on filtre une liste. Deux garde-fous les accompagnent, parce
- * qu'une alerte trop bavarde finit en courriels non lus — un quota, et une
- * échéance au-delà de laquelle elle s'éteint toute seule.
+ * alerte comme on filtre une liste. Une échéance facultative les accompagne :
+ * passée cette date, l'alerte s'éteint d'elle-même plutôt que de continuer à
+ * parler d'une recherche terminée.
  */
 
 /** Rythmes courants. Le cron reste modifiable pour qui veut autre chose. */
@@ -34,12 +34,20 @@ const VIDE = {
   email: true,
   push: false,
   cron: '0 8 * * *',
-  maxPerRun: 20,
-  maxPerDay: 60,
   expiresAt: null,
 };
 
 const PLATEFORMES = Object.keys(SOURCE_LABELS);
+
+/*
+ * Les statuts sur lesquels une alerte a un sens.
+ *
+ * « Relancé », « Entretien », « Refusé » et « Abandonné » se posent à la main
+ * depuis la fiche d'une candidature : être prévenu d'un état qu'on vient
+ * soi-même d'inscrire n'apprend rien. Restent ceux que l'application écrit
+ * elle-même, plus « Postulé » et « Offre », qui marquent une vraie étape.
+ */
+const STATUTS_ALERTE = ['brouillon', 'a_postuler', 'echec_envoi', 'a_verifier', 'postule', 'offre'];
 
 /** `2026-08-26` pour un `<input type="date">`. */
 const enDate = (valeur) => (valeur ? new Date(valeur).toISOString().slice(0, 10) : '');
@@ -260,7 +268,7 @@ export default function AlertsPage() {
           <div className="filter-group">
             <span className="filter-label">Statut</span>
             <div className="filter-chips">
-              {STATUS_ORDER.map((statut) => (
+              {STATUTS_ALERTE.map((statut) => (
                 <Bascule
                   key={statut}
                   actif={edition.statuses.includes(statut)}
@@ -412,36 +420,6 @@ export default function AlertsPage() {
               </div>
             </div>
 
-            {/* Le quota et l'échéance : ce qui empêche une alerte de devenir
-                du bruit qu'on finit par ignorer. */}
-            <div className="filter-group">
-              <span className="filter-label">Quota</span>
-              <div className="filter-chips alert-quota">
-                <label>
-                  <span className="muted">par envoi</span>
-                  <input
-                    className="input input-num"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={edition.maxPerRun}
-                    onChange={(e) => set('maxPerRun', Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  <span className="muted">par jour</span>
-                  <input
-                    className="input input-num"
-                    type="number"
-                    min="1"
-                    max="500"
-                    value={edition.maxPerDay}
-                    onChange={(e) => set('maxPerDay', Number(e.target.value))}
-                  />
-                </label>
-              </div>
-            </div>
-
             <div className="filter-group">
               <span className="filter-label">S'arrête le</span>
               <div className="filter-chips">
@@ -543,9 +521,6 @@ export default function AlertsPage() {
                   </em>
                 )}
                 {alerte.maxApplicants !== null && <em>≤ {alerte.maxApplicants} candidats</em>}
-                <em>
-                  quota {alerte.maxPerRun}/envoi · {alerte.maxPerDay}/jour
-                </em>
                 {alerte.expiresAt && (
                   <em>jusqu'au {new Date(alerte.expiresAt).toLocaleDateString('fr-FR')}</em>
                 )}

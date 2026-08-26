@@ -35,7 +35,7 @@ const PLATFORMS = {
       aide: 'Ton identifiant numérique, pas une adresse e-mail.' },
     color: '#ec4a2c',
     short: 'ft',
-    note: 'Authentification renforcée (code par courriel ou SMS) : passe par la reprise en main, la session est ensuite conservée.',
+    note: 'Enregistre ton identifiant et ton mot de passe : la session se rouvre alors toute seule quand elle expire. Si France Travail demande un code, la reprise en main prend le relais.',
   },
 };
 
@@ -164,9 +164,17 @@ function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
       <div className="field" style={{ marginBottom: 0 }}>
         <label>
           Mot de passe{' '}
-          {account.hasPassword && (
+          {account.hasPassword ? (
             <span className="muted" style={{ fontWeight: 400 }}>
               — déjà enregistré, laisse vide pour le garder
+            </span>
+          ) : (
+            /* Sans mot de passe enregistré, la veille n'a rien à rejouer : la
+               session expirée reste fermée jusqu'à une reprise en main. Le dire
+               ici évite de croire la reconnexion automatique active alors
+               qu'elle ne peut pas l'être. */
+            <span className="muted" style={{ fontWeight: 400 }}>
+              — nécessaire pour que la session se rouvre toute seule
             </span>
           )}
         </label>

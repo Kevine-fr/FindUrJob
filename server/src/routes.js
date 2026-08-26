@@ -133,6 +133,9 @@ router.post('/profile/compose', profile.composeProfileCv);
 router.get('/preferences', preferences.getPreferences);
 router.put('/preferences', preferences.updatePreferences);
 
+// Rapprochement : ce que les plateformes disent avoir recu.
+router.post('/applications/reconcile', applications.reconcileApplications);
+
 // Historique : statuts journalisés + CV générés, en un seul flux
 router.get('/history', history.listHistory);
 

@@ -118,6 +118,9 @@ export const api = {
         body: JSON.stringify({ status, note }),
       }),
     tailor: (id) => req(`/applications/${id}/tailor`, { method: 'POST' }),
+    // Demande aux plateformes ce qu elles ont recu, et promeut ce qu elles
+    // reconnaissent. Long : plusieurs pages lues dans un navigateur complet.
+    reconcile: () => req('/applications/reconcile', { method: 'POST' }),
     remove: (id) => req(`/applications/${id}`, { method: 'DELETE' }),
   },
 

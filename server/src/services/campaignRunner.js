@@ -9,6 +9,7 @@ import { tailorCv, scoreOffer } from './tailoringService.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
+import { reconcilier } from './reconciliation.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 /**
@@ -554,10 +555,33 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
         return `${name} : ${bits.join(', ')}`;
       });
 
+    /*
+     * Dernière étape : demander aux plateformes ce qu'elles ont réellement reçu.
+     *
+     * Une confirmation ne s'affiche pas toujours au moment de l'envoi, et le
+     * robot ne peut conclure que sur ce qu'il voit. Beaucoup de candidatures
+     * bien arrivées restaient donc en « à vérifier » ou « envoi échoué ». La
+     * plateforme, elle, sait : on lui demande, juste après avoir envoyé.
+     *
+     * Un échec ici ne remet rien en cause — les candidatures gardent le statut
+     * que l'envoi leur a donné, simplement sans la promotion.
+     */
+    let confirmees = 0;
+    if (!dryRun) {
+      try {
+        const bilan = await reconcilier(user);
+        confirmees = bilan.confirmed || 0;
+        summary.confirmed = confirmees;
+      } catch (error) {
+        summary.errors.push(`Rapprochement impossible : ${error.message}`);
+      }
+    }
+
     campaign.lastResult =
       `${summary.examined} offre(s) examinée(s)` +
       (detail.length ? ` — ${detail.join(' · ')}` : ' — aucune retenue') +
-      (summary.belowScore ? ` · ${summary.belowScore} sous le seuil` : '');
+      (summary.belowScore ? ` · ${summary.belowScore} sous le seuil` : '') +
+      (confirmees ? ` · ${confirmees} confirmée(s) par la plateforme` : '');
     campaign.lastError = summary.errors.slice(0, 3).join(' | ');
   } catch (error) {
     campaign.lastError = error.message;

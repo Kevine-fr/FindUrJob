@@ -90,6 +90,18 @@ export const botSessions = (user) => json(`/sessions?user=${encodeURIComponent(u
 export const botLogin = (platform, email, password, user) =>
   json('/login', { body: { platform, user, email, password }, timeout: 120_000 });
 
+/**
+ * Ce que la plateforme dit avoir recu.
+ *
+ * Long par nature : la lecture parcourt plusieurs pages dans un navigateur
+ * complet. Le delai par defaut du service serait bien trop court.
+ */
+export const botCandidatures = (platform, user, max = 200) =>
+  json(
+    `/candidatures?platform=${encodeURIComponent(platform)}&user=${encodeURIComponent(user)}&max=${max}`,
+    { method: "GET", timeout: 240_000 }
+  );
+
 export const botSearch = (platform, query, user) =>
   json('/search', { body: { platform, user, ...query } });
 

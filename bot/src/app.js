@@ -235,6 +235,38 @@ export function createApp() {
    * plutôt que par un chemin de fichier : le serveur et le bot ne partagent
    * aucun disque, et Playwright sait téléverser depuis un tampon mémoire.
    */
+  /**
+   * GET /candidatures — ce que la plateforme dit avoir reçu.
+   *
+   * C'est la contrepartie indispensable de `/apply` : une confirmation ne
+   * s'affiche pas toujours au moment de l'envoi, et s'y fier seul faisait
+   * classer en « à vérifier » des candidatures pourtant bien arrivées. Ici,
+   * c'est la plateforme qui répond.
+   *
+   * Toutes ne tiennent pas une telle liste : celles-là le disent plutôt que de
+   * rendre un tableau vide, qu'on prendrait pour « rien n'est arrivé ».
+   */
+  app.get(
+    '/candidatures',
+    asyncHandler(async (req, res) => {
+      const platform = getPlatform(req.query.platform);
+
+      if (typeof platform.listApplications !== 'function') {
+        return res.status(501).json({
+          error: `${req.query.platform} n'expose pas de liste « mes candidatures » exploitable.`,
+        });
+      }
+
+      const context = await getContext(req.query.platform, { user: req.query.user });
+      if (!(await platform.isLoggedIn(context))) {
+        return res.status(409).json({ error: `Aucune session ${req.query.platform} ouverte.` });
+      }
+
+      const max = Math.min(Math.max(1, Number(req.query.max) || 120), 400);
+      res.json({ applications: await platform.listApplications(context, { max }) });
+    })
+  );
+
   app.post(
     '/apply',
     asyncHandler(async (req, res) => {

@@ -1,5 +1,6 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
 import { applyForm } from './applyForm.js';
+import { lireBlocs, deroulerListe } from './mesCandidatures.js';
 
 /**
  * LinkedIn.
@@ -339,6 +340,78 @@ export async function apply(context, offer, options = {}) {
       confirmPattern:
         /candidature (bien )?(envoy|transmis)|votre candidature a été envoyée|application sent|candidature envoyée/i,
     });
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+/**
+ * Ce que LinkedIn dit avoir reçu.
+ *
+ * Son suivi range les candidatures derrière un onglet — « Candidature · 424 » —
+ * et ouvre par défaut sur « Enregistré », qui est vide. Sans ce clic, la page
+ * paraît ne rien contenir alors qu'elle porte des centaines d'entrées.
+ */
+export async function listApplications(context, { max = 120 } = {}) {
+  const page = await context.newPage();
+
+  try {
+    await page.goto('https://www.linkedin.com/jobs-tracker/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await page.waitForTimeout(4000);
+
+    /*
+     * L'onglet est un bouton *radio* — `div[role="radio"]` contenant un
+     * `label` — et non un onglet ni un bouton. Le chercher par le rôle
+     * « bouton » ou « tab » ne trouvait rien, et la page restait sur
+     * « Enregistré », qui est vide : on en concluait zéro candidature là où il y
+     * en a des centaines.
+     */
+    const onglet = page
+      .locator('[role="radio"], label')
+      .filter({ hasText: /^\s*Candidature\s*·/i })
+      .first();
+    if (await onglet.isVisible().catch(() => false)) {
+      await onglet.click().catch(() => {});
+      await page.waitForTimeout(5000);
+    }
+
+    await deroulerListe(page, { tours: Math.ceil(max / 20) + 2 });
+
+    /*
+     * Chaque ligne du suivi est un lien vers l'offre, et ce lien porte son
+     * identifiant : le rapprochement se fait donc à l'exact, sans dépendre du
+     * libellé. C'est précieux ici, car le texte de la ligne colle l'intitulé et
+     * la société sans séparateur — « Développeur H/F SP SEARCH · Guyancourt » —
+     * et rien ne dirait où l'un finit et où l'autre commence.
+     */
+    return page.evaluate((limite) => {
+      const vus = new Set();
+      const sorties = [];
+
+      for (const lien of document.querySelectorAll('a[href*="/jobs/view/"]')) {
+        const href = lien.getAttribute('href') || '';
+        const id = href.match(/\/jobs\/view\/(\d+)/)?.[1];
+        if (!id || vus.has(id)) continue;
+
+        const texte = (lien.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!/Candidature d[ée]pos[ée]e/i.test(texte)) continue;
+
+        vus.add(id);
+        sorties.push({
+          externalId: id,
+          titre: texte.split(/Candidature d[ée]pos[ée]e/i)[0].trim().slice(0, 120),
+          societe: '',
+          statut: 'Candidature',
+          url: `https://www.linkedin.com/jobs/view/${id}/`,
+        });
+        if (sorties.length >= limite) break;
+      }
+
+      return sorties;
+    }, max);
   } finally {
     await page.close().catch(() => {});
   }

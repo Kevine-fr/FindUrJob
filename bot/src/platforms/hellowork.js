@@ -1,5 +1,6 @@
 import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
 import { applyForm } from './applyForm.js';
+import { lireBlocs } from './mesCandidatures.js';
 
 /**
  * HelloWork.
@@ -268,6 +269,54 @@ export async function apply(context, offer, options = {}) {
     await humanPause(1200, 2000);
 
     return await applyForm(page, options);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+/**
+ * Ce que HelloWork dit avoir reçu.
+ *
+ * Ses cartes sont des `article` dont les premières lignes sont, dans l'ordre :
+ * le statut (« Envoyée »), l'intitulé, puis la société. La pagination se fait
+ * par `?p=N`, dix par page.
+ *
+ * On s'arrête dès qu'une page ne rapporte plus rien de neuf : la liste peut
+ * compter des centaines d'entrées, et les parcourir toutes pour rapprocher une
+ * poignée de candidatures serait du temps perdu.
+ */
+export async function listApplications(context, { max = 120 } = {}) {
+  const page = await context.newPage();
+  const candidatures = [];
+
+  try {
+    for (let numero = 1; candidatures.length < max && numero <= 20; numero += 1) {
+      const url =
+        'https://www.hellowork.com/fr-fr/candidat/mes-candidatures.html' +
+        (numero > 1 ? `?p=${numero}` : '');
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      if (numero === 1) await dismissConsent(page);
+      await page.waitForTimeout(2200);
+
+      const blocs = await lireBlocs(page, 'article', { lignesMini: 3 });
+      if (!blocs.length) break;
+
+      for (const bloc of blocs) {
+        const [statut, titre, societe] = bloc.lignes;
+        if (!titre) continue;
+        candidatures.push({
+          titre,
+          societe: societe || '',
+          statut: statut || '',
+          url: bloc.lien || '',
+        });
+      }
+
+      await humanPause(600, 1200);
+    }
+
+    return candidatures.slice(0, max);
   } finally {
     await page.close().catch(() => {});
   }

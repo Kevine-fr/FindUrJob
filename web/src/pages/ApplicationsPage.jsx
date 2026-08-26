@@ -38,6 +38,8 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filtres, setFiltres] = useState(FILTRES_VIDES);
+  // Bilan du dernier rapprochement, affiche sous les filtres.
+  const [verif, setVerif] = useState('');
 
   const set = (cle, valeur) => setFiltres((f) => ({ ...f, [cle]: valeur }));
 
@@ -165,7 +167,32 @@ export default function ApplicationsPage() {
           <h1>Candidatures</h1>
           <p>Le fil de tes candidatures — statut, historique et CV ciblé par offre.</p>
         </div>
+        {/* Le robot ne marque « Postulé » que s'il voit une confirmation, et une
+            confirmation ne s'affiche pas toujours. Ce bouton va demander aux
+            plateformes ce qu'elles ont réellement reçu. */}
+        <button
+          className="btn btn-sm"
+          onClick={async () => {
+            setVerif('Vérification auprès des plateformes…');
+            try {
+              const bilan = await api.applications.reconcile();
+              setVerif(
+                bilan.confirmed
+                  ? `${bilan.confirmed} candidature${bilan.confirmed > 1 ? 's' : ''} confirmée${bilan.confirmed > 1 ? 's' : ''} sur ${bilan.examined} vérifiée${bilan.examined > 1 ? 's' : ''}.`
+                  : `Aucune confirmation nouvelle sur ${bilan.examined || 0} vérifiée(s).`
+              );
+              load();
+            } catch (e) {
+              setVerif(`Échec : ${e.message}`);
+            }
+          }}
+          disabled={Boolean(verif) && verif.endsWith('…')}
+        >
+          Vérifier auprès des plateformes
+        </button>
       </div>
+
+      {verif && <div className="map-notice">{verif}</div>}
 
       {apps.length > 0 && (
         <div className="panel filters">

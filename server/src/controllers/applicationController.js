@@ -3,6 +3,7 @@ import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import { asyncHandler } from '../middleware.js';
+import { reconcilier } from '../services/reconciliation.js';
 import { tailorCv } from '../services/tailoringService.js';
 import { renderCvPdf } from '../services/botService.js';
 import { buildTailoredCvHtml } from '../services/cvDocument.js';
@@ -153,4 +154,20 @@ export const getLetterPdf = asyncHandler(async (req, res) => {
     'Content-Disposition': `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${nom}"`,
   });
   res.end(buffer);
+});
+
+/**
+ * POST /applications/reconcile — demander aux plateformes ce qu'elles ont reçu.
+ *
+ * Le robot ne marque « Postulé » que s'il voit une confirmation, et une
+ * confirmation ne s'affiche pas toujours. Cette passe va lire la liste que
+ * chaque plateforme tient de son côté et promeut ce qu'elle reconnaît. Elle ne
+ * dégrade jamais un statut : une absence de la liste ne prouve rien.
+ */
+export const reconcileApplications = asyncHandler(async (req, res) => {
+  const bilan = await reconcilier(req.user.id, {
+    sources: Array.isArray(req.body?.sources) ? req.body.sources : null,
+    max: Math.min(400, Math.max(20, Number(req.body?.max) || 200)),
+  });
+  res.json(bilan);
 });

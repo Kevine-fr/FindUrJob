@@ -5,6 +5,7 @@ import { collectOffers } from './controllers/offerController.js';
 import { runCampaign } from './services/campaignRunner.js';
 import Alert from './models/Alert.js';
 import { runAlert } from './services/alertRunner.js';
+import { veillerSessions } from './services/sessionWatchdog.js';
 
 /**
  * Planificateur des campagnes.
@@ -170,6 +171,34 @@ export async function startScheduler() {
     await reschedule();
   } catch (error) {
     console.error('campagnes : programmation impossible —', error.message);
+  }
+
+  /*
+   * Veille des sessions : toutes les heures, on regarde et on rouvre ce qui est
+   * reparable avant que la campagne n en ait besoin. La reconnexion etait
+   * jusqu ici reactive — on decouvrait la session morte au moment de
+   * candidater, et le tour etait perdu. France Travail expire le plus vite.
+   */
+  try {
+    const veille = cron.schedule(
+      "17 * * * *",
+      () => {
+        veillerSessions()
+          .then((bilans) => {
+            for (const b of bilans) {
+              console.log(
+                `veille ${b.user} : rouvertes ${(b.rouvertes || []).join(", ") || "aucune"}` +
+                  (b.echouees?.length ? ` · echecs ${b.echouees.join(", ")}` : "")
+              );
+            }
+          })
+          .catch((error) => console.error("veille des sessions :", error.message));
+      },
+      { timezone: "Europe/Paris" }
+    );
+    tasks.set("veille:sessions", veille);
+  } catch (error) {
+    console.error("veille des sessions : programmation impossible —", error.message);
   }
 
   // Les alertes se programment a part : une panne cote campagnes ne doit pas

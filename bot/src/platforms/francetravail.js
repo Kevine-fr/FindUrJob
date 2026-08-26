@@ -56,13 +56,82 @@ export async function isLoggedIn(context) {
  * Pas d'automatisation ici, et c'est délibéré : l'authentification renforcée
  * de France Travail attend un code que seule la personne reçoit.
  */
-export async function login() {
-  return {
-    status: 'manual',
-    message:
-      'France Travail demande une authentification renforcée (code par courriel ou SMS). ' +
-      'Ouvre la reprise en main pour te connecter une fois : la session est ensuite conservée.',
-  };
+export async function login(context, { email, password }) {
+  const page = await context.newPage();
+
+  try {
+    await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+    // Pas de redirection vers le service d'authentification : la session tient
+    // encore. Rejouer le formulaire ne ferait que risquer une alerte inutile.
+    if (!/authentification-candidat/.test(page.url())) {
+      return { status: 'connected', message: 'Session France Travail déjà ouverte.' };
+    }
+
+    /*
+     * Le formulaire est stable : `#identifiant` et `#password`, avec des `name`
+     * génériques (`callback_0`, `callback_1`) hérités de son moteur
+     * d'authentification. On vise les deux, l'identifiant en premier.
+     *
+     * L'« identifiant » est un numéro à onze chiffres, pas une adresse : c'est
+     * ce que France Travail réclame, et c'est ce que l'onglet Comptes demande.
+     */
+    const identifiant = page.locator('#identifiant, input[name="callback_0"]').first();
+    try {
+      await identifiant.waitFor({ state: 'visible', timeout: 15_000 });
+    } catch {
+      return {
+        status: 'verification',
+        message:
+          "Le formulaire de connexion France Travail n'est pas accessible. " +
+          'Termine la connexion depuis la reprise en main.',
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
+    }
+
+    await identifiant.fill(email);
+    await humanPause(300, 800);
+    await page.locator('#password, input[name="callback_1"]').first().fill(password);
+    await humanPause(400, 900);
+
+    await page.getByRole('button', { name: /se connecter/i }).first().click().catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
+    await humanPause(2000, 3000);
+
+    /*
+     * L'authentification renforcée n'arrive pas à chaque fois — c'est bien pour
+     * cela que la connexion vaut la peine d'être tentée. Quand elle arrive, on
+     * s'arrête : un code envoyé par courriel ou SMS ne se devine pas, et
+     * s'acharner déclencherait surtout une alerte de sécurité sur le compte.
+     */
+    const texte = await page.innerText('body').catch(() => '');
+    if (/code (de )?(v[ée]rification|s[ée]curit[ée])|nous vous avons envoy|double authentification/i.test(texte)) {
+      return {
+        status: 'verification',
+        message:
+          'France Travail demande un code de vérification (courriel ou SMS). ' +
+          'Ouvre la reprise en main pour le saisir : la session tient ensuite.',
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
+    }
+
+    if (/authentification-candidat/.test(page.url())) {
+      return {
+        status: 'verification',
+        message:
+          "France Travail n'a pas validé la connexion : vérifie l'identifiant (onze " +
+          'chiffres) et le mot de passe, ou termine depuis la reprise en main.',
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
+    }
+
+    return { status: 'connected', message: 'Session France Travail ouverte.', url: page.url() };
+  } catch (error) {
+    return { status: 'manual', message: `Connexion France Travail : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 export async function apply(context, offer, options = {}) {

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Application from '../models/Application.js';
 import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
@@ -12,14 +13,132 @@ import { APPLICATION_STATUSES } from '../utils/constants.js';
 
 const POPULATE = ['offer', 'cvVersion'];
 
+const DEFAULT_PAGE_SIZE = 30;
+const MAX_PAGE_SIZE = 100;
+
+// Unités acceptées pour l'ancienneté d'une annonce, en millisecondes.
+const UNITES_MS = {
+  minute: 60_000,
+  heure: 3_600_000,
+  jour: 86_400_000,
+  semaine: 604_800_000,
+  mois: 2_592_000_000,
+};
+
+// « C++ » ou « (H/F) » dans une recherche libre feraient tomber la requête.
+const escapeRegex = (valeur) => valeur.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * GET /applications — liste paginée.
+ *
+ * Elle rendait **toutes** les candidatures d'un coup, chacune avec son offre et
+ * sa version de CV jointes. À cinq cents candidatures, cela faisait plusieurs
+ * mégaoctets à chaque affichage de l'onglet, et le rafraîchissement automatique
+ * les redemandait toutes les vingt secondes.
+ *
+ * Le filtrage remonte ici en même temps que la pagination, et ce n'est pas un
+ * détail : filtré côté navigateur, un statut ne se serait appliqué qu'à la page
+ * affichée, et « Envoi échoué » n'aurait montré que les échecs des trente
+ * dernières candidatures.
+ *
+ * Source, fraîcheur et concurrence appartiennent à l'*offre*, pas à la
+ * candidature. On résout donc d'abord les offres concernées, puis on restreint
+ * les candidatures à celles-là — une jointure suffirait, mais deux requêtes
+ * indexées se lisent bien mieux qu'un pipeline d'agrégation.
+ */
 export const listApplications = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const filter = { user: req.user.id };
-  if (status) filter.status = status;
-  const applications = await Application.find(filter)
-    .populate(POPULATE)
-    .sort({ updatedAt: -1 });
-  res.json(applications);
+  const user = req.user.id;
+  const { status, source, q } = req.query;
+
+  const filtreOffre = { user };
+  let restreintParOffre = false;
+
+  if (source) {
+    filtreOffre.source = { $in: String(source).split(',').map((s) => s.trim()).filter(Boolean) };
+    restreintParOffre = true;
+  }
+
+  const valeurAge = Number(req.query.publishedWithin);
+  const uniteAge = UNITES_MS[req.query.publishedUnit] || UNITES_MS.jour;
+  if (Number.isFinite(valeurAge) && valeurAge > 0) {
+    // Sans date de publication, on ne peut pas affirmer qu'une annonce est
+    // récente : elle sort du filtre plutôt que d'y passer pour fraîche.
+    filtreOffre.publishedAt = { $ne: null, $gte: new Date(Date.now() - valeurAge * uniteAge) };
+    restreintParOffre = true;
+  }
+
+  const maxCandidats = Number(req.query.maxApplicants);
+  if (Number.isFinite(maxCandidats) && maxCandidats >= 0) {
+    // Un compteur inconnu n'est pas un compteur à zéro.
+    filtreOffre.applicantCount = { $ne: null, $lte: maxCandidats };
+    restreintParOffre = true;
+  }
+
+  const filtre = { user };
+  if (restreintParOffre) {
+    filtre.offer = { $in: await JobOffer.find(filtreOffre).distinct('_id') };
+  }
+
+  /*
+   * La recherche libre porte sur l'offre **et** sur les notes de la
+   * candidature : c'est ce que faisait le filtrage côté navigateur, et le
+   * restreindre à l'offre ferait disparaître des résultats sans prévenir.
+   */
+  if (q) {
+    const motif = new RegExp(escapeRegex(q), 'i');
+    const trouvees = await JobOffer.find({
+      ...filtreOffre,
+      $or: [{ title: motif }, { company: motif }, { location: motif }],
+    }).distinct('_id');
+
+    filtre.$and = [
+      ...(filtre.$and || []),
+      { $or: [{ offer: { $in: trouvees } }, { notes: motif }] },
+    ];
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+
+  // Le statut est appliqué à la page, mais **pas** aux compteurs : une pastille
+  // doit annoncer combien il y a de « Postulé » même quand on regarde les
+  // « Envoi échoué », sinon toutes les autres tomberaient à zéro dès le premier
+  // clic.
+  const filtrePage = status ? { ...filtre, status } : filtre;
+
+  const [applications, total, meta] = await Promise.all([
+    Application.find(filtrePage)
+      .populate(POPULATE)
+      .sort({ updatedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    Application.countDocuments(filtrePage),
+    Application.aggregate([
+      { $match: { ...filtre, user: new mongoose.Types.ObjectId(user) } },
+      { $lookup: { from: 'joboffers', localField: 'offer', foreignField: '_id', as: 'o' } },
+      { $unwind: { path: '$o', preserveNullAndEmptyArrays: true } },
+      {
+        $facet: {
+          parStatut: [{ $group: { _id: '$status', n: { $sum: 1 } } }],
+          parSource: [{ $group: { _id: '$o.source', n: { $sum: 1 } } }],
+        },
+      },
+    ]),
+  ]);
+
+  const compter = (lignes) =>
+    Object.fromEntries((lignes || []).filter((l) => l._id).map((l) => [l._id, l.n]));
+
+  res.json({
+    applications,
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    limit,
+    // De quoi garder les pastilles justes alors qu'on ne voit qu'une page.
+    counts: compter(meta?.[0]?.parStatut),
+    sources: compter(meta?.[0]?.parSource),
+  });
 });
 
 export const getApplication = asyncHandler(async (req, res) => {

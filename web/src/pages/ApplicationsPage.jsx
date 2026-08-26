@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
@@ -22,7 +22,24 @@ const FILTRES_VIDES = {
 };
 
 export default function ApplicationsPage() {
-  const [apps, setApps] = useState([]);
+  /*
+   * La réponse du serveur, paginée.
+   *
+   * L'onglet demandait auparavant **toutes** les candidatures, offres et CV
+   * joints — plusieurs mégaoctets à cinq cents candidatures, redemandés toutes
+   * les vingt secondes par le rafraîchissement automatique. Le filtrage est
+   * remonté au serveur du même coup : filtré ici, un statut ne se serait
+   * appliqué qu'à la page affichée.
+   */
+  const [data, setData] = useState({
+    applications: [],
+    total: 0,
+    page: 1,
+    pages: 1,
+    counts: {},
+    sources: {},
+  });
+  const [page, setPage] = useState(1);
   /*
    * La candidature ouverte est dans l URL, pas dans un etat local.
    *
@@ -43,18 +60,37 @@ export default function ApplicationsPage() {
 
   const set = (cle, valeur) => setFiltres((f) => ({ ...f, [cle]: valeur }));
 
-  const load = () => {
+  // Les filtres deviennent une requête : c'est le serveur qui trie et pagine.
+  const query = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filtres.q.trim()) params.set('q', filtres.q.trim());
+    if (filtres.status) params.set('status', filtres.status);
+    if (filtres.source) params.set('source', filtres.source);
+    if (filtres.age) {
+      params.set('publishedWithin', filtres.age);
+      params.set('publishedUnit', filtres.ageUnit);
+    }
+    if (filtres.maxApplicants !== '') params.set('maxApplicants', filtres.maxApplicants);
+    return params.toString();
+  }, [filtres]);
+
+  const load = useCallback(() => {
     setLoading(true);
     api.applications
-      .list()
-      .then((list) => {
-        setApps(list);
+      .list(`?${query}${query ? '&' : ''}page=${page}`)
+      .then((reponse) => {
+        setData(reponse);
         setError(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  };
-  useEffect(load, []);
+  }, [query, page]);
+
+  useEffect(load, [load]);
+
+  // Changer un filtre repart de la première page : rester en page 4 d'un
+  // résultat qui n'en compte plus qu'une affichait un vide trompeur.
+  useEffect(() => setPage(1), [query]);
 
   /*
    * Les campagnes tournent en arrière-plan : une candidature préparée il y a
@@ -66,67 +102,39 @@ export default function ApplicationsPage() {
     if (selected) return undefined; // le détail a sa propre synchronisation
     const timer = setInterval(() => {
       api.applications
-        .list()
-        .then(setApps)
+        .list(`?${query}${query ? '&' : ''}page=${page}`)
+        .then(setData)
         .catch(() => {});
     }, 20_000);
     return () => clearInterval(timer);
-  }, [selected]);
+  }, [selected, query, page]);
 
-  // Compteur par statut : savoir qu'une case est vide évite de cliquer dedans.
-  const parStatut = useMemo(() => {
-    const compte = {};
-    for (const a of apps) compte[a.status] = (compte[a.status] || 0) + 1;
-    return compte;
-  }, [apps]);
-
-  const visibles = useMemo(() => {
-    const recherche = filtres.q.trim().toLowerCase();
-    const unite = UNITES.find((u) => u.key === filtres.ageUnit);
-    const limite = filtres.age && unite ? Date.now() - Number(filtres.age) * unite.ms : null;
-
-    return apps.filter((a) => {
-      if (filtres.status && a.status !== filtres.status) return false;
-      if (filtres.source && a.offer?.source !== filtres.source) return false;
-
-      if (limite) {
-        // Sans date de publication, on ne peut pas affirmer que l'offre est
-        // récente : on l'écarte plutôt que de la faire passer pour fraîche.
-        if (!a.offer?.publishedAt) return false;
-        if (new Date(a.offer.publishedAt).getTime() < limite) return false;
-      }
-
-      if (filtres.maxApplicants !== '') {
-        const n = a.offer?.applicantCount;
-        if (typeof n !== 'number' || n > Number(filtres.maxApplicants)) return false;
-      }
-
-      if (recherche) {
-        const foin = [a.offer?.title, a.offer?.company, a.offer?.location, a.notes]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        if (!foin.includes(recherche)) return false;
-      }
-
-      return true;
-    });
-  }, [apps, filtres]);
+  /*
+   * Compteurs et plateformes viennent du serveur, calculés sur l'ensemble
+   * filtré et non sur la page. Les déduire de la page ferait tomber toutes les
+   * autres pastilles à zéro au premier clic sur un statut.
+   */
+  const apps = data.applications;
+  const parStatut = data.counts || {};
 
   const filtreActif = JSON.stringify(filtres) !== JSON.stringify(FILTRES_VIDES);
 
   // Seules les plateformes réellement présentes méritent une pastille.
   const sources = useMemo(
     () =>
-      [...new Set(apps.map((a) => a.offer?.source).filter(Boolean))].map((value) => ({
+      Object.entries(data.sources || {}).map(([value, count]) => ({
         value,
         label: SOURCE_LABELS[value] || value,
+        count,
       })),
-    [apps]
+    [data.sources]
   );
 
   const refreshOne = (updated) => {
-    setApps((list) => list.map((a) => (a._id === updated._id ? updated : a)));
+    setData((etat) => ({
+      ...etat,
+      applications: etat.applications.map((a) => (a._id === updated._id ? updated : a)),
+    }));
     setSelected(updated);
   };
 
@@ -194,7 +202,7 @@ export default function ApplicationsPage() {
 
       {verif && <div className="map-notice">{verif}</div>}
 
-      {apps.length > 0 && (
+      {(apps.length > 0 || filtreActif) && (
         <div className="panel filters">
           <SearchField
             value={filtres.q}
@@ -236,8 +244,8 @@ export default function ApplicationsPage() {
           />
 
           <FilterFooter
-            shown={visibles.length}
-            total={apps.length}
+            shown={apps.length}
+            total={data.total}
             noun="candidature"
             active={filtreActif}
             onReset={() => setFiltres(FILTRES_VIDES)}
@@ -258,17 +266,15 @@ export default function ApplicationsPage() {
         </div>
       ) : apps.length === 0 ? (
         <div className="empty">
-          <strong>Aucune candidature</strong>
-          Va dans « Offres » et clique sur « Suivre cette offre ».
-        </div>
-      ) : visibles.length === 0 ? (
-        <div className="empty">
-          <strong>Aucune candidature ne correspond</strong>
-          Tes {apps.length} candidatures sont toujours là — ce sont les filtres qui les masquent.
+          <strong>{filtreActif ? 'Aucune candidature ne correspond' : 'Aucune candidature'}</strong>
+          {filtreActif
+            ? 'Ce sont les filtres qui les masquent — remets-les à zéro pour tout revoir.'
+            : 'Va dans « Offres » et clique sur « Suivre cette offre ».'}
         </div>
       ) : (
+        <>
         <div className="grid grid-cards stagger">
-          {visibles.map((a, index) => {
+          {apps.map((a, index) => {
             const meta = STATUS_META[a.status] || { label: a.status, color: '#62667a' };
             return (
               <div
@@ -323,6 +329,31 @@ export default function ApplicationsPage() {
             );
           })}
         </div>
+
+        {/* Même pied de page que l'onglet Offres : on ne réapprend pas à
+            naviguer d'un onglet à l'autre. */}
+        {data.pages > 1 && (
+          <nav className="pager" aria-label="Pagination">
+            <button
+              className="btn btn-sm"
+              onClick={() => setPage((valeur) => Math.max(1, valeur - 1))}
+              disabled={page <= 1}
+            >
+              ← Précédent
+            </button>
+            <span className="pager-info">
+              Page {page} sur {data.pages} — {data.total} candidatures
+            </span>
+            <button
+              className="btn btn-sm"
+              onClick={() => setPage((valeur) => Math.min(data.pages, valeur + 1))}
+              disabled={page >= data.pages}
+            >
+              Suivant →
+            </button>
+          </nav>
+        )}
+        </>
       )}
     </>
   );

@@ -28,16 +28,28 @@ const router = Router();
  * `APP_COMMIT` complète : savoir « 0.1.0 » ne suffit pas à identifier ce qui
  * tourne réellement quand on déploie plusieurs fois par jour.
  */
-router.get('/health', (req, res) =>
+router.get('/health', (req, res) => {
+  /*
+   * `deployed` distingue une version livrée d'un repli.
+   *
+   * Sans lui, `0.1.0` — la valeur figée du `package.json` — se lisait comme une
+   * version publiée. C'est ce qui a permis à la chaîne de rester cassée sans
+   * qu'on le voie : le compose de production ne transmettait pas `APP_VERSION`,
+   * l'écran affichait tranquillement `0.1.0` à chaque livraison, et rien ne
+   * disait que ce numéro ne voulait plus rien dire.
+   */
+  const livree = Boolean(process.env.APP_VERSION);
+
   res.json({
     status: 'ok',
     service: 'findurjob-api',
     version: process.env.APP_VERSION || pkg.version,
+    deployed: livree,
     commit: (process.env.APP_COMMIT || '').slice(0, 7),
     builtAt: process.env.APP_BUILT_AT || '',
     time: new Date().toISOString(),
-  })
-);
+  });
+});
 
 // --- Authentification (seules routes ouvertes) --------------------------
 router.post('/auth/register', auth.register);

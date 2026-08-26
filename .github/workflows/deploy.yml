@@ -50,13 +50,17 @@ jobs:
           git fetch origin --prune
           git reset --hard origin/main
 
+          # La base vient du fichier VERSION, le dernier nombre du compte de
+          # commits : chaque deploiement porte donc une version differente, sans
+          # que personne n ait a l incrementer a la main.
           echo "Calcul de la version..."
           BASE_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
           [ -n "$BASE_VERSION" ] || BASE_VERSION="1.0"
           PATCH=$(git rev-list --count HEAD)
           APP_VERSION="${BASE_VERSION}.${PATCH}"
           APP_COMMIT=$(git rev-parse --short HEAD)
-          echo "Version : ${APP_VERSION} (${APP_COMMIT})"
+          APP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "Version : ${APP_VERSION} (${APP_COMMIT}) - ${APP_BUILT_AT}"
 
           echo "Generation du .env racine (lu par docker compose)..."
 
@@ -80,6 +84,7 @@ jobs:
           {
             echo "APP_VERSION=${APP_VERSION}"
             echo "APP_COMMIT=${APP_COMMIT}"
+            echo "APP_BUILT_AT=${APP_BUILT_AT}"
           } >> .env
 
           # Le moteur IA lit ses cles dans ai/.env (env_file du compose), pas
@@ -131,6 +136,24 @@ jobs:
             [ "$i" = "30" ] && { echo "L'API ne repond pas :"; docker compose -f docker-compose.prod.yml logs --tail=40 server; exit 1; }
             sleep 2
           done
+
+          # La version affichee doit etre celle qu on vient de deployer.
+          #
+          # Elle traverse une chaine entiere — .env, interpolation compose,
+          # variables du conteneur, /api/health — et il a suffi que le compose
+          # de production oublie de transmettre APP_VERSION pour qu elle se fige
+          # sur celle du package.json pendant des semaines, sans que rien ne le
+          # signale. Un deploiement qui n arrive pas a se nommer a rate quelque
+          # chose : autant l apprendre ici.
+          echo "Verification de la version publiee..."
+          VERSION_VUE=$(docker exec findurjob-api node -e 'fetch("http://127.0.0.1:4000/api/health").then(r=>r.json()).then(d=>console.log(d.version)).catch(()=>console.log(""))' 2>/dev/null | tr -d '[:space:]')
+          if [ "$VERSION_VUE" != "$APP_VERSION" ]; then
+            echo "L'API annonce « ${VERSION_VUE:-rien} » au lieu de « ${APP_VERSION} »."
+            echo "APP_VERSION n'atteint pas le conteneur : verifier le .env et docker-compose.prod.yml."
+            docker compose -f docker-compose.prod.yml exec -T server env | grep -E '^APP_' || true
+            exit 1
+          fi
+          echo "Version publiee : ${VERSION_VUE}"
 
           docker exec nginx nginx -s reload || true
 

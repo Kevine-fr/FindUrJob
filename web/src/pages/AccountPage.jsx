@@ -229,8 +229,18 @@ export default function AccountPage() {
             <dl className="facts">
               <div>
                 <dt>Application</dt>
-                <dd>
+                <dd className="row">
                   <span className="chip chip-accent">v{version.version}</span>
+                  {/* Une version de repli n'est pas une version livrée : le
+                      dire évite de lire un numéro figé comme un numéro à jour. */}
+                  {!version.deployed && (
+                    <span
+                      className="chip"
+                      title="Numéro du package.json : aucune livraison n'a nommé cette version."
+                    >
+                      développement
+                    </span>
+                  )}
                 </dd>
               </div>
               {version.commit && (

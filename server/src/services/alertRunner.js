@@ -16,15 +16,6 @@ import { APPLICATION_STATUSES } from '../utils/constants.js';
  * laisser une trace lisible dans sa fiche, pas faire tomber le planificateur.
  */
 
-/*
- * Combien de lignes un message peut porter.
- *
- * Ce n est pas un quota — c est une limite de lisibilite : passe une trentaine
- * de lignes, un courriel ne se lit plus, il se survole. Le total reel est
- * toujours annonce, et le lien renvoie a la liste complete.
- */
-const MAX_LIGNES = 25;
-
 const UNITES_MS = {
   minute: 60_000,
   heure: 3_600_000,
@@ -126,14 +117,21 @@ function ligne(candidature) {
 
 function corpsCourriel(alert, lot, total) {
   const base = appUrl();
-  const lignes = lot.map((c) => `• ${ligne(c)}\n  ${base}/candidatures`);
+  /*
+   * Chaque ligne pointe vers SA candidature.
+   *
+   * Toutes renvoyaient vers la liste entière : on annonçait dix candidatures et
+   * on laissait le lecteur retrouver lui-même lesquelles, au milieu de plusieurs
+   * centaines. Une candidature a désormais son adresse.
+   */
+  const lignes = lot.map((c) => `• ${ligne(c)}\n  ${base}/candidatures/${c._id}`);
 
   const { nom, verbe } = accord(total);
   const entete =
     lot.length === total
       ? `${nom} ${verbe} à ton alerte « ${alert.name} ».`
       : `${nom} ${verbe} à ton alerte « ${alert.name} ». En voici les ${lot.length} ` +
-        `plus récentes.`;
+        `plus récentes — le quota que tu as fixé.`;
 
   return [
     entete,
@@ -167,6 +165,18 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
     }
   }
 
+  /*
+   * Le quota borne la fenetre glissante choisie. Une alerte qui l a epuise se
+   * tait jusqu a la fin de la periode plutot que de continuer a ecrire.
+   */
+  const quota = alert.quotaRestant();
+  if (!essai && quota.left <= 0) {
+    alert.lastRunAt = new Date();
+    alert.lastResult = `Quota atteint (${alert.libelleQuota()}) : rien envoye.`;
+    await alert.save();
+    return { skipped: "quota atteint" };
+  }
+
   try {
     /*
      * Un declenchement a la main regarde tout, pas seulement le nouveau.
@@ -192,7 +202,8 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
       return { matched: 0, sent: 0, essai };
     }
 
-    const lot = trouvees.slice(0, MAX_LIGNES);
+    // Le quota borne deux fois : la longueur du message, et la periode.
+    const lot = trouvees.slice(0, essai ? alert.maxPerRun : Math.min(alert.maxPerRun, quota.left));
 
     const resultat = { matched: trouvees.length, notified: lot.length, essai, email: null, push: null };
 
@@ -219,6 +230,8 @@ export async function runAlert(alertId, { essai = false, manuel = false } = {}) 
         });
       }
 
+      alert.windowStartedAt = quota.debut;
+      alert.sentInWindow = quota.envoyees + lot.length;
       alert.lastRunAt = new Date();
       alert.lastCheckAt = new Date();
       alert.lastError = '';

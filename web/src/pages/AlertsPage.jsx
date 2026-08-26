@@ -8,9 +8,9 @@ import { activerPush, desactiverPush, abonnementActuel, pushSupporte } from '../
  * Alertes.
  *
  * Les critères sont exactement ceux de l'onglet Candidatures : on règle une
- * alerte comme on filtre une liste. Une échéance facultative les accompagne :
- * passée cette date, l'alerte s'éteint d'elle-même plutôt que de continuer à
- * parler d'une recherche terminée.
+ * alerte comme on filtre une liste. Deux garde-fous les accompagnent : un quota
+ * — combien de candidatures sur quelle période, et combien dans un même
+ * courriel — et une échéance au-delà de laquelle l'alerte s'éteint d'elle-même.
  */
 
 /** Rythmes courants. Le cron reste modifiable pour qui veut autre chose. */
@@ -34,6 +34,10 @@ const VIDE = {
   email: true,
   push: false,
   cron: '0 8 * * *',
+  maxPerRun: 20,
+  maxPerWindow: 60,
+  windowValue: 1,
+  windowUnit: 'jour',
   expiresAt: null,
 };
 
@@ -421,6 +425,63 @@ export default function AlertsPage() {
             </div>
 
             <div className="filter-group">
+              <span className="filter-label">Quota</span>
+              <div className="filter-chips alert-quota">
+                <label>
+                  <span className="muted">au plus</span>
+                  <input
+                    className="input input-num"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={edition.maxPerWindow}
+                    onChange={(e) => set('maxPerWindow', Number(e.target.value))}
+                  />
+                  <span className="muted">candidatures par</span>
+                  <input
+                    className="input input-num"
+                    type="number"
+                    min="1"
+                    value={edition.windowValue}
+                    onChange={(e) => set('windowValue', Number(e.target.value))}
+                  />
+                  {/* La même palette d'unités que les autres filtres : minute,
+                      heure, jour, semaine, mois. « 10 par heure » et « 50 par
+                      semaine » sont deux besoins réels. */}
+                  <select
+                    className="input"
+                    value={edition.windowUnit}
+                    onChange={(e) => set('windowUnit', e.target.value)}
+                  >
+                    {UNITES.map((u) => (
+                      <option key={u.key} value={u.key}>
+                        {u.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="filter-group">
+              <span className="filter-label">Dans un courriel</span>
+              <div className="filter-chips alert-quota">
+                <label>
+                  <span className="muted">au plus</span>
+                  <input
+                    className="input input-num"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={edition.maxPerRun}
+                    onChange={(e) => set('maxPerRun', Number(e.target.value))}
+                  />
+                  <span className="muted">candidatures listées</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="filter-group">
               <span className="filter-label">S'arrête le</span>
               <div className="filter-chips">
                 <input
@@ -521,6 +582,12 @@ export default function AlertsPage() {
                   </em>
                 )}
                 {alerte.maxApplicants !== null && <em>≤ {alerte.maxApplicants} candidats</em>}
+                <em>
+                  {alerte.maxPerWindow}/{alerte.windowValue > 1 ? `${alerte.windowValue} ` : ''}
+                  {UNITES.find((u) => u.key === alerte.windowUnit)?.label || alerte.windowUnit}
+                  {' · '}
+                  {alerte.maxPerRun} par courriel
+                </em>
                 {alerte.expiresAt && (
                   <em>jusqu'au {new Date(alerte.expiresAt).toLocaleDateString('fr-FR')}</em>
                 )}

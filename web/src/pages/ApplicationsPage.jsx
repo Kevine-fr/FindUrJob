@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
 import { ilYA, fraicheur, candidats, concurrence, UNITES } from '../lib/freshness.js';
@@ -22,6 +23,17 @@ const FILTRES_VIDES = {
 
 export default function ApplicationsPage() {
   const [apps, setApps] = useState([]);
+  /*
+   * La candidature ouverte est dans l URL, pas dans un etat local.
+   *
+   * Sans cela elle n avait pas d adresse : le courriel d alerte ne pouvait
+   * renvoyer que vers la liste entiere, a charge pour le lecteur de retrouver
+   * lui-meme la ligne dont on venait de lui parler. Une candidature adressable
+   * se partage, se met en favori, et le bouton Precedent du navigateur la
+   * referme comme on s y attend.
+   */
+  const { id } = useParams();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -116,11 +128,31 @@ export default function ApplicationsPage() {
     setSelected(updated);
   };
 
+  /*
+   * Arriver directement par l URL — depuis un courriel, par exemple — precede
+   * le chargement de la liste : la candidature est alors demandee seule.
+   */
+  useEffect(() => {
+    if (!id) {
+      setSelected(null);
+      return;
+    }
+    const connue = apps.find((a) => a._id === id);
+    if (connue) {
+      setSelected(connue);
+      return;
+    }
+    api.applications
+      .get(id)
+      .then(setSelected)
+      .catch(() => navigate('/candidatures', { replace: true }));
+  }, [id, apps, navigate]);
+
   if (selected) {
     return (
       <ApplicationDetail
         application={selected}
-        onBack={() => setSelected(null)}
+        onBack={() => navigate('/candidatures')}
         onChange={refreshOne}
       />
     );
@@ -216,7 +248,7 @@ export default function ApplicationsPage() {
                 key={a._id}
                 className="card clickable"
                 style={{ '--i': index % 12 }}
-                onClick={() => setSelected(a)}
+                onClick={() => navigate(`/candidatures/${a._id}`)}
               >
                 <div className="inline">
                   <span

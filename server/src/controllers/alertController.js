@@ -50,6 +50,18 @@ function assainir(body = {}) {
   if (typeof body.cron === 'string' && cron.validate(body.cron)) propre.cron = body.cron;
   if (typeof body.timezone === 'string') propre.timezone = body.timezone.slice(0, 60);
 
+  // Quota : la longueur d'un message d'un côté, la cadence de l'autre.
+  if (body.maxPerRun !== undefined) {
+    propre.maxPerRun = Math.min(100, Math.max(1, Number(body.maxPerRun) || 20));
+  }
+  if (body.maxPerWindow !== undefined) {
+    propre.maxPerWindow = Math.min(1000, Math.max(1, Number(body.maxPerWindow) || 60));
+  }
+  if (body.windowValue !== undefined) {
+    propre.windowValue = Math.max(1, Number(body.windowValue) || 1);
+  }
+  if (UNITES.includes(body.windowUnit)) propre.windowUnit = body.windowUnit;
+
   if (body.expiresAt !== undefined) {
     const date = body.expiresAt ? new Date(body.expiresAt) : null;
     propre.expiresAt = date && !Number.isNaN(date.getTime()) ? date : null;

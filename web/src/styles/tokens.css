@@ -3312,3 +3312,27 @@ img {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Le quota se lit comme une phrase : « au plus 60 candidatures par 1 jour ».
+   Les champs sont donc alignés sur la ligne de base du texte qui les relie. */
+.alert-quota label {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 12.5px;
+}
+.alert-quota .input-num {
+  flex: 0 0 auto;
+  width: 72px;
+}
+/* Le selecteur d unite prend sa largeur, pas tout l espace restant : etire,
+   il repoussait la fin de la phrase sur une deuxieme ligne. */
+.alert-quota select.input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 108px;
+}
+.alert-quota .muted {
+  flex: 0 0 auto;
+}

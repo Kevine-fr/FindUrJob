@@ -297,6 +297,8 @@ export default function App() {
               }
             />
             <Route path="/candidatures" element={<ApplicationsPage />} />
+            {/* Une candidature a sa propre adresse : les alertes y renvoient. */}
+            <Route path="/candidatures/:id" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/alertes" element={<AlertsPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />

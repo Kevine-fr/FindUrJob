@@ -1,6 +1,7 @@
 import JobOffer from '../models/JobOffer.js';
 import Application from '../models/Application.js';
 import PlatformAccount from '../models/PlatformAccount.js';
+import PushSubscription from '../models/PushSubscription.js';
 
 /**
  * Aligne les index de la base sur ceux déclarés dans les schémas.
@@ -26,7 +27,7 @@ export async function syncIndexes() {
    * tous les autres d'en créer une — même symptôme que pour les offres, même
    * cause. Chaque modèle passé au multi-comptes doit figurer ici.
    */
-  for (const model of [JobOffer, Application, PlatformAccount]) {
+  for (const model of [JobOffer, Application, PlatformAccount, PushSubscription]) {
     try {
       const supprimes = await model.syncIndexes();
       if (supprimes?.length) {

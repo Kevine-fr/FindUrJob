@@ -86,3 +86,56 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * Notifications push
+ *
+ * Le serveur envoie un message chiffré ; c'est ici qu'il devient une
+ * notification. Le corps est du JSON, mais on ne s'y fie pas aveuglément : un
+ * service de push peut réveiller le worker sans charge utile, et une exception
+ * ici ferait disparaître la notification sans laisser de trace.
+ * ------------------------------------------------------------------ */
+
+self.addEventListener('push', (event) => {
+  let charge = {};
+  try {
+    charge = event.data ? event.data.json() : {};
+  } catch {
+    charge = { body: event.data && event.data.text ? event.data.text() : '' };
+  }
+
+  const titre = charge.title || 'FindUrJob';
+  const options = {
+    body: charge.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    // Le `tag` regroupe : une deuxième alerte du même type remplace la
+    // précédente au lieu d'empiler des bannières identiques.
+    tag: charge.tag || 'findurjob',
+    data: { url: charge.url || '/' },
+  };
+
+  event.waitUntil(self.registration.showNotification(titre, options));
+});
+
+/*
+ * Un clic ouvre l'application à l'endroit concerné. Si un onglet est déjà
+ * ouvert, on l'y amène plutôt que d'en ouvrir un second — c'est ce qu'attend
+ * quelqu'un qui a l'application installée.
+ */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const cible = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((fenetres) => {
+      for (const fenetre of fenetres) {
+        if ('focus' in fenetre) {
+          fenetre.navigate(cible).catch(() => {});
+          return fenetre.focus();
+        }
+      }
+      return self.clients.openWindow(cible);
+    })
+  );
+});

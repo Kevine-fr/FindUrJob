@@ -3,6 +3,8 @@ import Campaign from './models/Campaign.js';
 import SearchPreference from './models/SearchPreference.js';
 import { collectOffers } from './controllers/offerController.js';
 import { runCampaign } from './services/campaignRunner.js';
+import Alert from './models/Alert.js';
+import { runAlert } from './services/alertRunner.js';
 
 /**
  * Planificateur des campagnes.
@@ -14,8 +16,54 @@ import { runCampaign } from './services/campaignRunner.js';
 
 const tasks = new Map(); // id utilisateur → tâche cron
 
+/*
+ * Les alertes vivent dans leur propre registre.
+ *
+ * Elles se reprogramment a chaque enregistrement d une alerte, bien plus
+ * souvent que les campagnes. Les melanger obligerait a tout detruire et tout
+ * recreer — y compris des campagnes en cours d execution.
+ */
+const alertTasks = new Map(); // id alerte → tâche cron
+
+export function stopAlerts() {
+  for (const task of alertTasks.values()) task.stop();
+  alertTasks.clear();
+}
+
+/** (Re)programme toutes les alertes actives et non echues. */
+export async function rescheduleAlerts() {
+  stopAlerts();
+
+  const alerts = await Alert.find({ enabled: true });
+
+  for (const alert of alerts) {
+    if (!cron.validate(alert.cron)) {
+      console.warn(`alerte ${alert._id} : expression invalide (${alert.cron})`);
+      continue;
+    }
+    // Une alerte echue ne se reprogramme pas : c est ce que veut dire une
+    // echeance. Le premier declenchement suivant l aurait de toute facon
+    // eteinte, autant ne pas la reveiller pour rien.
+    if (alert.expiresAt && alert.expiresAt.getTime() < Date.now()) continue;
+
+    const id = alert._id.toString();
+    const task = cron.schedule(
+      alert.cron,
+      () => {
+        runAlert(id)
+          .then((bilan) => console.log(`alerte ${id} :`, JSON.stringify(bilan)))
+          .catch((error) => console.error(`alerte ${id} :`, error.message));
+      },
+      { timezone: alert.timezone || "Europe/Paris" }
+    );
+    alertTasks.set(id, task);
+  }
+
+  return { active: alertTasks.size };
+}
+
 export function describeSchedule() {
-  return { active: tasks.size, users: [...tasks.keys()] };
+  return { active: tasks.size, users: [...tasks.keys()], alerts: alertTasks.size };
 }
 
 function stopAll() {
@@ -123,6 +171,18 @@ export async function startScheduler() {
   } catch (error) {
     console.error('campagnes : programmation impossible —', error.message);
   }
+
+  // Les alertes se programment a part : une panne cote campagnes ne doit pas
+  // priver de notifications, et l inverse est vrai aussi.
+  try {
+    const { active } = await rescheduleAlerts();
+    console.log(`alertes : ${active} programmee(s)`);
+  } catch (error) {
+    console.error('alertes : programmation impossible —', error.message);
+  }
 }
 
-export const stopScheduler = stopAll;
+export function stopScheduler() {
+  stopAll();
+  stopAlerts();
+}

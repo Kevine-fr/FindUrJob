@@ -109,6 +109,27 @@ services:
       # Origines autorisées à porter un cookie de session (application + admin).
       # Obligatoire avec des cookies : le navigateur refuse le joker.
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # Version réellement déployée, écrite par la CI dans le .env racine.
+      # Elle manquait ici : la production affichait donc la version du
+      # package.json, figée, plutôt que celle du commit déployé.
+      - APP_VERSION=${APP_VERSION:-}
+      - APP_COMMIT=${APP_COMMIT:-}
+      - APP_BUILT_AT=${APP_BUILT_AT:-}
+      # Courriels : confirmation d'adresse, mot de passe oublié, alertes.
+      # Ces variables manquaient aussi : sans elles, `SMTP_HOST` est vide et le
+      # serveur se rabat sur « journaliser le lien » — en production, cela
+      # revient à n'envoyer aucun courriel du tout.
+      - APP_URL=${APP_URL:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      # Notifications push du navigateur (Web Push). Sans ces clés, le canal est
+      # annoncé comme indisponible et seul le courriel part.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-}
       - NODE_ENV=production
     expose:
       - "4000"

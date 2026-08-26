@@ -12,6 +12,7 @@ import * as history from './controllers/historyController.js';
 import * as accounts from './controllers/accountController.js';
 import * as cvExport from './controllers/cvExportController.js';
 import * as campaign from './controllers/campaignController.js';
+import * as alerts from './controllers/alertController.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -122,5 +123,25 @@ router.put('/preferences', preferences.updatePreferences);
 
 // Historique : statuts journalisés + CV générés, en un seul flux
 router.get('/history', history.listHistory);
+
+/*
+ * Alertes et notifications.
+ *
+ * `preview` regarde sans rien envoyer ni entamer de quota ; `run` déclenche
+ * réellement. Les deux existent parce qu'on ne règle pas une alerte à l'aveugle,
+ * et qu'un essai qui enverrait des courriels ne serait pas un essai.
+ */
+router.get('/alerts', alerts.listAlerts);
+router.post('/alerts', alerts.createAlert);
+router.patch('/alerts/:id', alerts.updateAlert);
+router.delete('/alerts/:id', alerts.deleteAlert);
+router.post('/alerts/:id/preview', alerts.previewAlert);
+router.post('/alerts/:id/run', alerts.runAlertNow);
+
+// Abonnements aux notifications du navigateur : un par appareil.
+router.get('/push/key', alerts.pushKey);
+router.post('/push/subscribe', alerts.subscribePush);
+router.post('/push/unsubscribe', alerts.unsubscribePush);
+router.post('/push/test', alerts.testPush);
 
 export default router;

@@ -172,6 +172,26 @@ export const api = {
     deleteUser: (id) => req(`/admin/users/${id}`, { method: 'DELETE' }),
   },
 
+  alerts: {
+    // Réponse : { alerts, channels } — `channels` dit ce qui est réellement
+    // disponible côté serveur (SMTP configuré, clés VAPID présentes).
+    list: () => req('/alerts'),
+    create: (body) => req('/alerts', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id, body) => req(`/alerts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    remove: (id) => req(`/alerts/${id}`, { method: 'DELETE' }),
+    // Regarde sans rien envoyer ni entamer de quota.
+    preview: (id) => req(`/alerts/${id}/preview`, { method: 'POST' }),
+    run: (id) => req(`/alerts/${id}/run`, { method: 'POST' }),
+  },
+
+  push: {
+    key: () => req('/push/key'),
+    subscribe: (body) => req('/push/subscribe', { method: 'POST', body: JSON.stringify(body) }),
+    unsubscribe: (endpoint) =>
+      req('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
+    test: () => req('/push/test', { method: 'POST' }),
+  },
+
   campaign: {
     get: () => req('/campaign'),
     update: (body) => req('/campaign', { method: 'PUT', body: JSON.stringify(body) }),

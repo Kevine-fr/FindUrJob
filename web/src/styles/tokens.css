@@ -3148,3 +3148,176 @@ img {
     animation: none;
   }
 }
+
+/* ---- Alertes ---- */
+
+.alert-canaux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.alert-canal {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+.alert-canal strong {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+}
+.alert-canal .muted {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.alert-message {
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* L'éditeur reprend la disposition de la barre de filtres : mêmes libellés,
+   mêmes pastilles, même ordre. On règle une alerte comme on filtre une liste. */
+.alert-editeur {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  animation: fade-up var(--base) var(--ease) both;
+}
+.alert-editeur-tete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alert-nom {
+  flex: 1;
+  min-width: 200px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+}
+.alert-aide {
+  margin-top: 5px;
+  font-size: 12px;
+}
+.alert-puce {
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Réglages d'envoi : séparés des critères par un filet, parce qu'ils répondent
+   à une autre question — non plus « quoi », mais « à quel rythme et jusqu'où ». */
+.alert-reglages {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line-soft);
+}
+.input-cron {
+  width: 130px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+.alert-quota {
+  gap: 12px;
+}
+.alert-quota label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.alert-apercu {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.alert-apercu-ligne {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.alert-apercu-ligne em {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.alert-liste {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 14px;
+}
+.alert-carte {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 0;
+}
+/* Une alerte en pause reste lisible mais cesse d'attirer l'œil : elle
+   n'enverra rien, et l'affichage doit le dire sans qu'on lise l'étiquette. */
+.alert-carte.pause {
+  opacity: 0.62;
+}
+.alert-carte-tete {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.alert-carte-tete strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+}
+.alert-carte-tete .muted {
+  font-size: 12.5px;
+}
+.alert-carte-criteres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.alert-carte-criteres em {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+}
+.alert-bilan {
+  padding: 8px 11px;
+  border-left: 3px solid var(--ok);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--paper);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.alert-bilan.erreur {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+@media (max-width: 620px) {
+  .alert-liste {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -13,6 +13,7 @@ import AccountPage from './pages/AccountPage.jsx';
 import PasswordPage from './pages/PasswordPage.jsx';
 import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import AlertsPage from './pages/AlertsPage.jsx';
 import { useAuth } from './lib/auth.jsx';
 
 /*
@@ -65,6 +66,16 @@ const NAV = [
       <svg viewBox="0 0 24 24" {...stroke}>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l3.5 2" />
+      </svg>
+    ),
+  },
+  {
+    to: '/alertes',
+    label: 'Alertes',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6z" />
+        <path d="M10.3 20a2 2 0 0 0 3.4 0" />
       </svg>
     ),
   },
@@ -287,6 +298,7 @@ export default function App() {
             />
             <Route path="/candidatures" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
+            <Route path="/alertes" element={<AlertsPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />
             <Route path="/campagne" element={<CampaignPage />} />
             <Route path="/comptes" element={<AccountsPage />} />

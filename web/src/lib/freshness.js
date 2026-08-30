@@ -61,14 +61,14 @@ export function fraicheur(date) {
 }
 
 /**
- * « 27 candidats ». `null` veut dire inconnu : on ne l'écrit pas « 0 candidat »,
- * ce qui laisserait croire à une offre déserte alors qu'on ne sait rien.
+ * « 27 candidats ». `null` veut dire inconnu ou négligeable : on ne l'écrit
+ * ni « 0 candidat » ni « 1 candidat », ces chiffres n'aidant pas à décider.
  */
 export function candidats(nombre) {
   if (nombre === null || nombre === undefined) return null;
   const n = Number(nombre);
-  if (!Number.isFinite(n)) return null;
-  return n <= 1 ? `${n} candidat` : `${n} candidats`;
+  if (!Number.isFinite(n) || n <= 1) return null;
+  return `${n} candidats`;
 }
 
 /** Peu de candidats = une vraie chance ; beaucoup = un signal à voir. */

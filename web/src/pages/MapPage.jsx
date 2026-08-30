@@ -22,6 +22,7 @@ import {
   CONTRACT_LABELS,
   REMOTE_LABELS,
 } from '../lib/status.js';
+import { candidats } from '../lib/freshness.js';
 
 const CONTRATS = Object.entries(CONTRACT_LABELS).map(([value, label]) => ({ value, label }));
 const MODES = Object.entries(REMOTE_LABELS).map(([value, label]) => ({ value, label }));
@@ -817,8 +818,8 @@ export default function MapPage() {
                   {dateCourte(offreDetail.publishedAt) && (
                     <em>Publiée le {dateCourte(offreDetail.publishedAt)}</em>
                   )}
-                  {typeof offreDetail.applicantCount === 'number' && (
-                    <em>{offreDetail.applicantCount} candidats</em>
+                  {candidats(offreDetail.applicantCount) && (
+                    <em>{candidats(offreDetail.applicantCount)}</em>
                   )}
                 </div>
                 <div className="map-side-actions">

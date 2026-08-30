@@ -75,7 +75,19 @@ jobs:
         run: |
           BASE_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
           [ -n "$BASE_VERSION" ] || BASE_VERSION="1.0"
-          APP_VERSION="${BASE_VERSION}.$(git rev-list --count HEAD)"
+          # Le dernier nombre compte les commits depuis la derniere
+          # modification de VERSION, et non depuis le debut du depot : poser
+          # "1.1" dans VERSION redemarre donc a 1.1.0, puis 1.1.1, 1.1.2...
+          # Compter tout l historique aurait donne 1.1.55 — un numero qui ne dit
+          # rien de la version, juste l age du depot.
+          BUMP=$(git log -1 --format=%H -- VERSION)
+          if [ -n "$BUMP" ]; then
+            PATCH=$(git rev-list --count "$BUMP..HEAD")
+          else
+            # VERSION jamais commite : on retombe sur l historique complet.
+            PATCH=$(git rev-list --count HEAD)
+          fi
+          APP_VERSION="${BASE_VERSION}.${PATCH}"
           # Docker Hub n accepte que des minuscules dans un nom de depot.
           PROJECT=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
@@ -159,13 +171,23 @@ jobs:
           git fetch origin --prune
           git reset --hard origin/main
 
-          # La base vient du fichier VERSION, le dernier nombre du compte de
-          # commits : chaque deploiement porte donc une version differente, sans
-          # que personne n ait a l incrementer a la main.
+          # La base vient du fichier VERSION : chaque deploiement porte une
+          # version differente sans que personne n ait a l incrementer a la main.
           echo "Calcul de la version..."
           BASE_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
           [ -n "$BASE_VERSION" ] || BASE_VERSION="1.0"
-          PATCH=$(git rev-list --count HEAD)
+          # Le dernier nombre compte les commits depuis la derniere
+          # modification de VERSION, et non depuis le debut du depot : poser
+          # "1.1" dans VERSION redemarre donc a 1.1.0, puis 1.1.1, 1.1.2...
+          # Compter tout l historique aurait donne 1.1.55 — un numero qui ne dit
+          # rien de la version, juste l age du depot.
+          BUMP=$(git log -1 --format=%H -- VERSION)
+          if [ -n "$BUMP" ]; then
+            PATCH=$(git rev-list --count "$BUMP..HEAD")
+          else
+            # VERSION jamais commite : on retombe sur l historique complet.
+            PATCH=$(git rev-list --count HEAD)
+          fi
           APP_VERSION="${BASE_VERSION}.${PATCH}"
           APP_COMMIT=$(git rev-parse --short HEAD)
           APP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)

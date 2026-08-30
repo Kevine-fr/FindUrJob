@@ -2,7 +2,7 @@
  * Socle commun aux plateformes sans API.
  *
  * Les offres sorties d'ici ont exactement la forme attendue par
- * `server/src/controllers/offerController.js` (`sanitize`) — le vocabulaire est
+ * `api/src/controllers/offerController.js` (`sanitize`) — le vocabulaire est
  * le même que celui du moteur Python (`ai/app/sources/base.py`), pour qu'une
  * offre scrapée et une offre d'API soient indistinguables en base.
  */

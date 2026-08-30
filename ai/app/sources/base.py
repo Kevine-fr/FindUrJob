@@ -11,7 +11,7 @@ from typing import Protocol
 
 from ..textutils import strip_accents
 
-# Miroir de server/src/utils/constants.js
+# Miroir de api/src/utils/constants.js
 CONTRACT_TYPES = ("cdi", "cdd", "stage", "alternance", "freelance", "autre")
 REMOTE_VALUES = ("sur_site", "hybride", "teletravail", "non_precise")
 

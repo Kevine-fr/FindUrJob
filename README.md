@@ -13,7 +13,7 @@ le **moteur IA (Python/FastAPI)** branché sur une couture unique, et le
 ```
 findurjob/
 ├── docker-compose.yml
-├── server/                 # API Express + Mongoose
+├── api/                    # API Express + Mongoose
 │   ├── src/
 │   │   ├── index.js        # entrée
 │   │   ├── app.js          # config Express
@@ -68,7 +68,7 @@ docker compose up --build
 > quelques minutes. Les suivantes sont en cache.
 - Données de démo (optionnel) :
   ```bash
-  docker compose exec server npm run seed
+  docker compose exec api npm run seed
   ```
 
 Pour brancher un vrai LLM, copier `ai/.env.example` en `ai/.env` et y mettre la
@@ -82,7 +82,7 @@ Nécessite un MongoDB accessible (par défaut `mongodb://localhost:27017/findurj
 
 ```bash
 # Terminal 1 — API
-cd server
+cd api
 cp .env.example .env
 npm install
 npm run seed      # optionnel
@@ -155,7 +155,7 @@ peut pas distinguer « 60 offres en base » de « 60 affichées sur 400 ».
 
 ## Où se branche l'IA
 
-Tout passe par `server/src/services/tailoringService.js`. Tant que
+Tout passe par `api/src/services/tailoringService.js`. Tant que
 `PYTHON_AI_URL` est vide, une version « stub » déterministe est renvoyée pour
 que l'ossature tourne de bout en bout.
 
@@ -244,7 +244,7 @@ LinkedIn, Indeed et HelloWork n'ont pas d'API : FindUrJob s'y connecte dans un
 vrai navigateur, avec tes identifiants, depuis l'onglet **Comptes**.
 
 - Les mots de passe sont chiffrés en **AES-256-GCM** avant d'atteindre la base
-  ([`server/src/utils/vault.js`](server/src/utils/vault.js)). La clé vit dans
+  ([`api/src/utils/vault.js`](api/src/utils/vault.js)). La clé vit dans
   l'environnement, pas en base : une copie de Mongo seule ne donne rien.
 - Ils ne sont **jamais renvoyés** au front, et ne sont déchiffrés qu'au moment
   de remplir le formulaire de connexion.

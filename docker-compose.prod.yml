@@ -83,8 +83,8 @@ services:
     networks:
         - web
 
-  server:
-    build: ./server
+  api:
+    build: ./api
     container_name: findurjob-api
     restart: unless-stopped
     depends_on:
@@ -102,7 +102,7 @@ services:
       # En production, l ecran passe par le proxy du front (websocket compris).
       - BOT_VNC_URL=/vnc
       # Clé de chiffrement du coffre d'identifiants (AES-256-GCM).
-      # À définir dans server/.env — sans elle, aucun mot de passe n'est stocké.
+      # À définir dans api/.env — sans elle, aucun mot de passe n'est stocké.
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
       # Signature des sessions. Sans elle, aucun compte ne peut être ouvert.
       - SESSION_SECRET=${SESSION_SECRET:-}
@@ -149,7 +149,7 @@ services:
     container_name: findurjob-web
     restart: unless-stopped
     depends_on:
-      - server
+      - api
     expose:
       - "5173"
     # Ni montage de sources ni `command` : l'image contient le site compilé.

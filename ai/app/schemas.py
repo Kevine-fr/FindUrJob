@@ -220,7 +220,7 @@ class ScoreResponse(BaseModel):
 
 
 class TailorResponse(BaseModel):
-    """Contrat attendu par `server/src/services/tailoringService.js`.
+    """Contrat attendu par `api/src/services/tailoringService.js`.
 
     `content`, `coverLetter`, `score` et `keywords` sont obligatoires ; `meta`
     est un supplément non contractuel que le serveur Node ignore.

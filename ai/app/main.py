@@ -1,6 +1,6 @@
 """API du moteur IA de reciblage — FindUrJob.
 
-Contrat attendu par `server/src/services/tailoringService.js` :
+Contrat attendu par `api/src/services/tailoringService.js` :
 
     POST /tailor
       entrée : { offer, profile }

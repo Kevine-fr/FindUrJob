@@ -17,7 +17,7 @@ CMD ["node", "src/index.js"]
 # expose sans risquer d'ecraser la valeur passee au conteneur.
 ARG APP_VERSION=""
 ARG APP_COMMIT=""
-LABEL org.opencontainers.image.title="FindUrJob server" \
+LABEL org.opencontainers.image.title="FindUrJob api" \
       org.opencontainers.image.version="$APP_VERSION" \
       org.opencontainers.image.revision="$APP_COMMIT" \
       org.opencontainers.image.source="https://github.com/Kevine-fr/FindUrJob"

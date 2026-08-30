@@ -10,6 +10,115 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ---------------------------------------------------------------------
+  # Publication des images sur Docker Hub.
+  #
+  # Volontairement independante du deploiement : le VPS construit ses propres
+  # images depuis les sources, et faire attendre la mise en production le temps
+  # de pousser l image du robot — qui embarque Chromium — la retarderait de
+  # plusieurs minutes sans rien y gagner.
+  # ---------------------------------------------------------------------
+  images:
+    name: Publish images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    strategy:
+      # Une image qui echoue ne doit pas emporter les trois autres.
+      fail-fast: false
+      matrix:
+        include:
+          - service: server
+            context: ./server
+            target: ''
+          - service: web
+            context: ./web
+            # Le build statique servi par nginx, pas le serveur Vite.
+            target: runtime
+          - service: ai
+            context: ./ai
+            # Sans pytest ni rechargement a chaud.
+            target: runtime
+          - service: bot
+            context: ./bot
+            target: ''
+    steps:
+      # Sans identifiants, on previent et on s arrete la plutot que d echouer :
+      # tant que les secrets ne sont pas poses, un push ne doit pas virer au
+      # rouge pour une publication qui n est pas encore configuree.
+      - name: Identifiants Docker Hub presents ?
+        id: creds
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN absents : publication ignoree."
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          # Historique complet : la version se compte en nombre de commits, et
+          # un clone superficiel donnerait toujours le meme numero.
+          fetch-depth: 0
+
+      # Exactement le meme calcul que le deploiement : les deux jobs partent du
+      # meme commit, l image publiee porte donc la version mise en production.
+      - name: Calcul de la version
+        if: steps.creds.outputs.ok == 'true'
+        id: version
+        run: |
+          BASE_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
+          [ -n "$BASE_VERSION" ] || BASE_VERSION="1.0"
+          APP_VERSION="${BASE_VERSION}.$(git rev-list --count HEAD)"
+          # Docker Hub n accepte que des minuscules dans un nom de depot.
+          PROJECT=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image=${DOCKERHUB_USERNAME}/${PROJECT}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+          echo "Image : ${DOCKERHUB_USERNAME}/${PROJECT}-${{ matrix.service }}:prod-v${APP_VERSION}"
+
+      - name: Connexion a Docker Hub
+        if: steps.creds.outputs.ok == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Buildx
+        if: steps.creds.outputs.ok == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construction et publication
+        if: steps.creds.outputs.ok == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.version.outputs.image }}:prod-v${{ steps.version.outputs.app_version }}
+          # Le cache est ce qui rend l operation tenable : l image du robot
+          # telecharge Chromium, pres d un gigaoctet, a chaque construction a
+          # froid.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # La version voyage aussi dans l image : `docker inspect` suffit alors
+          # a savoir ce qu on fait tourner, sans remonter au tag.
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.app_version }}
+            APP_COMMIT=${{ github.sha }}
+
+      # Un job de matrice a son propre resume : une ligne suffit, un tableau
+      # sans en-tete ne se rendrait pas.
+      - name: Resume
+        if: steps.creds.outputs.ok == 'true'
+        run: |
+          echo "Image publiee : \`${{ steps.version.outputs.image }}:prod-v${{ steps.version.outputs.app_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest

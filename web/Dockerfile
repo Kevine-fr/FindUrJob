@@ -28,3 +28,16 @@ FROM nginx:alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 5173
+
+# Version et revision, injectees par la CI au moment de la publication.
+#
+# En fin d'etage, et non au debut : leur valeur change a chaque publication, et
+# placee plus haut elle invaliderait tout le cache de construction en dessous.
+# Des etiquettes plutot que des variables d'environnement : `docker inspect` les
+# expose sans risquer d'ecraser la valeur passee au conteneur.
+ARG APP_VERSION=""
+ARG APP_COMMIT=""
+LABEL org.opencontainers.image.title="FindUrJob web" \
+      org.opencontainers.image.version="$APP_VERSION" \
+      org.opencontainers.image.revision="$APP_COMMIT" \
+      org.opencontainers.image.source="https://github.com/Kevine-fr/FindUrJob"

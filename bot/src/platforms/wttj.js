@@ -200,8 +200,9 @@ export async function apply(context, offer, options = {}) {
     const externe = await externalApplyUrl(page, 'welcometothejungle.com');
     if (externe) {
       return {
-        status: 'manual',
-        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
+        status: 'external',
+        message: `L'employeur reçoit les candidatures sur son propre site : `,
+        externalUrl: externe,
       };
     }
 

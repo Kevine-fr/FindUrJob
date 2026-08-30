@@ -47,6 +47,31 @@ const jobOfferSchema = new mongoose.Schema(
      */
     publishedAt: { type: Date, index: true },
     applicantCount: { type: Number, min: 0, default: null },
+
+    /*
+     * Ce qu'on a appris en essayant de postuler.
+     *
+     * Mesuré sur des annonces réelles : sur Welcome to the Jungle, quatorze
+     * annonces sur dix-huit ne sont qu'une vitrine renvoyant vers l'ATS de
+     * l'employeur (Workday, SmartRecruiters…) ; sur France Travail, deux sur
+     * six. Ce ne sont pas des candidatures ratées — il n'y a simplement rien à
+     * envoyer ici. Les compter comme des échecs faussait les statistiques, et
+     * surtout les laissait consommer le quota de la campagne à chaque passage.
+     *
+     *   direct  — le formulaire est sur la plateforme, on sait le remplir
+     *   externe — la candidature se fait sur le site de l'employeur
+     *   bloque  — la plateforme refuse le navigateur piloté (anti-bot)
+     *
+     * `applyUrl` garde l'adresse réelle du recruteur : c'est ce qui permet de
+     * finir la candidature en un clic plutôt que de la chercher.
+     */
+    applyMode: {
+      type: String,
+      enum: ['inconnu', 'direct', 'externe', 'bloque'],
+      default: 'inconnu',
+      index: true,
+    },
+    applyUrl: { type: String, trim: true },
   },
   { timestamps: true }
 );

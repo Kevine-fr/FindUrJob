@@ -520,17 +520,70 @@ export async function applyForm(
 export async function externalApplyUrl(page, hote) {
   return page
     .evaluate((interne) => {
-      const lien = [...document.querySelectorAll('a[href]')]
-        .filter((el) => /postuler|candidater|apply/i.test((el.textContent || '').trim()))
-        .map((el) => el.href)
-        .find((href) => {
-          try {
-            return !new URL(href).hostname.endsWith(interne);
-          } catch {
-            return false;
-          }
+      const externe = (href) => {
+        try {
+          const url = new URL(href);
+          return /^https?:$/.test(url.protocol) && !url.hostname.endsWith(interne);
+        } catch {
+          return false;
+        }
+      };
+
+      const liens = [...document.querySelectorAll('a[href]')].filter((el) => externe(el.href));
+
+      // 1. Le lien se nomme lui-même : « Postuler », « Apply »…
+      const parLibelle = liens.find((el) =>
+        /postuler|candidater|apply/i.test((el.textContent || '').trim())
+      );
+      if (parLibelle) return parLibelle.href;
+
+      /*
+       * 2. Le lien porte le nom de l'employeur, et c'est son *entourage* qui
+       *    dit à quoi il sert.
+       *
+       * France Travail en est l'exemple : cliquer « Postuler » ouvre une bulle
+       * « Postuler sur le site du recruteur » dont l'unique lien s'appelle
+       * « ADECCO » ou « HEXAFRET ». Ne regarder que le libellé du lien laissait
+       * passer ces annonces, et le robot concluait « Aucun formulaire de
+       * candidature sur la page » — un message qui désignait le mauvais
+       * coupable et donnait à croire à un bug de sélecteur.
+       *
+       * On remonte donc quelques niveaux au-dessus du lien pour lire l'intention
+       * annoncée. Trois niveaux suffisent en pratique et évitent de remonter
+       * jusqu'au corps de page, où le mot « postuler » finit toujours par
+       * apparaître quelque part.
+       */
+      const INTENTION =
+        /postuler sur|candidater sur|site du recruteur|site de l['’]employeur|site de l['’]entreprise|apply on (the )?(company|employer)/i;
+
+      /*
+       * On part de la phrase, pas du lien.
+       *
+       * Remonter depuis le lien en comptant les niveaux ne marche pas : chez
+       * France Travail, le titre de la bulle et le lien sont séparés par cinq
+       * générations (`div > div > ul > li > div > a`), et une limite assez
+       * haute pour les couvrir finit par atteindre le corps de la page, où le
+       * mot « postuler » apparaît toujours quelque part.
+       *
+       * On cherche donc l'élément qui *porte* la phrase — court, donc précis —
+       * puis on redescend chercher le lien sous ses ancêtres proches.
+       */
+      const titres = [...document.querySelectorAll('p, h1, h2, h3, h4, span, div, strong')]
+        .filter((el) => {
+          const texte = el.textContent || '';
+          return texte.length < 120 && INTENTION.test(texte);
         });
-      return lien || null;
+
+      for (const titre of titres) {
+        let portee = titre.parentElement;
+        for (let niveau = 0; niveau < 4 && portee; niveau += 1) {
+          const trouve = [...portee.querySelectorAll('a[href]')].find((el) => externe(el.href));
+          if (trouve) return trouve.href;
+          portee = portee.parentElement;
+        }
+      }
+
+      return null;
     }, hote)
     .catch(() => null);
 }

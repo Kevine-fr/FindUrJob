@@ -146,8 +146,9 @@ export async function apply(context, offer, options = {}) {
     const externe = await externalApplyUrl(page, 'francetravail.fr');
     if (externe) {
       return {
-        status: 'manual',
+        status: 'external',
         message: `Le recruteur reçoit les candidatures sur son propre site : ${externe}`,
+        externalUrl: externe,
       };
     }
 
@@ -173,6 +174,28 @@ export async function apply(context, offer, options = {}) {
      */
     await postuler.click().catch(() => {});
     await humanPause(2000, 3000);
+
+    /*
+     * Beaucoup d'annonces ne se candidatent pas ici, et on ne l'apprend
+     * qu'**après** avoir cliqué.
+     *
+     * « Postuler » n'envoie pas toujours vers un formulaire : il ouvre parfois
+     * une bulle « Postuler sur le site du recruteur » avec un seul lien, dont
+     * le libellé est le nom de l'employeur (« ADECCO », « HEXAFRET »). Le
+     * contrôle d'avant le clic ne pouvait rien voir — la bulle n'existait pas
+     * encore — et le parcours se poursuivait jusqu'à « Aucun formulaire de
+     * candidature sur la page », qui accusait à tort les sélecteurs.
+     *
+     * Mesuré sur un échantillon d'annonces réelles : deux sur six.
+     */
+    const versRecruteur = await externalApplyUrl(page, 'francetravail.fr');
+    if (versRecruteur) {
+      return {
+        status: 'external',
+        message: `Le recruteur reçoit les candidatures sur son propre site : ${versRecruteur}`,
+        externalUrl: versRecruteur,
+      };
+    }
 
     /*
      * Le rappel des critères porte le vrai bouton d'envoi. Il n'y a rien à

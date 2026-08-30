@@ -191,8 +191,14 @@ export async function apply(context, offer, options = {}) {
     if (/captcha-delivery\.com/.test(requete.url())) bloque = true;
   });
 
+  /*
+   * Statut distinct de « manual » : ce n'est pas une candidature qui a échoué,
+   * c'est une plateforme qui refuse le navigateur piloté. La campagne s'en sert
+   * pour cesser d'y dépenser son quota — mesuré six fois sur six, à trente
+   * secondes l'essai, c'est le poste de gaspillage le plus coûteux.
+   */
   const refus = () => ({
-    status: 'manual',
+    status: 'blocked',
     message:
       "L'APEC bloque l'accès au détail de ses offres depuis un navigateur piloté " +
       '(anti-bot DataDome) — la session, elle, est bien ouverte. Candidature à ' +
@@ -211,8 +217,9 @@ export async function apply(context, offer, options = {}) {
     const externe = await externalApplyUrl(page, 'apec.fr');
     if (externe) {
       return {
-        status: 'manual',
-        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
+        status: 'external',
+        message: `L'employeur reçoit les candidatures sur son propre site : `,
+        externalUrl: externe,
       };
     }
 

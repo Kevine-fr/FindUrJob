@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Campaign from '../models/Campaign.js';
 import Application from '../models/Application.js';
 import JobOffer from '../models/JobOffer.js';
@@ -11,6 +12,49 @@ import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
 import { reconcilier } from './reconciliation.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
+
+/**
+ * Ce que chaque plateforme a réellement produit pour ce compte.
+ *
+ * Sert à décider où placer le quota de la prochaine passe. On ne compte que les
+ * candidatures effectivement *tentées* : un brouillon ou une offre en attente
+ * ne dit rien de la capacité d'une plateforme à recevoir un envoi.
+ *
+ * Le calcul se lit dans les candidatures existantes plutôt que dans un compteur
+ * tenu à part : un compteur dérive dès qu'une candidature est supprimée ou
+ * corrigée à la main, et il faudrait le réconcilier. Ici, la source de vérité
+ * est la seule qui compte — ce que la base dit être arrivé.
+ */
+const TENTEES = ['postule', 'echec_envoi', 'a_verifier'];
+
+async function rendementParSource(user) {
+  /*
+   * `aggregate` ne convertit pas les identifiants, contrairement à `find`.
+   *
+   * Les deux appelants passent une chaîne (`req.user.id`, `campaign.user
+   * .toString()`). Le schéma la transforme en ObjectId pour une requête
+   * ordinaire, mais un pipeline part tel quel vers MongoDB : un `$match` sur la
+   * chaîne n'aurait jamais rien trouvé, la mesure serait restée vide, et la
+   * redistribution ne se serait jamais déclenchée — sans la moindre erreur.
+   */
+  const proprietaire =
+    typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user;
+
+  const lignes = await Application.aggregate([
+    { $match: { user: proprietaire, status: { $in: TENTEES } } },
+    { $lookup: { from: 'joboffers', localField: 'offer', foreignField: '_id', as: 'o' } },
+    { $unwind: '$o' },
+    {
+      $group: {
+        _id: '$o.source',
+        essais: { $sum: 1 },
+        succes: { $sum: { $cond: [{ $eq: ['$status', 'postule'] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  return new Map(lignes.map((l) => [l._id, { essais: l.essais, succes: l.succes }]));
+}
 
 /**
  * Une passe de campagne automatique.
@@ -200,11 +244,74 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
     let budget = left;
     const candidates = [];
 
-    for (const target of wanted) {
-      if (budget <= 0) break;
-      const take = Math.min(target.limit, budget);
-      // On en tire plus que le quota : beaucoup seront écartées au score.
-      const pool = await JobOffer.find({ ...baseFilter, source: target.source })
+    /*
+     * Le quota va là où les candidatures aboutissent.
+     *
+     * Constaté en éprouvant les plateformes sur des annonces réelles : l'APEC
+     * refuse le navigateur piloté sur *toutes* ses annonces (six sur six, son
+     * anti-bot répond 403 sur le détail de l'offre), et Welcome to the Jungle
+     * n'héberge que trois candidatures sur dix-huit — les autres renvoient vers
+     * l'ATS de l'employeur. Sans mémoire, la campagne redépensait le même quota
+     * sur les mêmes murs à chaque passage, avec de nouvelles annonces : à
+     * trente secondes l'essai sur l'APEC, l'essentiel du budget se perdait là.
+     *
+     * On regarde donc ce que chaque source a réellement produit pour ce compte,
+     * et on déplace le quota vers celles qui aboutissent.
+     */
+    const rendement = await rendementParSource(user);
+
+    // Une source sans le moindre succès garde une place : jamais zéro.
+    //
+    // Les plateformes changent — un anti-bot se lève, une refonte rouvre un
+    // formulaire. Condamner définitivement une source sur son passé, c'est
+    // s'interdire de le remarquer. Une annonce par passage suffit à le voir.
+    const SONDE = 1;
+    const ESSAIS_MINI = 8; // en dessous, l'échantillon ne prouve rien
+
+    const ajuste = wanted.map((target) => {
+      const stat = rendement.get(target.source) || { essais: 0, succes: 0 };
+      const condamnee = stat.essais >= ESSAIS_MINI && stat.succes === 0;
+      return {
+        target,
+        stat,
+        limite: condamnee ? Math.min(SONDE, target.limit) : target.limit,
+        condamnee,
+      };
+    });
+
+    // Ce que les sources en échec libèrent revient à celles qui aboutissent.
+    const libere = ajuste.reduce((somme, a) => somme + (a.target.limit - a.limite), 0);
+    const productives = ajuste.filter((a) => !a.condamnee);
+    if (libere > 0 && productives.length) {
+      const part = Math.floor(libere / productives.length);
+      const reste = libere - part * productives.length;
+      productives.forEach((a, i) => {
+        a.limite += part + (i < reste ? 1 : 0);
+      });
+      summary.errors.push(
+        `Quota redistribué : ${libere} place(s) reprise(s) à ${ajuste
+          .filter((a) => a.condamnee)
+          .map((a) => `${a.target.source} (0/${a.stat.essais})`)
+          .join(', ')}.`
+      );
+    }
+
+    for (const { target, limite } of ajuste) {
+      if (budget <= 0 || limite <= 0) continue;
+      const take = Math.min(limite, budget);
+      /*
+       * On écarte ce qu'on sait ne pas pouvoir envoyer.
+       *
+       * `applyMode` est appris au fil des essais : une annonce dont on a déjà
+       * constaté qu'elle renvoie ailleurs, ou que la plateforme protège, ne
+       * mérite pas qu'on y repasse. Les `inconnu` et les absents (annonces
+       * collectées avant ce champ) restent éligibles.
+       */
+      const pool = await JobOffer.find({
+        ...baseFilter,
+        source: target.source,
+        applyMode: { $nin: ['externe', 'bloque'] },
+      })
         // Les plus fraîches d abord : à quota égal, autant viser les récentes.
         .sort({ publishedAt: -1, createdAt: -1 })
         .limit(take * 6);
@@ -505,6 +612,31 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               application.timeline.push({
                 status: 'a_verifier',
                 note: outcome.message || 'Issue inconnue.',
+              });
+              summary.manual += 1;
+              summary.perSource[source].manual += 1;
+            } else if (outcome.status === 'external' || outcome.status === 'blocked') {
+              /*
+               * Rien n'a échoué : il n'y avait rien à envoyer ici.
+               *
+               * L'annonce renvoie vers l'ATS de l'employeur, ou la plateforme
+               * refuse le navigateur piloté. Le statut reste « à finir à la
+               * main » — c'est bien ce qu'il reste à faire — mais la leçon est
+               * écrite sur l'offre, pour que ni cette passe ni les suivantes
+               * n'y regoûtent, et l'adresse du recruteur est conservée : la
+               * candidature se termine alors en un clic au lieu de se chercher.
+               */
+              const mode = outcome.status === 'external' ? 'externe' : 'bloque';
+              await JobOffer.updateOne(
+                { _id: offer._id },
+                { $set: { applyMode: mode, ...(outcome.externalUrl ? { applyUrl: outcome.externalUrl } : {}) } }
+              ).catch(() => {});
+
+              application.status = 'echec_envoi';
+              application.notes += ` — ${outcome.message || ''}`;
+              application.timeline.push({
+                status: 'echec_envoi',
+                note: outcome.message || 'Candidature à faire hors plateforme.',
               });
               summary.manual += 1;
               summary.perSource[source].manual += 1;

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
 import { useToast } from '../components/Toast.jsx';
+import { BrandMark } from '../components/Brand.jsx';
 
 const MIN_PASSWORD = 10;
 
@@ -47,9 +48,9 @@ export default function LoginPage() {
     <div className="auth-shell">
       <div className="auth-card animate-in">
         <div className="auth-brand">
-          <img src="/favicon.svg" alt="" width="34" height="34" />
-          <span>
-            FindUr<span>Job</span>
+          <BrandMark size={34} />
+          <span aria-hidden="true">
+            find<strong>JOBS</strong>
           </span>
         </div>
 

@@ -1,23 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FindUrJob">
-  <title>FindUrJob</title>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4b73ff"/>
-      <stop offset="1" stop-color="#2039c8"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="findJOBS">
+  <title>findJOBS</title>
 
-  <!-- Variante « maskable » : Android recadre l'icône dans la forme de son
-       choix (cercle, goutte, carré arrondi). Le fond va donc bord à bord, et
-       le motif tient dans la zone sûre — les 80 % centraux — pour ne jamais
-       être rogné. -->
-  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Version masquable : Android rogne jusqu'à 20 % de chaque bord. Le fond
+       couvre donc tout le carré et la marque tient dans le cercle sûr
+       (rayon 40 % du côté), à 80 % de la taille de l'icône standard. -->
+  <rect width="512" height="512" fill="#2c3a50"/>
 
-  <g transform="translate(256 256) scale(0.62) translate(-256 -256)">
-    <path d="M198 158v-14a30 30 0 0 1 30-30h56a30 30 0 0 1 30 30v14"
-          fill="none" stroke="#fff" stroke-width="28" stroke-linecap="round"/>
-    <rect x="86" y="158" width="340" height="240" rx="40" fill="#fff"/>
-    <path d="M196 282l44 44 84-92" fill="none" stroke="#2039c8" stroke-width="34"
-          stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(256 256) scale(0.8) translate(-256 -256)">
+    <circle cx="256" cy="252" r="94" fill="none" stroke="#f7c548" stroke-width="40"/>
+    <path d="M256 352v76" fill="none" stroke="#f7c548" stroke-width="44" stroke-linecap="round"/>
+    <path d="M176 232a80 80 0 0 1 160 0z" fill="#f7c548"/>
+    <rect x="140" y="222" width="232" height="36" rx="18" fill="#f7c548"/>
+    <circle cx="256" cy="192" r="26" fill="#2c3a50"/>
   </g>
 </svg>

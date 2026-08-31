@@ -22,16 +22,46 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <!-- Couleur de la barre système, accordée au thème clair ou sombre. -->
-    <meta name="theme-color" content="#f5f4ef" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)" />
+    <!-- Couleur de la barre système. Remplacée au démarrage par le fond réel du
+         thème choisi ; ces valeurs ne servent qu'au tout premier rendu. -->
+    <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e131b" media="(prefers-color-scheme: dark)" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
+
+    <!--
+      Thème appliqué avant le premier pixel.
+
+      Ce script est volontairement synchrone et en tête : React ne monte
+      qu'après le premier rendu, et l'attribut posé depuis un `useEffect`
+      arriverait trop tard — le temps d'un cadre, une interface claire
+      apparaîtrait à qui a choisi le thème sombre.
+
+      C'est aussi lui qui garantit que `data-theme` porte toujours une valeur
+      concrète, ce qui permet à `tokens.css` de n'écrire qu'un seul bloc sombre.
+    -->
+    <script>
+      (function () {
+        var racine = document.documentElement;
+        try {
+          var mode = localStorage.getItem('findurjob:theme') || 'system';
+          var sombre =
+            mode === 'dark' ||
+            (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          racine.dataset.theme = sombre ? 'dark' : 'light';
+          racine.dataset.accent = localStorage.getItem('findurjob:accent') || 'bleu';
+        } catch (e) {
+          /* Stockage refusé (navigation privée verrouillée) : thème par défaut. */
+          racine.dataset.theme = 'light';
+          racine.dataset.accent = 'bleu';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

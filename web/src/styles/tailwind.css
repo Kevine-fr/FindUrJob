@@ -1,0 +1,36 @@
+/*
+ * Point d'entrée Tailwind.
+ *
+ * `base` est conservé bien que `preflight` soit coupé : la couche émet aussi
+ * les valeurs par défaut des propriétés `--tw-*` dont dépendent les utilitaires
+ * d'ombre, d'anneau et de transformation. Sans elle, `ring-2` ou `shadow-md`
+ * ne produisent rien.
+ *
+ * Importé avant `tokens.css` : à spécificité égale, le système visuel maison
+ * garde donc le dernier mot sur les écrans déjà en place.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Reste de `preflight` dont shadcn a réellement besoin.
+ *
+ * Les composants shadcn n'habillent jamais un bouton de fond ni de bordure en
+ * variante « ghost » : ils comptent sur la remise à zéro pour que le navigateur
+ * n'applique pas la sienne (`border: 2px outset ButtonBorder`). Sans ces trois
+ * lignes, chaque bouton discret s'entoure du relief gris de l'agent utilisateur.
+ *
+ * Le reste de `preflight` reste écarté. On ne remet à zéro que des sélecteurs
+ * d'élément (spécificité 0-0-1) : les boutons de l'application portent tous une
+ * classe qui repose son fond et sa bordure, et l'emportent donc toujours.
+ * Vérifié sur l'ensemble des soixante-neuf boutons du projet.
+ */
+button,
+[type='button'],
+[type='reset'],
+[type='submit'] {
+  background-color: transparent;
+  background-image: none;
+  border: 0 solid transparent;
+}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, API_BASE } from '../api/client.js';
-import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
+import { STATUS_META, STATUS_ORDER, STATUS_FALLBACK, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from './Toast.jsx';
 import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
 
@@ -9,7 +9,7 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
   const [app, setApp] = useState(application);
   const [busy, setBusy] = useState(false);
   const [vue, setVue] = useState('cv'); // cv | lettre — sur petit écran surtout
-  const meta = STATUS_META[app.status] || { label: app.status, color: '#62667a' };
+  const meta = STATUS_META[app.status] || { label: app.status, ...STATUS_FALLBACK };
 
   const cvId = app.cvVersion?._id;
   const pdfUrl = cvId ? `${API_BASE}/cv-versions/${cvId}/pdf` : null;
@@ -61,7 +61,7 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
             {app.offer?.location ? ` · ${app.offer.location}` : ''}
           </p>
         </div>
-        <span className="badge dot" style={{ color: meta.color, borderColor: `${meta.color}33` }}>
+        <span className="badge dot" style={{ color: meta.color, borderColor: meta.border }}>
           {meta.label}
         </span>
       </div>

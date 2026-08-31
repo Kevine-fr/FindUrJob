@@ -127,6 +127,10 @@ router.get('/profile', profile.getProfile);
 router.put('/profile', profile.updateProfile);
 router.post('/profile/cv', profile.uploadCv);
 router.delete('/profile/cv', profile.deleteCv);
+// Les deux gestes qui suivent un import : reprendre les données, ou garder le
+// document tel quel. Séparés du dépôt, parce que ce sont des choix distincts.
+router.post('/profile/cv/fields', profile.applyCvFields);
+router.put('/profile/cv-mode', profile.setCvMode);
 router.post('/profile/compose', profile.composeProfileCv);
 
 // Préférences de recherche (singleton)

@@ -172,17 +172,20 @@ async def extract_cv(request: Request, file: UploadFile = File(...)) -> ExtractC
         len(result.text),
         len(result.warnings),
     )
+    # Rubriques structurées : c’est ce qui permet de garder le gabarit du CV
+    # conçu ici et de n’en remplacer que les données. Le modèle range mieux,
+    # mais une heuristique prend le relais s’il est injoignable — un import qui
+    # ne remplit rien est vécu comme un import raté.
+    fields, methode = await parse_cv(request.app.state.provider, result.text)
+
     return ExtractCvResponse(
         text=result.text,
         chars=len(result.text),
         pages=result.pages,
         filename=file.filename or "",
         warnings=result.warnings,
-        # Rubriques structurées : c’est ce qui permet de garder le gabarit du
-        # CV conçu ici et de n’en remplacer que les données. `None` quand le
-        # moteur est hors-ligne ou que l’extraction n’aboutit pas : l’appelant
-        # conserve alors le texte brut plutôt que de perdre l’import.
-        fields=await parse_cv(request.app.state.provider, result.text),
+        fields=fields,
+        parseMethod=methode,
     )
 
 

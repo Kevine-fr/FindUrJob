@@ -271,6 +271,10 @@ class ExtractCvResponse(BaseModel):
     warnings: list[str] = []
     # Rubriques reconnues dans le document, quand le moteur a pu les extraire.
     fields: dict | None = None
+    # Comment elles l'ont été : « modele », « heuristique », ou la raison pour
+    # laquelle le modèle n'a pas pu servir. L'écran s'en sert pour dire s'il faut
+    # relire, et pourquoi — « moteur indisponible » ne disait rien d'actionnable.
+    parseMethod: str = ""
 
 
 class HealthResponse(BaseModel):

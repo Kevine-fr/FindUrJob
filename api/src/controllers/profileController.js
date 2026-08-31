@@ -52,17 +52,90 @@ export const uploadCv = asyncHandler(async (req, res) => {
   profile.cvChars = result.chars || result.text.length;
   profile.cvPages = result.pages || 0;
   profile.cvWarnings = result.warnings || [];
-  await profile.save();
 
   /*
-   * Les rubriques reconnues repartent avec la réponse, **sans être écrites**.
+   * Les rubriques reconnues sont **gardées sans être appliquées**.
    *
-   * C’est l’interface qui demande confirmation avant de remplacer le profil :
-   * un import écrase des heures de saisie, et le faire en silence serait une
-   * perte de données déguisée en fonctionnalité. Le champ est donc une
-   * proposition, pas un effet de bord.
+   * C'est l'interface qui décide, et seulement sur un geste explicite : un
+   * import écrase des heures de saisie, et le faire en silence serait une perte
+   * de données déguisée en fonctionnalité.
+   *
+   * Elles sont enregistrées, et non plus seulement renvoyées : la proposition
+   * survit ainsi au rechargement de la page, et les rubriques peuvent être
+   * remplies plus tard — après avoir d'abord voulu garder le document tel quel,
+   * par exemple — sans avoir à redéposer le fichier.
    */
+  profile.cvFields = result.fields || null;
+  profile.cvParseMethod = result.parseMethod || '';
+
+  // Ce qu'on vient de déposer est ce qu'on s'attend à voir : l'aperçu bascule
+  // sur le document importé. Un bouton suffit à revenir au CV composé.
+  profile.cvMode = 'importe';
+  await profile.save();
+
   res.status(201).json({ ...profile.toObject(), fields: result.fields || null });
+});
+
+/**
+ * POST /profile/cv/fields — remplit les rubriques depuis le dernier import.
+ *
+ * Séparé du dépôt, et c'est tout l'intérêt : importer un CV et en reprendre les
+ * données sont deux gestes distincts. On peut vouloir le document tel quel et
+ * changer d'avis, ou remplir les rubriques sans jamais afficher le fichier.
+ *
+ * Le remplacement est franc : on ne fusionne pas. Mélanger deux CV produit des
+ * doublons que personne ne relit.
+ */
+export const applyCvFields = asyncHandler(async (req, res) => {
+  const base = await Profile.forUser(req.user.id);
+  const profile = await Profile.findById(base._id).select('+cvFields');
+
+  const champs = profile.cvFields;
+  if (!champs || typeof champs !== 'object') {
+    return res.status(409).json({
+      error:
+        "Aucune rubrique n'a été reconnue dans le dernier CV importé. " +
+        'Dépose un fichier texte (PDF exporté depuis Word, ou .docx) plutôt qu’un scan.',
+    });
+  }
+
+  // Seules les clés que le profil connaît : le reste serait du bruit persistant.
+  const AUTORISES = [
+    'fullName', 'headline', 'email', 'phone', 'location', 'summary',
+    'skillGroups', 'experiences', 'education', 'projects', 'languages', 'interests',
+  ];
+  for (const cle of AUTORISES) {
+    if (champs[cle] !== undefined) profile[cle] = champs[cle];
+  }
+
+  // Les rubriques viennent d'être remplies : c'est le CV composé qui fait foi.
+  profile.cvMode = 'compose';
+  await profile.save();
+
+  res.json(profile.toObject());
+});
+
+/**
+ * PUT /profile/cv-mode — choisit lequel des deux CV fait foi.
+ * Body : { mode: 'compose' | 'importe' }
+ */
+export const setCvMode = asyncHandler(async (req, res) => {
+  const mode = req.body?.mode;
+  if (!['compose', 'importe'].includes(mode)) {
+    return res.status(400).json({ error: "Mode attendu : « compose » ou « importe »." });
+  }
+
+  const profile = await Profile.forUser(req.user.id);
+  if (mode === 'importe') {
+    const complet = await Profile.findById(profile._id).select('+cvFile');
+    if (!complet?.cvFile?.length) {
+      return res.status(409).json({ error: 'Aucun CV importé à afficher.' });
+    }
+  }
+
+  profile.cvMode = mode;
+  await profile.save();
+  res.json(profile.toObject());
 });
 
 // POST /profile/compose — construit le CV à partir des champs du formulaire
@@ -98,8 +171,22 @@ export const deleteCv = asyncHandler(async (req, res) => {
   profile.cvChars = 0;
   profile.cvPages = 0;
   profile.cvWarnings = [];
+
+  /*
+   * Les octets partent aussi.
+   *
+   * Seules les métadonnées étaient effacées : l'écran annonçait « CV retiré »
+   * pendant que le fichier restait en base, toujours joignable par la campagne.
+   * Un document qu'on croit supprimé ne doit pas pouvoir arriver chez un
+   * recruteur.
+   */
+  profile.cvFile = undefined;
+  profile.cvMime = '';
+  profile.cvFields = null;
+  profile.cvParseMethod = '';
+  profile.cvMode = 'compose';
   await profile.save();
-  res.json(profile);
+  res.json(profile.toObject());
 });
 
 /**

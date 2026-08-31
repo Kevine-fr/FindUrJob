@@ -43,45 +43,21 @@ export default function CvDropzone({ profile, onChange }) {
       });
 
       /*
-       * Les rubriques reconnues ne remplacent rien sans accord explicite.
+       * L'import ne décide plus rien tout seul.
        *
-       * Un import écrase potentiellement des heures de saisie. Le serveur les
-       * renvoie comme proposition ; c'est ici, et seulement après un « oui »,
-       * qu'elles sont appliquées. Le gabarit du CV ne change pas — seules les
-       * données changent, donc l'aperçu reste celui qu'on a conçu.
+       * Un `window.confirm` posait la question une fois, au pire moment — juste
+       * après le dépôt, avant même d'avoir vu ce qui avait été reconnu — et une
+       * réponse « non » perdait la proposition pour de bon. Les deux suites
+       * possibles sont désormais deux boutons, disponibles tant que le fichier
+       * est là : reprendre les données, ou garder le document tel quel.
        */
-      const champs = updated.fields;
-      const compte = champs
-        ? (champs.experiences?.length || 0) + (champs.education?.length || 0)
-        : 0;
-
-      if (compte > 0) {
-        const remplacer = window.confirm(
-          `${file.name} a été lu.\n\n` +
-            `${champs.experiences?.length || 0} expérience(s) et ` +
-            `${champs.education?.length || 0} formation(s) y ont été reconnues.\n\n` +
-            `Remplacer les rubriques actuelles de ton CV par celles-ci ?\n\n` +
-            `Le format de ton CV ne change pas : seules les informations sont ` +
-            `reprises. Tes rubriques actuelles seront perdues.`
-        );
-
-        if (remplacer) {
-          // On ne fusionne pas : mélanger deux CV produit des doublons que
-          // personne ne relit. Remplacer est franc, et c'est ce qu'on a annoncé.
-          onChange?.({ ...updated, ...champs });
-          toast.success('Rubriques remplacées par celles du CV importé.');
-          return;
-        }
-        toast.info('Rubriques conservées : seul le texte source a été mis à jour.');
-      } else if (champs === null) {
-        toast.info(
-          "Le texte a été importé, mais les rubriques n'ont pas pu en être extraites " +
-            "(moteur IA indisponible). Ton CV actuel est inchangé.",
-          { duration: 9000 }
-        );
-      }
-
       onChange?.(updated);
+
+      if (updated.cvParseMethod && updated.cvParseMethod !== 'modele' && updated.cvParseMethod !== 'heuristique') {
+        // La vraie raison, pas « moteur indisponible » : crédit épuisé et panne
+        // réseau n'appellent pas la même réaction.
+        toast.info(updated.cvParseMethod, { duration: 9000 });
+      }
     } catch {
       /* déjà signalé par le toast */
     } finally {
@@ -94,6 +70,40 @@ export default function CvDropzone({ profile, onChange }) {
     try {
       onChange?.(await api.profile.removeCv());
       toast.success('CV retiré.');
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Reprendre les données du fichier dans les rubriques. Remplace, sans fusionner. */
+  const reprendreLesDonnees = async () => {
+    setBusy(true);
+    try {
+      const profil = await api.profile.applyCvFields();
+      onChange?.(profil);
+      toast.success(
+        `Rubriques remplies : ${profil.experiences?.length || 0} expérience(s), ` +
+          `${profil.education?.length || 0} formation(s). À relire.`
+      );
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Choisir lequel des deux CV fait foi — à l'écran comme en candidature. */
+  const choisirMode = async (mode) => {
+    setBusy(true);
+    try {
+      onChange?.(await api.profile.setCvMode(mode));
+      toast.success(
+        mode === 'importe'
+          ? 'Le CV importé est affiché et sera envoyé tel quel.'
+          : 'Le CV composé ici est affiché et sera envoyé.'
+      );
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -167,7 +177,60 @@ export default function CvDropzone({ profile, onChange }) {
       )}
 
       {hasCv && !busy && (
-        <div className="inline" style={{ marginTop: 10 }}>
+        <div className="cv-import-choix">
+          <p className="cv-import-titre">Que faire de ce CV ?</p>
+
+          <div className="cv-import-options">
+            {/*
+              Deux chemins, montrés côte à côte plutôt qu'enchaînés dans une
+              question : reprendre les données, ou garder la mise en page.
+              Chacun dit ce qu'il fait à l'aperçu et à la candidature, parce que
+              c'est la seule chose qui compte vraiment.
+            */}
+            <button
+              className={'cv-import-option' + (profile?.cvMode === 'compose' ? ' is-actif' : '')}
+              onClick={reprendreLesDonnees}
+              disabled={!profile?.cvParseMethod}
+              title={
+                profile?.cvParseMethod
+                  ? 'Remplace les rubriques actuelles par celles du fichier.'
+                  : "Aucune rubrique n'a pu être reconnue dans ce fichier."
+              }
+            >
+              <span className="cv-import-option-titre">Remplir les rubriques</span>
+              <span className="cv-import-option-detail">
+                Reprend nom, expériences, formations et compétences du fichier, puis
+                garde le gabarit conçu ici. Les rubriques actuelles sont remplacées.
+              </span>
+            </button>
+
+            <button
+              className={'cv-import-option' + (profile?.cvMode === 'importe' ? ' is-actif' : '')}
+              onClick={() => choisirMode('importe')}
+            >
+              <span className="cv-import-option-titre">Garder le CV tel quel</span>
+              <span className="cv-import-option-detail">
+                Le fichier déposé s'affiche dans l'aperçu et part aux recruteurs sans
+                réimpression. Ta mise en page est conservée à l'identique.
+              </span>
+            </button>
+          </div>
+
+          {profile?.cvMode === 'importe' && (
+            <p className="cv-import-etat">
+              C'est le <strong>fichier importé</strong> qui s'affiche et qui sera envoyé.{' '}
+              <button className="btn btn-ghost btn-sm" onClick={() => choisirMode('compose')}>
+                Revenir au CV composé ici
+              </button>
+            </p>
+          )}
+
+          {profile?.cvParseMethod === 'heuristique' && (
+            <p className="cv-import-etat">
+              Rubriques reconnues sans le modèle : relis-les avant d'envoyer.
+            </p>
+          )}
+
           <button className="btn btn-ghost btn-sm" onClick={remove}>
             Retirer le CV
           </button>

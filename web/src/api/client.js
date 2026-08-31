@@ -139,6 +139,10 @@ export const api = {
     uploadCv: (file) => upload('/profile/cv', file),
     removeCv: () => req('/profile/cv', { method: 'DELETE' }),
     composeCv: (fields) => req('/profile/compose', { method: 'POST', body: JSON.stringify(fields) }),
+    // Reprendre les rubriques du dernier import, ou choisir lequel des deux CV
+    // fait foi. Deux gestes séparés du dépôt : ce sont des choix distincts.
+    applyCvFields: () => req('/profile/cv/fields', { method: 'POST' }),
+    setCvMode: (mode) => req('/profile/cv-mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
   },
 
   cv: {

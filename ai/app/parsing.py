@@ -12,6 +12,8 @@ un document rival, c'est une source de données.
 import json
 import logging
 
+from .cv_sections import parse_cv_sections
+
 logger = logging.getLogger(__name__)
 
 # Le schéma reprend les champs de `ProfileIn` : ce qui en sort est directement
@@ -114,15 +116,47 @@ RÈGLES
 """
 
 
-async def parse_cv(provider, text: str, *, max_chars: int = 24000):
-    """Rend un dictionnaire de rubriques, ou `None` si l'extraction n'aboutit pas.
+def _raison_lisible(exc: Exception) -> str:
+    """Ce qui s'est réellement passé, dit à quelqu'un qui n'a pas les journaux.
 
-    `None` plutôt qu'une exception : l'appelant garde alors le texte brut, qui
-    reste utile, au lieu de perdre l'import entier.
+    « Moteur IA indisponible » couvrait sans distinction une clé absente, un
+    crédit épuisé et une panne réseau — trois situations qui n'appellent pas du
+    tout la même réaction. On nomme celles qu'on sait reconnaître.
+    """
+    message = str(exc)
+    if "credit balance is too low" in message:
+        return (
+            "Le compte Anthropic n'a plus de crédit : les rubriques ont été "
+            "reconnues sans le modèle, à relire."
+        )
+    if "rate_limit" in message or "429" in message:
+        return (
+            "Le moteur est momentanément saturé : les rubriques ont été reconnues "
+            "sans lui, à relire."
+        )
+    if "authentication" in message.lower() or "401" in message:
+        return (
+            "La clé du moteur IA est refusée : les rubriques ont été reconnues "
+            "sans le modèle, à relire."
+        )
+    return "Le moteur IA n'a pas répondu : les rubriques ont été reconnues sans lui, à relire."
+
+
+async def parse_cv(provider, text: str, *, max_chars: int = 24000) -> tuple[dict | None, str]:
+    """Rubriques d'un CV, et la façon dont on les a obtenues.
+
+    Rend `(champs, methode)` où `methode` vaut « modele », « heuristique » ou un
+    message expliquant l'échec. L'appelant n'a plus à deviner : jusqu'ici, tout
+    échec rendait `None` et l'écran parlait de « moteur indisponible », que la
+    clé soit absente, le crédit épuisé ou le service en panne.
+
+    Le repli sans modèle vaut mieux que rien : moins fin, mais hors ligne et
+    toujours disponible. Un import qui ne remplit aucune rubrique est vécu comme
+    un import raté, et c'est exactement ce qui se produisait.
     """
     client = getattr(provider, "_client", None)
     if client is None:
-        return None  # mode hors-ligne : pas d'extraction structurée
+        return parse_cv_sections(text), "heuristique"
 
     try:
         response = await client.messages.create(
@@ -137,16 +171,18 @@ async def parse_cv(provider, text: str, *, max_chars: int = 24000):
         )
     except Exception as exc:
         logger.warning("extraction structurée impossible : %s", exc)
-        return None
+        return parse_cv_sections(text), _raison_lisible(exc)
 
     if getattr(response, "stop_reason", None) in {"refusal", "max_tokens"}:
-        return None
+        logger.warning("extraction structurée interrompue : %s", response.stop_reason)
+        return parse_cv_sections(text), "Le modèle n'a pas pu terminer : rubriques reconnues sans lui, à relire."
 
     brut = "".join(
         block.text for block in response.content if getattr(block, "type", "") == "text"
     ).strip()
 
     try:
-        return json.loads(brut)
+        return json.loads(brut), "modele"
     except json.JSONDecodeError:
-        return None
+        logger.warning("réponse du modèle illisible en JSON")
+        return parse_cv_sections(text), "Réponse du modèle illisible : rubriques reconnues sans lui, à relire."

@@ -17,14 +17,16 @@ export default function CvPreview({ profile, options, onFit }) {
   const [html, setHtml] = useState('');
 
   /*
-   * Un seul aperçu, un seul gabarit.
+   * Un seul aperçu — mais deux documents possibles, et c'est `cvMode` qui dit
+   * lequel.
    *
-   * Un temps, un CV importé s’affichait tel quel dans un second cadre : deux
-   * documents rivaux, deux mises en page, et une candidature dont on ne savait
-   * plus laquelle partirait. L’import alimente désormais les rubriques (après
-   * confirmation), et l’aperçu reste ce qu’il a toujours été — le CV composé
-   * ici, avec les données du moment.
+   * Un temps, un CV importé s'affichait dans un *second* cadre : deux documents
+   * rivaux, deux mises en page, et une candidature dont on ne savait plus
+   * laquelle partirait. La réponse n'était pas de cacher l'un des deux — c'est
+   * bien le fichier importé qu'on veut parfois envoyer — mais de n'en montrer
+   * qu'un à la fois, celui qui fait foi. Ce qui est à l'écran est ce qui part.
    */
+  const montrerLImporte = profile?.cvMode === 'importe' && profile?.cvFileName;
 
   // Recomposer à chaque frappe saccade l'aperçu : on laisse la frappe se poser.
   useEffect(() => {
@@ -59,6 +61,28 @@ export default function CvPreview({ profile, options, onFit }) {
       /* origine inattendue : l'aperçu reste affiché, sans jauge */
     }
   };
+
+  /*
+   * Le document importé est servi par l'API, avec le cookie de session : c'est
+   * une adresse, pas un `srcDoc`. Le visualiseur PDF du navigateur s'en charge,
+   * ce qui donne l'aperçu le plus fidèle possible — c'est le fichier lui-même.
+   *
+   * Pas de `sandbox` ici : elle bloquerait le visualiseur intégré, et la page
+   * resterait blanche. La ressource vient de notre propre origine.
+   */
+  if (montrerLImporte) {
+    return (
+      <div className="sheet-stage" ref={stageRef}>
+        <iframe
+          className="sheet-frame"
+          title={`Aperçu de ${profile.cvFileName}`}
+          src="/api/profile/cv-file#toolbar=0&view=FitH"
+          width={A4_PX.width}
+          height={A4_PX.height}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="sheet-stage" ref={stageRef}>

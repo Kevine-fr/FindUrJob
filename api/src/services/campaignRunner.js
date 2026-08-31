@@ -442,11 +442,25 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
                * PDF méconnaissable que la personne découvrait chez le recruteur.
                * Mieux vaut une candidature non partie qu'un mauvais CV parti.
                */
-              if (profile.cvFile?.length) {
+              /*
+               * `cvMode` tranche, et l'aperçu montre la même chose.
+               *
+               * Le fichier importé l'emportait auparavant dès qu'il existait :
+               * un import remplaçait donc en silence le CV composé au moment de
+               * candidater, pendant que l'écran continuait d'afficher le
+               * composé. On envoyait un document que personne n'avait vu.
+               */
+              const prefereImporte = profile.cvMode === 'importe';
+
+              if (prefereImporte && profile.cvFile?.length) {
                 // Le fichier d'origine : aucune réimpression, rien à dégrader.
                 buffer = profile.cvFile;
               } else if (profile.masterCvHtml) {
                 ({ buffer } = await renderCvPdf(profile.masterCvHtml));
+              } else if (profile.cvFile?.length) {
+                // Mode « composé » mais rien de composé à ce jour : le fichier
+                // importé vaut mieux qu'une candidature qui ne part pas.
+                buffer = profile.cvFile;
               } else {
                 throw new Error(
                   "Mode « CV classique » : aucun CV dans l'onglet « Mon CV ». " +

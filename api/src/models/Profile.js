@@ -156,6 +156,35 @@ const profileSchema = new mongoose.Schema(
     cvChars: { type: Number, default: 0 },
     cvPages: { type: Number, default: 0 },
     cvWarnings: { type: [String], default: [] },
+
+    /*
+     * Lequel des deux CV fait foi.
+     *
+     * Il y en a toujours potentiellement deux : celui composé depuis les
+     * rubriques, et le fichier importé. Jusqu'ici le fichier l'emportait sans
+     * condition dès qu'il existait — un import remplaçait donc en silence le CV
+     * composé au moment de candidater, alors que l'aperçu, lui, continuait
+     * d'afficher le composé. Deux documents, aucune règle affichée.
+     *
+     *   compose — le CV construit ici, avec le gabarit et les rubriques
+     *   importe — le fichier déposé, tel quel, sans réimpression
+     *
+     * Le choix vaut pour l'aperçu **et** pour ce qui part en candidature : ce
+     * qu'on voit est ce qui est envoyé.
+     */
+    cvMode: { type: String, enum: ['compose', 'importe'], default: 'compose' },
+
+    /*
+     * Les rubriques reconnues dans le dernier fichier importé.
+     *
+     * Gardées telles quelles, sans être appliquées : c'est une proposition. Les
+     * conserver permet de remplir les rubriques plus tard, d'un bouton, sans
+     * redéposer le fichier — et de le refaire après coup si on a d'abord voulu
+     * garder le document tel quel.
+     */
+    cvFields: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    // Comment elles ont été reconnues, ou pourquoi le modèle n'a pas pu servir.
+    cvParseMethod: { type: String, default: '' },
   },
   { timestamps: true }
 );

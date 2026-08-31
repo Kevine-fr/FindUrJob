@@ -1056,6 +1056,65 @@ img {
   text-align: left;
 }
 
+/* Après l'import : les deux suites possibles, montrées ensemble.
+   Une question enchaînée forçait un choix avant d'avoir rien vu ; deux cartes
+   côte à côte laissent comparer, et revenir. */
+.cv-import-choix {
+  margin-top: 12px;
+}
+.cv-import-titre {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.cv-import-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.cv-import-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color var(--base) var(--ease), background var(--base) var(--ease);
+}
+.cv-import-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cv-import-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* L'option active se signale par sa bordure : le fond reste sobre, la carte
+   servant aussi de bouton d'action. */
+.cv-import-option.is-actif {
+  border-color: var(--accent);
+}
+.cv-import-option-titre {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+}
+.cv-import-option-detail {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.cv-import-etat {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
 /* --- Filtres ----------------------------------------------------------- */
 
 .filters {

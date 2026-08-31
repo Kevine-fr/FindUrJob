@@ -1,41 +1,20 @@
 // Métadonnées d'affichage (miroir des enums côté serveur).
 
-/**
- * Teinte d'un statut, et le filet assorti pour la bordure de sa pastille.
- *
- * La couleur passe par une variable CSS plutôt que par un hexadécimal : ces
- * teintes s'écrivent en **texte** sur une carte, et le thème sombre demande des
- * valeurs plus claires que le thème clair — un hexadécimal unique ne peut pas
- * tenir le contraste des deux côtés. Les deux jeux sont définis dans
- * `tokens.css`, et une valeur `var()` fonctionne telle quelle dans un `style`
- * en ligne.
- */
-const teinte = (cle) => ({
-  color: `var(--status-${cle})`,
-  // Le filet est la même teinte très diluée. `color-mix` évite d'entretenir
-  // dix variables de plus, là où l'ancien code concaténait un alpha au hexa —
-  // ce qu'une `var()` ne permet plus.
-  border: `color-mix(in srgb, var(--status-${cle}) 28%, transparent)`,
-});
-
 export const STATUS_META = {
-  brouillon: { label: 'Brouillon', ...teinte('brouillon') },
-  a_postuler: { label: 'À postuler', ...teinte('a_postuler') },
+  brouillon: { label: 'Brouillon', color: '#62667a' },
+  a_postuler: { label: 'À postuler', color: '#2d5bff' },
   // Distinct de « refusé » : là, c'est l'envoi qui a échoué, pas l'employeur
   // qui a dit non. Confondre les deux masque un problème réparable.
-  echec_envoi: { label: 'Envoi échoué', ...teinte('echec_envoi') },
+  echec_envoi: { label: 'Envoi échoué', color: '#eb6834' },
   // Ni parti ni échoué : on a appuyé, la plateforme n'a rien confirmé.
-  a_verifier: { label: 'À vérifier', ...teinte('a_verifier') },
-  postule: { label: 'Postulé', ...teinte('postule') },
-  relance: { label: 'Relancé', ...teinte('relance') },
-  entretien: { label: 'Entretien', ...teinte('entretien') },
-  offre: { label: 'Offre', ...teinte('offre') },
-  refuse: { label: 'Refusé', ...teinte('refuse') },
-  abandonne: { label: 'Abandonné', ...teinte('abandonne') },
+  a_verifier: { label: 'À vérifier', color: '#eda100' },
+  postule: { label: 'Postulé', color: '#7a5af8' },
+  relance: { label: 'Relancé', color: '#d99400' },
+  entretien: { label: 'Entretien', color: '#1f9d57' },
+  offre: { label: 'Offre', color: '#0aa06e' },
+  refuse: { label: 'Refusé', color: '#e5484d' },
+  abandonne: { label: 'Abandonné', color: '#9aa0ae' },
 };
-
-/** Repli pour un statut inconnu venu du serveur. */
-export const STATUS_FALLBACK = teinte('brouillon');
 
 export const STATUS_ORDER = [
   'brouillon',

@@ -1,20 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="findJOBS">
-  <title>findJOBS</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FindUrJob">
+  <title>FindUrJob</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4b73ff"/>
+      <stop offset="1" stop-color="#2039c8"/>
+    </linearGradient>
+  </defs>
 
-  <!-- Pastille de marque : le navy du logo. -->
-  <rect width="512" height="512" rx="116" fill="#2c3a50"/>
+  <!-- Pastille de marque : le bleu électrique du produit. -->
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 
-  <!-- Loupe : l'anneau et son manche. Le haut de l'anneau passe sous le
-       casque, qui le recouvre — d'où le tracé complet, plus simple qu'un arc
-       partiel et sans jointure visible. -->
-  <circle cx="256" cy="252" r="94" fill="none" stroke="#f7c548" stroke-width="40"/>
-  <path d="M256 352v76" fill="none" stroke="#f7c548" stroke-width="44" stroke-linecap="round"/>
+  <!-- Mallette : « emploi », lisible dès 16 px parce qu'elle reste une
+       silhouette pleine sans détail intérieur fin. -->
+  <path d="M198 158v-14a30 30 0 0 1 30-30h56a30 30 0 0 1 30 30v14"
+        fill="none" stroke="#fff" stroke-width="28" stroke-linecap="round"/>
+  <rect x="86" y="158" width="340" height="240" rx="40" fill="#fff"/>
 
-  <!-- Casque de chantier : dôme plein et bord large. Une silhouette pleine
-       reste lisible à 16 px, là où un contour se refermerait. -->
-  <path d="M176 232a80 80 0 0 1 160 0z" fill="#f7c548"/>
-  <rect x="140" y="222" width="232" height="36" rx="18" fill="#f7c548"/>
-
-  <!-- Ferrure du casque : reprend le navy du fond plutôt qu'une troisième couleur. -->
-  <circle cx="256" cy="192" r="26" fill="#2c3a50"/>
+  <!-- Coche : la candidature partie. Reprend le bleu du fond pour ne pas
+       ajouter une troisième couleur. -->
+  <path d="M196 282l44 44 84-92" fill="none" stroke="#2039c8" stroke-width="34"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -6,8 +6,8 @@
   "start_url": "/offres",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f4f6f9",
-  "theme_color": "#2c3a50",
+  "background_color": "#f5f4ef",
+  "theme_color": "#2d5bff",
   "orientation": "any",
   "categories": ["productivity", "business"],
   "icons": [

@@ -4,22 +4,16 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import { AuthProvider } from './lib/auth.jsx';
-import { ThemeProvider } from './lib/theme.jsx';
-/* Tailwind d'abord : à spécificité égale, le système visuel maison garde ainsi
-   le dernier mot sur les écrans déjà en place. */
-import './styles/tailwind.css';
 import './styles/tokens.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

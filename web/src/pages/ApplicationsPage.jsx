@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
-import { STATUS_META, STATUS_ORDER, STATUS_FALLBACK, SOURCE_LABELS } from '../lib/status.js';
+import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
 import { ilYA, fraicheur, candidats, concurrence, UNITES } from '../lib/freshness.js';
 import ApplicationDetail from '../components/ApplicationDetail.jsx';
 import {
@@ -275,7 +275,7 @@ export default function ApplicationsPage() {
         <>
         <div className="grid grid-cards stagger">
           {apps.map((a, index) => {
-            const meta = STATUS_META[a.status] || { label: a.status, ...STATUS_FALLBACK };
+            const meta = STATUS_META[a.status] || { label: a.status, color: '#62667a' };
             return (
               <div
                 key={a._id}
@@ -286,7 +286,7 @@ export default function ApplicationsPage() {
                 <div className="inline">
                   <span
                     className="badge dot"
-                    style={{ color: meta.color, borderColor: meta.border }}
+                    style={{ color: meta.color, borderColor: meta.color + '33' }}
                   >
                     {meta.label}
                   </span>

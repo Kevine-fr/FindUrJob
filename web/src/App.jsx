@@ -15,8 +15,6 @@ import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AlertsPage from './pages/AlertsPage.jsx';
 import { useAuth } from './lib/auth.jsx';
-import { Brand, BrandMark } from './components/Brand.jsx';
-import { ThemeToggle } from './components/ThemeToggle.jsx';
 
 /*
  * La carte est chargée à la demande.
@@ -194,7 +192,14 @@ export default function App() {
     };
   }, [menuOpen]);
 
-  const brand = <Brand />;
+  const brand = (
+    <div className="brand">
+      <img src="/favicon.svg" alt="" width="26" height="26" />
+      <span className="brand-text">
+        FindUr<span>Job</span>
+      </span>
+    </div>
+  );
 
   /*
    * La session vit dans un cookie que le JavaScript ne peut pas lire : son état
@@ -206,7 +211,7 @@ export default function App() {
     return (
       <div className="auth-shell">
         <div className="auth-splash">
-          <BrandMark size={44} />
+          <img src="/favicon.svg" alt="" width="44" height="44" />
         </div>
       </div>
     );
@@ -262,7 +267,6 @@ export default function App() {
           </NavLink>
         ))}
         <div className="nav-spacer" />
-        <ThemeToggle />
         <InstallButton />
         <div className="nav-foot">
           {/* Le bloc identité mène à l’espace compte : c’est là qu’on cherche

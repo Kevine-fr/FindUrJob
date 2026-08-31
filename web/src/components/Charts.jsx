@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Graphiques, en SVG écrit à la main.
@@ -69,66 +69,6 @@ const H = 200;
 const PAD = { top: 12, right: 12, bottom: 22, left: 34 };
 
 /**
- * Courbe lissée passant par tous les points (Hermite cubique monotone,
- * méthode de Fritsch–Carlson).
- *
- * Une spline ordinaire dépasse : entre deux jours à 0 et 8 candidatures, elle
- * plongerait sous zéro avant de remonter, dessinant une valeur qui n'existe
- * pas. Le bridage des pentes l'interdit — la courbe ne peut pas sortir de
- * l'intervalle de ses propres points, ce qui est la condition pour lisser un
- * graphique de données sans lui faire raconter autre chose que la mesure.
- */
-function courbeLissee(points) {
-  const n = points.length;
-  if (n < 2) return '';
-
-  // Pentes des sécantes, puis pente choisie en chaque point.
-  const secantes = [];
-  for (let i = 0; i < n - 1; i += 1) {
-    const dx = points[i + 1].x - points[i].x;
-    secantes.push(dx === 0 ? 0 : (points[i + 1].y - points[i].y) / dx);
-  }
-
-  const pentes = new Array(n);
-  pentes[0] = secantes[0];
-  pentes[n - 1] = secantes[n - 2];
-  for (let i = 1; i < n - 1; i += 1) {
-    // Un changement de sens force une pente nulle : le point est un extremum.
-    pentes[i] = secantes[i - 1] * secantes[i] <= 0 ? 0 : (secantes[i - 1] + secantes[i]) / 2;
-  }
-
-  // Bridage : c'est cette étape qui empêche tout dépassement.
-  for (let i = 0; i < n - 1; i += 1) {
-    if (secantes[i] === 0) {
-      pentes[i] = 0;
-      pentes[i + 1] = 0;
-      continue;
-    }
-    const alpha = pentes[i] / secantes[i];
-    const beta = pentes[i + 1] / secantes[i];
-    const norme = alpha * alpha + beta * beta;
-    if (norme > 9) {
-      const tau = 3 / Math.sqrt(norme);
-      pentes[i] = tau * alpha * secantes[i];
-      pentes[i + 1] = tau * beta * secantes[i];
-    }
-  }
-
-  let d = `M${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  for (let i = 0; i < n - 1; i += 1) {
-    const dx = points[i + 1].x - points[i].x;
-    const c1x = points[i].x + dx / 3;
-    const c1y = points[i].y + (pentes[i] * dx) / 3;
-    const c2x = points[i + 1].x - dx / 3;
-    const c2y = points[i + 1].y - (pentes[i + 1] * dx) / 3;
-    d +=
-      ` C${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)},` +
-      ` ${points[i + 1].x.toFixed(1)} ${points[i + 1].y.toFixed(1)}`;
-  }
-  return d;
-}
-
-/**
  * Série temporelle en aire.
  *
  * Une seule série : pas de légende (le titre la nomme), mais un repère au
@@ -137,7 +77,6 @@ function courbeLissee(points) {
 export function AreaChart({ data, color = SERIES[0], label }) {
   const [hover, setHover] = useState(null);
   const svgRef = useRef(null);
-  const ligneRef = useRef(null);
 
   const { d, aire, points, max } = useMemo(() => {
     const valeurs = data.map((p) => p.value);
@@ -151,35 +90,11 @@ export function AreaChart({ data, color = SERIES[0], label }) {
       y: PAD.top + hauteur - (p.value / max) * hauteur,
     }));
 
-    const d =
-      points.length > 1
-        ? courbeLissee(points)
-        : `M${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+    const d = points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const base = PAD.top + hauteur;
     const aire = `${d} L${points.at(-1).x.toFixed(1)} ${base} L${points[0].x.toFixed(1)} ${base} Z`;
     return { d, aire, points, max };
   }, [data]);
-
-  /*
-   * Longueur réelle du tracé, posée dans `--len`, et animation relancée.
-   *
-   * Mesurer évite le forfait : un `stroke-dasharray` fixe laisse la courbe
-   * tronquée dès qu'elle est plus longue, ou la termine avant la fin de
-   * l'animation. En `useLayoutEffect`, la mesure passe avant la peinture — le
-   * premier rendu n'a donc pas le temps de montrer une ligne pleine.
-   *
-   * Le va-et-vient sur `animation` force le navigateur à rejouer la keyframe :
-   * React réutilise le même nœud quand les données changent, et une animation
-   * déjà terminée sur ce nœud ne repartirait pas seule.
-   */
-  useLayoutEffect(() => {
-    const tracé = ligneRef.current;
-    if (!tracé) return;
-    tracé.style.setProperty('--len', tracé.getTotalLength());
-    tracé.style.animation = 'none';
-    void tracé.getBoundingClientRect();
-    tracé.style.animation = '';
-  }, [d]);
 
   const survol = (event) => {
     const svg = svgRef.current;
@@ -225,16 +140,7 @@ export function AreaChart({ data, color = SERIES[0], label }) {
         })}
 
         <path d={aire} fill={`url(#grad-${label})`} className="area-fill" />
-        <path
-          ref={ligneRef}
-          d={d}
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="area-line"
-        />
+        <path d={d} fill="none" stroke={color} strokeWidth="2" className="area-line" />
 
         {hover && (
           <>

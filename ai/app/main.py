@@ -18,6 +18,14 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+try:
+    # Métriques Prometheus (voir plus bas). Import tolérant : une image
+    # construite sans la dépendance doit continuer à démarrer — le moteur IA
+    # n'a pas à tomber parce que la supervision manque.
+    from prometheus_fastapi_instrumentator import Instrumentator
+except ImportError:  # pragma: no cover
+    Instrumentator = None
+
 from .config import get_settings
 from .cv_extract import UnsupportedFile, extract
 from .guards import inspect, is_usable
@@ -83,6 +91,22 @@ app = FastAPI(
     version=VERSION,
     lifespan=lifespan,
 )
+
+
+# Métriques Prometheus sur `GET /metrics` : requêtes, latences par route, et
+# métriques process (CPU, RSS). Le conteneur n'est pas exposé publiquement —
+# c'est Prometheus qui vient lire l'endpoint via le réseau Docker « web ».
+if Instrumentator is not None:
+    Instrumentator(
+        # Codes HTTP exacts plutôt que « 2xx » : sans cela on ne distingue pas
+        # un 200 d'un 204, ni un 401 d'un 404, dans les dashboards.
+        should_group_status_codes=False,
+        excluded_handlers=["/metrics"],
+    ).instrument(app).expose(app, include_in_schema=False)
+else:  # pragma: no cover
+    logger.warning(
+        "prometheus-fastapi-instrumentator absent : endpoint /metrics désactivé"
+    )
 
 
 @app.exception_handler(Exception)

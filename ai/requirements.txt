@@ -3,6 +3,11 @@
 # conteneur donne le jeu exact à épingler pour la prod.
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
+
+# Métriques Prometheus exposées sur /metrics (supervision Grafana du VPS).
+# L'import est tolérant côté application : si la dépendance venait à manquer,
+# le moteur démarre quand même, sans endpoint de métriques.
+prometheus-fastapi-instrumentator>=7.0,<9.0
 pydantic>=2.7,<3.0
 pydantic-settings>=2.3,<3.0
 

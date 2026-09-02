@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import routes from './routes.js';
 import { notFound, errorHandler } from './middleware.js';
+import { metricsMiddleware, metricsHandler } from './metrics.js';
 
 /**
  * Lecture des cookies.
@@ -63,6 +64,15 @@ export function createApp() {
 
   app.use(cors(corsOptions()));
   app.use(cookies);
+
+  // Mesure des requêtes (Prometheus). Monté tôt pour couvrir aussi les 404 et
+  // les erreurs, mais après CORS : une requête rejetée par CORS n'est pas du
+  // trafic applicatif.
+  app.use(metricsMiddleware);
+
+  // Hors de `/api` : le nginx du conteneur web ne relaie que `/api/` et
+  // `/vnc/`, l'endpoint reste donc interne au réseau Docker (Prometheus).
+  app.get('/metrics', metricsHandler);
 
   // Le CV déposé arrive en corps brut (PDF/DOCX/TXT) : il doit être lu avant
   // le parseur JSON, qui ne saurait pas quoi en faire.

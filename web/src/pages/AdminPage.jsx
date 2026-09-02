@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { SOURCE_LABELS, CONTRACT_LABELS, REMOTE_LABELS, STATUS_META } from '../lib/status.js';
 import { Stat, AreaChart, BarList, Donut, SERIES } from '../components/Charts.jsx';
+import UserActivityPanel from '../components/UserActivityPanel.jsx';
 
 const PERIODES = [
   { days: 7, label: '7 jours' },
@@ -24,6 +25,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  // Compte dont on regarde la fiche. `null` = on est sur le tableau de bord.
+  const [profil, setProfil] = useState(null);
 
   const load = useCallback(() => {
     Promise.all([api.admin.overview(days), api.admin.users()])
@@ -52,6 +55,17 @@ export default function AdminPage() {
       setBusy(null);
     }
   };
+
+  /*
+   * La fiche d'un compte remplace la console plutôt que de s'ouvrir par-dessus.
+   *
+   * Elle porte ses propres filtres — période, familles, recherche — et un
+   * tiroir superposé mettrait deux jeux de filtres à l'écran en même temps,
+   * sans dire lequel agit sur quoi.
+   */
+  if (profil) {
+    return <UserActivityPanel userId={profil} onClose={() => setProfil(null)} />;
+  }
 
   if (error) {
     return (
@@ -193,10 +207,16 @@ export default function AdminPage() {
                         <span className="nav-avatar">
                           {(compte.fullName || compte.email).charAt(0).toUpperCase()}
                         </span>
-                        <div style={{ minWidth: 0 }}>
+                        {/* Le nom ouvre la fiche : c'est là qu'on clique
+                            d'instinct pour « en savoir plus sur ce compte ». */}
+                        <button
+                          className="cell-user-link"
+                          onClick={() => setProfil(compte.id)}
+                          title="Voir l'activité de ce compte"
+                        >
                           <strong>{compte.fullName || compte.email}</strong>
                           {compte.fullName && <em>{compte.email}</em>}
-                        </div>
+                        </button>
                         {compte.stats.campagneActive && (
                           <span className="badge badge-send">campagne</span>
                         )}
@@ -218,10 +238,17 @@ export default function AdminPage() {
                         : '—'}
                     </td>
                     <td>
+                      <div className="inline" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        {/* Consulter l'activité vaut pour tout compte, le sien
+                            compris — contrairement aux actions de droits. */}
+                        <button className="btn btn-ghost btn-sm" onClick={() => setProfil(compte.id)}>
+                          Activité
+                        </button>
+                      </div>
                       {/* On ne se retire pas ses propres droits : l'API le refuse
                           aussi, mais l'interface ne doit pas le proposer. */}
                       {!soi && (
-                        <div className="inline" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        <div className="inline" style={{ gap: 6, flexWrap: 'nowrap', marginTop: 6 }}>
                           <button
                             className="btn btn-ghost btn-sm"
                             disabled={busy === compte.id}

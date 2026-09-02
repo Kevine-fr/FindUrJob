@@ -91,3 +91,24 @@ export const REMOTE_LABELS = {
   teletravail: 'Télétravail',
   non_precise: 'Non précisé',
 };
+
+/**
+ * État d'une session de plateforme.
+ *
+ * Remonté ici depuis `AccountsPage` : la console d'administration affiche les
+ * mêmes états sur la fiche d'un compte, et deux tables de libellés auraient
+ * fini par diverger — l'une accentuée, l'autre pas.
+ */
+export const SESSION_STATE_LABELS = {
+  connectee: 'Session ouverte',
+  expiree: 'Session expirée',
+  verification: 'Vérification requise',
+  erreur: 'Erreur',
+  absente: 'Pas de session',
+};
+
+/** Les deux modes d'une campagne, tels qu'on les nomme à l'écran. */
+export const CAMPAIGN_MODE_LABELS = {
+  preparer: 'préparer seulement',
+  envoyer: 'préparer et envoyer',
+};

@@ -1,123 +1,89 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
-import { STATUS_META, SOURCE_LABELS } from '../lib/status.js';
-import { SearchField, ChipGroup, FilterFooter } from '../components/FilterBar.jsx';
-
-const TYPE_FILTERS = [
-  { value: '', label: 'Tout' },
-  { value: 'statut', label: 'Changements de statut' },
-  { value: 'cv', label: 'CV générés' },
-];
+import { SearchField, FilterFooter } from '../components/FilterBar.jsx';
+import ActivityFeed, { CategoryChips, PeriodPicker } from '../components/ActivityFeed.jsx';
+import { bornesDe } from '../lib/activity.js';
 
 /**
- * Ce qui a coincé, en un clic.
+ * Tout ce que le compte a produit, en un seul fil.
  *
- * Un envoi qui échoue se répare presque toujours (session expirée, formulaire
- * modifié) : encore faut-il pouvoir isoler ces évènements au milieu du reste.
- */
-const ECHEC = 'echec_envoi';
-
-/*
- * Les seuls statuts que l’application écrit elle-même.
+ * La page ne listait que deux choses — changements de statut et CV ciblés —
+ * alors que le reste de l'activité était déjà daté quelque part : les offres
+ * collectées, les passes de campagne, les alertes, les sessions de plateforme,
+ * les connexions. Le service côté serveur les rassemble ; ici on filtre.
  *
- * « Relancé », « Entretien », « Offre », « Refusé », « Abandonné » et
- * « Postulé » se posent à la main depuis la fiche d’une candidature : ils
- * n’apparaissent donc jamais dans un fil produit par les campagnes, et
- * proposer de filtrer dessus ne menait qu’à des listes vides.
+ * Le filtrage part au serveur plutôt que de se faire sur une fenêtre déjà
+ * chargée : sur un an d'activité, filtrer localement supposerait d'avoir tout
+ * rapatrié d'abord.
  */
-const STATUTS_HISTORIQUE = ['brouillon', 'a_postuler', 'echec_envoi', 'a_verifier'];
-
-function formatDate(value) {
-  const date = new Date(value);
-  return date.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
-}
-
-function dayKey(value) {
-  return new Date(value).toLocaleDateString('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 export default function HistoryPage() {
-  const [events, setEvents] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [data, setData] = useState({ events: [], total: 0, parCategorie: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [type, setType] = useState('');
-  const [status, setStatus] = useState('');
-  // Plateforme et recherche se jouent côté client : le serveur renvoie déjà la
-  // fenêtre d'évènements, la refiltrer localement évite un aller-retour.
-  const [source, setSource] = useState('');
+
+  const [periode, setPeriode] = useState({ preset: '30', from: '', to: '' });
+  const [categories, setCategories] = useState([]);
   const [q, setQ] = useState('');
+  // La recherche part au serveur : on attend une pause de frappe plutôt que
+  // d'émettre une requête par caractère.
+  const [qEnvoye, setQEnvoye] = useState('');
+
+  useEffect(() => {
+    const minuteur = setTimeout(() => setQEnvoye(q), 350);
+    return () => clearTimeout(minuteur);
+  }, [q]);
 
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (type) params.set('type', type);
-    if (status) params.set('status', status);
-    const query = params.toString();
+    const { from, to } = bornesDe(periode);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (categories.length) params.set('categories', categories.join(','));
+    if (qEnvoye.trim()) params.set('q', qEnvoye.trim());
+    params.set('limit', '400');
 
     api.history
-      .list(query ? `?${query}` : '')
-      .then((data) => {
-        setEvents(data.events || []);
-        setTotal(data.total || 0);
+      .list(`?${params.toString()}`)
+      .then((reponse) => {
+        setData(reponse);
+        setError(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [type, status]);
+  }, [periode, categories, qEnvoye]);
 
   useEffect(load, [load]);
 
-  const sources = useMemo(
-    () =>
-      [...new Set(events.map((e) => e.offer?.source).filter(Boolean))].map((value) => ({
-        value,
-        label: SOURCE_LABELS[value] || value,
-      })),
-    [events]
-  );
-
-  const visibles = useMemo(() => {
-    const recherche = q.trim().toLowerCase();
-    return events.filter((event) => {
-      if (source && event.offer?.source !== source) return false;
-      if (!recherche) return true;
-      const foin = [event.offer?.title, event.offer?.company, event.note]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return foin.includes(recherche);
-    });
-  }, [events, source, q]);
-
-  const filtreActif = Boolean(type || status || source || q);
-
-  const reset = () => {
-    setType('');
-    setStatus('');
-    setSource('');
-    setQ('');
+  /** `null` remet tout : les puces se cumulent, « Tout » les efface. */
+  const basculer = (categorie) => {
+    if (!categorie) return setCategories([]);
+    setCategories((actuelles) =>
+      actuelles.includes(categorie)
+        ? actuelles.filter((c) => c !== categorie)
+        : [...actuelles, categorie]
+    );
   };
 
-  // Regroupement par jour, l'ordre du serveur étant déjà décroissant.
-  const groups = [];
-  for (const event of visibles) {
-    const key = dayKey(event.at);
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.events.push(event);
-    else groups.push({ key, events: [event] });
-  }
+  const filtreActif = Boolean(
+    categories.length || q || periode.from || periode.to || periode.preset !== '30'
+  );
+
+  const reset = () => {
+    setCategories([]);
+    setQ('');
+    setPeriode({ preset: '30', from: '', to: '' });
+  };
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Historique</h1>
-          <p>Tout ce qui s'est passé : changements de statut et CV générés.</p>
+          <p>
+            Tout ce que ce compte a produit : candidatures, CV, offres collectées, passes de
+            campagne, alertes, sessions de plateforme et connexions.
+          </p>
         </div>
       </div>
 
@@ -125,145 +91,41 @@ export default function HistoryPage() {
         <SearchField
           value={q}
           onChange={setQ}
-          placeholder="Intitulé, entreprise, note…"
+          placeholder="Intitulé, entreprise, plateforme, note…"
         />
-
-        <div className="filter-group">
-          <span className="filter-label">Type</span>
-          <div className="filter-chips">
-            {TYPE_FILTERS.map((item) => (
-              <button
-                key={item.value}
-                className={'filter-chip' + (type === item.value ? ' active' : '')}
-                onClick={() => setType(item.value)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {type !== 'cv' && (
-          <div className="filter-group">
-            <span className="filter-label">Statut</span>
-            <div className="filter-chips">
-              <button
-                className={'filter-chip' + (status === '' ? ' active' : '')}
-                onClick={() => setStatus('')}
-              >
-                Tous
-              </button>
-              {STATUTS_HISTORIQUE.map((value) => (
-                <button
-                  key={value}
-                  className={'filter-chip' + (status === value ? ' active' : '')}
-                  onClick={() => setStatus(value)}
-                >
-                  {STATUS_META[value].label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Raccourci vers les échecs : c'est ce qu'on vient chercher ici. */}
-        {events.some((e) => e.status === ECHEC) && (
-          <div className="filter-group">
-            <span className="filter-label">Raccourci</span>
-            <div className="filter-chips">
-              <button
-                className={'filter-chip' + (status === ECHEC ? ' active' : '')}
-                onClick={() => setStatus(status === ECHEC ? '' : ECHEC)}
-                style={status === ECHEC ? undefined : { borderColor: STATUS_META[ECHEC].color }}
-              >
-                Envois échoués
-                <em className="filter-count">
-                  {events.filter((e) => e.status === ECHEC).length}
-                </em>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {sources.length > 1 && (
-          <ChipGroup
-            label="Plateforme"
-            value={source}
-            onChange={setSource}
-            options={sources}
-            allLabel="Toutes"
-          />
-        )}
-
+        <PeriodPicker value={periode} onChange={setPeriode} />
+        <CategoryChips
+          actives={categories}
+          onToggle={basculer}
+          parCategorie={data.parCategorie}
+        />
         <FilterFooter
-          shown={visibles.length}
-          total={total}
+          shown={data.events.length}
+          total={data.total}
           noun="évènement"
           active={filtreActif}
           onReset={reset}
         />
       </div>
 
-      {loading ? (
-        <p className="muted">Chargement…</p>
-      ) : error ? (
-        <div className="empty">Erreur : {error}</div>
-      ) : events.length === 0 ? (
-        <div className="empty">
-          Rien à afficher pour l'instant. L'historique se remplit dès que tu suis une offre ou
-          génères un CV ✦
-        </div>
-      ) : visibles.length === 0 ? (
-        <div className="empty">
-          <strong>Aucun évènement ne correspond</strong>
-          Les {events.length} évènements de cette période sont masqués par les filtres.
-        </div>
-      ) : (
-        groups.map((group) => (
-          <div key={group.key} className="history-day">
-            <div className="section-label">{group.key}</div>
-            <div className="panel">
-              {group.events.map((event, index) => {
-                const meta = event.status ? STATUS_META[event.status] : null;
-                return (
-                  <div className="history-item" key={`${event.at}-${index}`}>
-                    <div className="history-time">{formatDate(event.at).split(' à ')[1] || ''}</div>
-                    <div className="history-body">
-                      <div className="history-title">
-                        {event.type === 'cv' ? (
-                          <>
-                            CV généré
-                            {typeof event.score === 'number' && (
-                              <span className="badge" style={{ marginLeft: 8 }}>
-                                score {event.score}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span style={{ color: meta?.color }}>{meta?.label || event.status}</span>
-                        )}
-                      </div>
-                      <div className="history-meta">
-                        {event.offer ? (
-                          <>
-                            {event.offer.title}
-                            {event.offer.company ? ` · ${event.offer.company}` : ''}
-                            {event.offer.source
-                              ? ` · ${SOURCE_LABELS[event.offer.source] || event.offer.source}`
-                              : ''}
-                          </>
-                        ) : (
-                          <span className="muted">Offre supprimée</span>
-                        )}
-                      </div>
-                      {event.note && <div className="history-note">{event.note}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))
+      <ActivityFeed
+        events={data.events}
+        loading={loading}
+        error={error}
+        empty={
+          filtreActif
+            ? 'Aucun évènement sur cette période avec ces filtres.'
+            : "Rien à afficher pour l'instant. Le fil se remplit dès la première offre suivie."
+        }
+      />
+
+      {/* Le service plafonne chaque source : le dire vaut mieux que laisser
+          croire que le compte s'arrête là. */}
+      {data.total > data.events.length && (
+        <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>
+          {data.events.length} évènements affichés sur {data.total}. Resserre la période ou une
+          famille pour voir le reste.
+        </p>
       )}
     </>
   );

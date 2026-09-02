@@ -11,6 +11,7 @@ import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
 import { reconcilier } from './reconciliation.js';
+import { journaliser } from './activityLog.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 /**
@@ -735,6 +736,31 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
   } finally {
     campaign.running = false;
     await campaign.save();
+
+    /*
+     * Trace de la passe.
+     *
+     * `campaign` ne porte qu'un `lastResult`, écrasé à la suivante : sans cette
+     * ligne, une campagne qui échoue une nuit sur deux est indiscernable d'une
+     * campagne qui vient d'échouer pour la première fois. Écrit dans le `finally`
+     * pour couvrir aussi les passes interrompues par une erreur.
+     */
+    await journaliser(user, 'campagne.execution', {
+      at: campaign.lastRunAt,
+      severity: summary.errors.length ? 'erreur' : 'succes',
+      summary: campaign.lastError
+        ? `Campagne en échec : ${campaign.lastError}`
+        : campaign.lastResult || 'Campagne exécutée',
+      detail: {
+        examinees: summary.examined ?? 0,
+        preparees: summary.prepared ?? 0,
+        envoyees: summary.sent ?? 0,
+        confirmees: summary.confirmed ?? 0,
+        sousLeSeuil: summary.belowScore ?? 0,
+        erreurs: summary.errors.slice(0, 5),
+        essai: Boolean(dryRun),
+      },
+    });
   }
 
   return summary;

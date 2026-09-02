@@ -175,6 +175,9 @@ export const api = {
   admin: {
     overview: (days = 30) => req(`/admin/overview?days=${days}`),
     users: () => req('/admin/users'),
+    // Le fil d'un compte, bornable dans le temps. Même service que l'onglet
+    // Historique de la personne : les deux écrans ne peuvent pas diverger.
+    userActivity: (id, query = '') => req(`/admin/users/${id}/activity${query}`),
     updateUser: (id, body) => req(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     deleteUser: (id) => req(`/admin/users/${id}`, { method: 'DELETE' }),
   },

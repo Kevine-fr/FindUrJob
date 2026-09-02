@@ -5,8 +5,11 @@ import Application from '../models/Application.js';
 import CVVersion from '../models/CVVersion.js';
 import Campaign from '../models/Campaign.js';
 import PlatformAccount from '../models/PlatformAccount.js';
+import ActivityEvent from '../models/ActivityEvent.js';
 import { asyncHandler } from '../middleware.js';
 import { reschedule } from '../scheduler.js';
+import { construireHistorique } from '../services/historyService.js';
+import { lireDate, lireCategories } from './historyController.js';
 
 /**
  * Console d'administration : lecture de tout le flux, gestion des comptes.
@@ -199,6 +202,65 @@ export const listUsers = asyncHandler(async (_req, res) => {
   });
 });
 
+/**
+ * GET /admin/users/:id/activity — le fil d'un compte, vu par un administrateur.
+ *
+ * Même service que l'onglet Historique de la personne : un administrateur qui
+ * enquête doit voir exactement ce qu'elle voit, sinon les deux écrans se
+ * contredisent au pire moment. La différence est le destinataire, pas le
+ * contenu.
+ *
+ * Filtres : ?from=&to=&categories=&q=&limit=&skip=
+ *
+ * Ce que la route **ne** renvoie **pas** : le contenu des CV, des lettres et
+ * des notes. La console annonce des volumes, pas la matière — c'est la ligne
+ * déjà tenue par `overview`, et l'étendre ici en ferait une porte dérobée sur
+ * les documents de chacun.
+ */
+export const userActivity = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Compte introuvable.' });
+
+  const [historique, campagne, comptes] = await Promise.all([
+    construireHistorique(user._id, {
+      from: lireDate(req.query.from),
+      to: lireDate(req.query.to),
+      categories: lireCategories(req.query.categories),
+      q: req.query.q || '',
+      limit: req.query.limit,
+      skip: req.query.skip,
+    }),
+    Campaign.findOne({ user: user._id }),
+    PlatformAccount.find({ user: user._id }).select('platform sessionStatus lastLoginAt lastCheckedAt'),
+  ]);
+
+  res.json({
+    user: {
+      ...user.toPublic(),
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+      loginCount: user.loginCount,
+    },
+    campagne: campagne
+      ? {
+          enabled: campagne.enabled,
+          cron: campagne.cron,
+          mode: campagne.mode,
+          lastRunAt: campagne.lastRunAt,
+          lastResult: campagne.lastResult,
+          lastError: campagne.lastError,
+        }
+      : null,
+    comptes: comptes.map((compte) => ({
+      platform: compte.platform,
+      sessionStatus: compte.sessionStatus,
+      lastLoginAt: compte.lastLoginAt,
+      lastCheckedAt: compte.lastCheckedAt,
+    })),
+    ...historique,
+  });
+});
+
 /** PATCH /admin/users/:id — rôle et activation. */
 export const updateUser = asyncHandler(async (req, res) => {
   const { role, active } = req.body || {};
@@ -255,7 +317,9 @@ export const deleteUser = asyncHandler(async (req, res) => {
 
   const owner = new mongoose.Types.ObjectId(req.params.id);
   const supprime = {};
-  for (const Model of [JobOffer, Application, CVVersion, Campaign, PlatformAccount]) {
+  // Le journal d'activité part avec le reste : un compte supprimé ne doit pas
+  // laisser derrière lui la trace de ce qu'il a fait.
+  for (const Model of [JobOffer, Application, CVVersion, Campaign, PlatformAccount, ActivityEvent]) {
     const { deletedCount } = await Model.deleteMany({ user: owner });
     if (deletedCount) supprime[Model.modelName] = deletedCount;
   }

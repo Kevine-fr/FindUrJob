@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import ManualLogin from '../components/ManualLogin.jsx';
+import { SESSION_STATE_LABELS } from '../lib/status.js';
 
 /**
  * Une entrée par plateforme sur laquelle on sait candidater.
@@ -41,13 +42,8 @@ const PLATFORMS = {
 
 const INCONNUE = { label: '', color: '#6b7280', short: '??' };
 
-const STATE_LABELS = {
-  connectee: 'Session ouverte',
-  expiree: 'Session expirée',
-  verification: 'Vérification requise',
-  erreur: 'Erreur',
-  absente: 'Pas de session',
-};
+// Partagé avec la fiche de compte de la console : voir `lib/status.js`.
+const STATE_LABELS = SESSION_STATE_LABELS;
 
 function AccountCard({ account, onSaved, onChanged, manualLogin, onManual }) {
   const toast = useToast();

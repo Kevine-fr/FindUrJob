@@ -3,6 +3,7 @@ import Application from '../models/Application.js';
 import User from '../models/User.js';
 import { sendMail, appUrl } from './mailer.js';
 import { notifier, pushConfigured } from './webPush.js';
+import { journaliser } from './activityLog.js';
 import { APPLICATION_STATUSES } from '../utils/constants.js';
 
 /**
@@ -150,7 +151,42 @@ function corpsCourriel(alert, lot, total) {
  *               n'entame aucun quota. C'est ce qui permet de vérifier un
  *               réglage sans attendre l'heure dite ni brûler sa journée.
  */
-export async function runAlert(alertId, { essai = false, manuel = false } = {}) {
+/**
+ * Enveloppe journalisante.
+ *
+ * `executerAlerte` a six sorties — désactivée, échéance, quota, aucune
+ * correspondance, envoi, erreur. Poser la trace dans chacune reviendrait à
+ * l'oublier dans la septième. Ici elle est écrite une fois, quel que soit le
+ * chemin, à partir de l'état que l'exécution vient d'enregistrer.
+ *
+ * Un essai ne laisse rien : il ne modifie ni quota ni frontière du nouveau, et
+ * n'envoie aucun message. Le journaliser ferait croire à un déclenchement.
+ */
+export async function runAlert(alertId, options = {}) {
+  const resultat = await executerAlerte(alertId, options);
+  if (options.essai) return resultat;
+
+  const alert = await Alert.findById(alertId).select('user name lastRunAt lastResult lastError');
+  if (alert?.user) {
+    await journaliser(alert.user, 'alerte.execution', {
+      at: alert.lastRunAt || new Date(),
+      severity: alert.lastError ? 'erreur' : resultat.notified ? 'succes' : 'info',
+      summary: `${alert.name || 'Alerte'} — ${alert.lastError || alert.lastResult || resultat.skipped || 'exécutée'}`,
+      detail: {
+        correspondances: resultat.matched ?? 0,
+        signalees: resultat.notified ?? 0,
+        courriel: resultat.email?.sent ?? null,
+        push: resultat.push?.sent ?? null,
+        ignoree: resultat.skipped || null,
+        manuel: Boolean(options.manuel),
+      },
+      alert: alert._id,
+    });
+  }
+  return resultat;
+}
+
+async function executerAlerte(alertId, { essai = false, manuel = false } = {}) {
   const alert = await Alert.findById(alertId);
   if (!alert) return { skipped: 'alerte introuvable' };
 

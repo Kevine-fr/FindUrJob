@@ -6,7 +6,9 @@ import Profile from '../models/Profile.js';
 import Campaign from '../models/Campaign.js';
 import SearchPreference from '../models/SearchPreference.js';
 import PlatformAccount from '../models/PlatformAccount.js';
+import ActivityEvent from '../models/ActivityEvent.js';
 import { sendMail, verifyMail, resetMail, mailerConfigured } from '../services/mailer.js';
+import { journaliser } from '../services/activityLog.js';
 import { asyncHandler } from '../middleware.js';
 import { issue, verify, COOKIE_NAME, cookieOptions, isConfigured } from '../utils/session.js';
 import { adoptOrphans } from '../utils/adoptOrphans.js';
@@ -87,6 +89,23 @@ export const login = asyncHandler(async (req, res) => {
   user.lastLoginAt = new Date();
   user.loginCount += 1;
   await user.save();
+
+  /*
+   * Trace de la connexion.
+   *
+   * `lastLoginAt` et `loginCount` ne disent que « la dernière fois » et
+   * « combien » — jamais « quand, les fois d'avant ». C'est pourtant ce qu'on
+   * cherche quand on regarde si un compte a servi, et à quel rythme.
+   *
+   * Rien d'identifiant n'est joint : ni adresse IP, ni empreinte. Le fil sert à
+   * retracer un usage, pas à surveiller une personne.
+   */
+  await journaliser(user._id, 'session.connexion', {
+    at: user.lastLoginAt,
+    severity: 'info',
+    summary: 'Connexion au compte',
+    detail: { total: user.loginCount },
+  });
 
   res.cookie(COOKIE_NAME, issue(user), cookieOptions());
   res.json({ user: user.toPublic() });
@@ -293,6 +312,8 @@ export const deleteMe = asyncHandler(async (req, res) => {
     Campaign.deleteMany({ user: id }),
     SearchPreference.deleteMany({ user: id }),
     PlatformAccount.deleteMany({ user: id }),
+    // Le journal d'activité aussi : « rien n'est conservé » doit rester vrai.
+    ActivityEvent.deleteMany({ user: id }),
   ]);
   await User.deleteOne({ _id: id });
 

@@ -96,6 +96,8 @@ router.post('/cv/pdf', cvExport.exportCvPdf);
 // Administration : lecture de tout le flux et gestion des comptes.
 router.get('/admin/overview', requireAdmin, admin.overview);
 router.get('/admin/users', requireAdmin, admin.listUsers);
+// Le fil d'un compte : même service que l'onglet Historique de la personne.
+router.get('/admin/users/:id/activity', requireAdmin, admin.userActivity);
 router.patch('/admin/users/:id', requireAdmin, admin.updateUser);
 router.delete('/admin/users/:id', requireAdmin, admin.deleteUser);
 

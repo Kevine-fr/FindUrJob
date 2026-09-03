@@ -25,6 +25,20 @@ const ROLES = {
   lastName: /^nom$|nom.?de.?famille|last.?name|surname|family.?name|^lname/i,
   email: /e.?mail|courriel/i,
   phone: /t[ée]l[ée]?phone|^tel$|phone|mobile|portable/i,
+  /*
+   * La ville, et c'est un manque qui coûtait cher.
+   *
+   * La candidature simplifiée de LinkedIn réclame « Location (city) » et refuse
+   * d'avancer sans elle. Ne sachant pas la remplir, on cliquait « Suivant » sur
+   * un écran qui affichait « Ce champ est obligatoire » en rouge, on
+   * revenait sur le même écran, et l'essai finissait par conclure « aucun champ
+   * pour joindre le CV » — un diagnostic qui désignait le mauvais coupable, à
+   * deux écrans du vrai problème.
+   *
+   * Le motif exclut `pays` : un champ « Country » attend une valeur d'une liste
+   * fermée, et y écrire une ville ferait échouer la validation.
+   */
+  city: /ville|city|localit[ée]|commune|localisation|^location/i,
 };
 
 /** Cases à cocher qu'on accepte : conditions, consentement, RGPD. */
@@ -183,6 +197,64 @@ async function cocherCases(formulaire) {
  * identifiants de LinkedIn ressemblent à « «rb» » et n'apprennent rien à
  * personne, là où « Mobile phone number » se corrige tout de suite.
  */
+/**
+ * Les champs que la plateforme vient de refuser, lus dans ses propres messages.
+ *
+ * Complète `manquants`, qui ne voit que ce que le HTML déclare : LinkedIn
+ * valide côté application, sans `required` ni `aria-required`, et affiche « Ce
+ * champ est obligatoire » sous le champ fautif. Sans lire ce message, on ne
+ * savait pas *lequel* posait problème — seulement que l'écran n'avançait pas.
+ *
+ * On remonte du message au libellé du champ, parce que c'est le libellé qui
+ * permet de poser la question à la personne. « Location (city) » se corrige ;
+ * « le troisième champ » ne veut rien dire.
+ */
+const erreurAffichee = (page) =>
+  page
+    .evaluate(() => {
+      const MOTIF = /ce champ est obligatoire|champ obligatoire|this field is required|required field|veuillez (renseigner|saisir|compl[ée]ter)/i;
+      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+
+      const trouves = [];
+      for (const el of document.querySelectorAll('span, div, p, label, small')) {
+        const texte = (el.textContent || '').trim();
+        if (texte.length > 90 || !MOTIF.test(texte) || !visible(el)) continue;
+        if (el.querySelector('span, div, p, label, small')) continue; // on veut la feuille
+
+        // Le champ concerné est le plus proche au-dessus, dans le même bloc.
+        let bloc = el.parentElement;
+        let champ = null;
+        for (let n = 0; n < 4 && bloc && !champ; n += 1) {
+          champ = bloc.querySelector('input, textarea, select');
+          bloc = bloc.parentElement;
+        }
+        const libelle = (
+          champ?.labels?.[0]?.textContent ||
+          champ?.getAttribute('aria-label') ||
+          champ?.placeholder ||
+          champ?.name ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .replace(/\*$/, '')
+          .trim()
+          .slice(0, 60);
+
+        if (libelle && !trouves.some((t) => t.libelle === libelle)) {
+          trouves.push({
+            libelle,
+            forme: champ?.tagName === 'SELECT' ? 'liste' : champ?.type === 'number' ? 'nombre' : 'texte',
+            options: champ?.tagName === 'SELECT'
+              ? [...champ.options].map((o) => o.textContent.trim()).filter(Boolean).slice(0, 12)
+              : [],
+          });
+        }
+      }
+      return trouves.slice(0, 5);
+    })
+    .then((champs) => champs.map((c) => ({ ...c, cle: cleQuestion(c.libelle) })))
+    .catch(() => []);
+
 const manquants = (formulaire) =>
   formulaire
     .evaluate((form) => {
@@ -373,9 +445,30 @@ export async function applyForm(
       lastName: applicant.lastName || '',
       email: applicant.email || '',
       phone: applicant.phone || '',
+      city: applicant.city || '',
       coverLetter: coverLetter || '',
     });
     await humanPause(400, 900);
+
+    /*
+     * Un champ à suggestions n'est pas rempli tant qu'on n'a pas choisi.
+     *
+     * « Location (city) » de LinkedIn accepte la frappe, affiche « Paris » —
+     * et reste invalide : la plateforme attend qu'on retienne une entrée de sa
+     * liste. Sans ce clic, l'écran refusait d'avancer alors que le champ
+     * paraissait rempli à l'œil comme à la lecture du DOM.
+     *
+     * On ne clique que si une liste est réellement ouverte à cet instant, donc
+     * juste après notre propre saisie : c'est ce qui rend le geste sûr plutôt
+     * qu'un clic au hasard dans la page.
+     */
+    const suggestion = page
+      .locator('[role="option"], [role="listbox"] li, .basic-typeahead__selectable')
+      .first();
+    if (await suggestion.isVisible().catch(() => false)) {
+      await suggestion.click().catch(() => {});
+      await humanPause(400, 900);
+    }
 
     let joint = false;
     let depose = false;
@@ -569,8 +662,22 @@ export async function applyForm(
      * des libellés déclarés comme intermédiaires par la plateforme, et jamais
      * un libellé d'envoi. Un doute sur un bouton = on s'arrête.
      */
+    /*
+     * Assez d'écrans pour atteindre celui du CV.
+     *
+     * La limite était de quatre avances, soit cinq écrans. Mesuré sur une
+     * candidature simplifiée LinkedIn réelle : le parcours en compte davantage,
+     * et l'essai s'arrêtait pile sur « Suivant » pour conclure « aucun champ
+     * pour joindre le CV » — sur un formulaire qui en avait un, deux écrans
+     * plus loin. Le diagnostic accusait la plateforme d'un défaut qui était le
+     * nôtre.
+     *
+     * Monter la limite ne met rien en danger : la seule règle qui protège
+     * l'essai est ailleurs, et elle est absolue — on ne clique que des libellés
+     * déclarés intermédiaires, jamais un libellé d'envoi.
+     */
     let etapes = 0;
-    while (advanceText && etapes < 4) {
+    while (advanceText && etapes < 8) {
       const suite = boutonDans(portee).and(page.getByRole('button', { name: advanceText }));
       const visible = await suite.isVisible().catch(() => false);
       if (!visible) break;
@@ -581,6 +688,32 @@ export async function applyForm(
       await suite.click().catch(() => {});
       await humanPause(1800, 2800);
       etapes += 1;
+
+      /*
+       * Un écran qui refuse d'avancer se dit, il ne se reclique pas.
+       *
+       * La plateforme peut valider elle-même, sans marquer ses champs
+       * `required` ni `aria-required` : nos contrôles ne voient alors rien à
+       * signaler, on reclique « Suivant », et on tourne sur le même écran
+       * jusqu'à épuiser la limite. L'essai concluait alors sur ce qui manquait
+       * *ailleurs* — « aucun champ pour joindre le CV » — au lieu du champ
+       * refusé, affiché en rouge sous le formulaire.
+       *
+       * On lit donc le message d'erreur de la plateforme, et on nomme le champ
+       * qu'il désigne : c'est une information à fournir, pas un mystère.
+       */
+      const refus = await erreurAffichee(page);
+      if (refus.length) {
+        return {
+          status: 'manual',
+          reason: RAISONS.CHAMPS_MANQUANTS,
+          message: `Écran ${etapes + 1} refusé par la plateforme : ${refus
+            .map((c) => c.libelle)
+            .join(', ')}.`,
+          fields: refus,
+          screenshot: await capture(),
+        };
+      }
 
       const ecran = await trouverFormulaire(page);
       if (!ecran) break;

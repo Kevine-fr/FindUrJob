@@ -164,6 +164,9 @@ export async function retenterCandidature(user, applicationId, { force = false }
     lastName: (profile?.fullName || compte?.fullName || '').split(' ').slice(1).join(' ') || '',
     email: profile?.email || compte?.email || '',
     phone: profile?.phone || '',
+    // Même identité que la campagne, ville comprise : une relance qui remplirait
+    // moins de champs que l'envoi initial échouerait pour une raison de plus.
+    city: profile?.location || '',
   };
 
   const envoyer = () =>

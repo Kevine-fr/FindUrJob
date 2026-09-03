@@ -1,5 +1,6 @@
 import { humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
+import { RAISONS } from './failures.js';
 
 /**
  * France Travail — candidature seulement.
@@ -219,8 +220,40 @@ export async function apply(context, offer, options = {}) {
     if (versRecruteur) {
       return {
         status: 'external',
+        reason: RAISONS.REDIRECTION_EXTERNE,
         message: `Le recruteur reçoit les candidatures sur son propre site : ${versRecruteur}`,
         externalUrl: versRecruteur,
+      };
+    }
+
+    /*
+     * Certaines annonces ne se candidatent pas en ligne, et c'est voulu.
+     *
+     * « Veuillez vous présenter directement à l'adresse suivante » — un forum
+     * de recrutement, un employeur qui reçoit sur place, ou qui ne veut qu'un
+     * courriel. Il n'y a pas de formulaire à trouver : en chercher un menait à
+     * « aucun formulaire de candidature », qui laissait croire à un défaut de
+     * sélecteur et invitait à relancer une candidature impossible.
+     *
+     * On rend la consigne telle que la plateforme l'écrit : c'est elle qui dit
+     * quoi faire, et elle tient en une phrase.
+     */
+    const consigne = await page
+      .evaluate(() => {
+        const MOTIF =
+          /vous pr[ée]senter directement|se pr[ée]senter|candidature (par|uniquement par) (courrier|t[ée]l[ée]phone|mail)|adresser votre candidature par/i;
+        const zone = [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].find(
+          (el) => el.offsetParent !== null && MOTIF.test(el.textContent || '')
+        );
+        return zone ? (zone.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 220) : null;
+      })
+      .catch(() => null);
+
+    if (consigne) {
+      return {
+        status: 'external',
+        reason: RAISONS.REDIRECTION_EXTERNE,
+        message: `Cette annonce ne se candidate pas en ligne — ${consigne}`,
       };
     }
 

@@ -179,6 +179,14 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
       lastName: nomComplet.split(" ").slice(1).join(" ") || "",
       email: profile.email || compte?.email || "",
       phone: profile.phone || "",
+      /*
+       * La ville, exigee par la candidature simplifiee de LinkedIn.
+       *
+       * Son champ « Location (city) » bloque l ecran tant qu il est vide, et
+       * sans le transmettre le robot tournait en rond sur le meme formulaire
+       * avant de conclure a tort qu il manquait un champ pour le CV.
+       */
+      city: profile.location || "",
     };
     if (!identite.phone) {
       summary.errors.push(

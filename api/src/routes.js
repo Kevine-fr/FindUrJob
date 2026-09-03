@@ -13,6 +13,7 @@ import * as accounts from './controllers/accountController.js';
 import * as cvExport from './controllers/cvExportController.js';
 import * as campaign from './controllers/campaignController.js';
 import * as alerts from './controllers/alertController.js';
+import * as questions from './controllers/questionController.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -88,6 +89,9 @@ router.get('/applications/:id', applications.getApplication);
 router.patch('/applications/:id', applications.updateApplication);
 router.patch('/applications/:id/status', applications.updateStatus);
 router.post('/applications/:id/tailor', applications.tailorApplication);
+// Relance d'un envoi qui n'a pas abouti. Les gardes anti-doublon vivent dans le
+// service : « à vérifier » n'est jamais relancé sans preuve ou accord explicite.
+router.post('/applications/:id/retry', applications.retryApplication);
 router.delete('/applications/:id', applications.deleteApplication);
 
 // Export PDF du CV : le front envoie le document, Chromium l'imprime.
@@ -144,6 +148,17 @@ router.post('/applications/reconcile', applications.reconcileApplications);
 
 // Historique : statuts journalisés + CV générés, en un seul flux
 router.get('/history', history.listHistory);
+
+/*
+ * Informations réclamées par les plateformes.
+ *
+ * Chaque échec « champs manquants » y dépose une question ; y répondre débloque
+ * toutes les candidatures suivantes qui la reposent. Le diagnostic des blocages
+ * voyage avec la liste : les deux se lisent ensemble.
+ */
+router.get('/questions', questions.listQuestions);
+router.patch('/questions/:id', questions.answerQuestion);
+router.delete('/questions/:id', questions.deleteQuestion);
 
 /*
  * Alertes et notifications.

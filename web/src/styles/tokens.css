@@ -3522,3 +3522,93 @@ img {
 .alert-quota .muted {
   flex: 0 0 auto;
 }
+
+/* --- Informations demandées, et relance d'un envoi ----------------------- */
+
+.question-card {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.question-card:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+/* Une question déjà réglée s'efface sans disparaître : elle reste consultable
+   et modifiable, mais ne réclame plus l'attention. */
+.question-card.is-repondue {
+  opacity: 0.72;
+}
+.question-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.question-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+.question-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.question-form .input,
+.question-form .select,
+.question-form .textarea {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.blocage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13.5px;
+}
+.blocage:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.blocage .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 32px;
+  text-align: right;
+}
+
+.relance {
+  border-left: 3px solid var(--warn);
+}
+.relance-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Pastille du menu : ce qui attend une réponse se voit sans ouvrir la page. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--warn);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}

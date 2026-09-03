@@ -25,6 +25,37 @@ const applicationSchema = new mongoose.Schema(
     notes: { type: String },
     appliedAt: { type: Date },
     nextFollowUpAt: { type: Date },
+
+    /*
+     * La dernière tentative d'envoi, sous forme exploitable.
+     *
+     * La timeline garde déjà le récit — une phrase française par évènement.
+     * Elle se lit, mais ne se compte pas : impossible d'en tirer « combien
+     * d'échecs APEC pour cause de captcha », ni de décider ce qui mérite d'être
+     * relancé. D'où ce bloc, écrasé à chaque tentative : c'est l'état courant
+     * qui intéresse, l'historique restant dans la timeline.
+     */
+    lastFailure: {
+      /** Code de `utils/applyFailure.js`. */
+      reason: { type: String, default: '' },
+      message: { type: String, default: '' },
+      platform: { type: String, default: '' },
+      at: { type: Date },
+      /** Les questions restées sans réponse, quand c'est la cause. */
+      fields: {
+        type: [{ cle: String, libelle: String, forme: String, _id: false }],
+        default: [],
+      },
+    },
+
+    /*
+     * Combien de fois l'envoi a été relancé. Borne les reprises automatiques :
+     * une annonce qui échoue cinq fois de suite pour la même raison ne réussira
+     * pas à la sixième, et réessayer sans fin ressemble beaucoup à un
+     * acharnement du point de vue de la plateforme.
+     */
+    retryCount: { type: Number, default: 0 },
+    lastRetryAt: { type: Date },
   },
   { timestamps: true }
 );

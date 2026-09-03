@@ -270,7 +270,18 @@ export function createApp() {
   app.post(
     '/apply',
     asyncHandler(async (req, res) => {
-      const { platform: platformName, user, offer, cv, applicant, coverLetter, dryRun } = req.body || {};
+      const {
+        platform: platformName,
+        user,
+        offer,
+        cv,
+        applicant,
+        coverLetter,
+        dryRun,
+        // Réponses déjà données aux questions des plateformes, indexées par
+        // libellé normalisé. Ce qui évite de rebuter sur la même question.
+        answers,
+      } = req.body || {};
       const platform = getPlatform(platformName);
 
       if (!offer?.sourceUrl) {
@@ -293,7 +304,13 @@ export function createApp() {
         : null;
 
       res.json(
-        await platform.apply(context, offer, { cvFile: fichier, applicant, coverLetter, dryRun })
+        await platform.apply(context, offer, {
+          cvFile: fichier,
+          applicant,
+          coverLetter,
+          dryRun,
+          answers: answers || {},
+        })
       );
     })
   );

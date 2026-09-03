@@ -14,7 +14,21 @@ async function req(path, options = {}) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+  if (!res.ok) {
+    /*
+     * Le corps de l'erreur voyage avec elle.
+     *
+     * Certains refus portent plus qu'une phrase : la relance d'une candidature
+     * « à vérifier » répond `needsConfirmation`, et l'appelant doit pouvoir
+     * distinguer « impossible » de « demande d'abord ». Ne garder que le
+     * message obligeait à relire cette nuance dans le texte, ce qui casse à la
+     * première reformulation.
+     */
+    const erreur = new Error(data.error || `Erreur ${res.status}`);
+    erreur.status = res.status;
+    erreur.payload = data;
+    throw erreur;
+  }
   return data;
 }
 
@@ -118,6 +132,15 @@ export const api = {
         body: JSON.stringify({ status, note }),
       }),
     tailor: (id) => req(`/applications/${id}/tailor`, { method: 'POST' }),
+    /*
+     * Relance un envoi qui n'a pas abouti.
+     *
+     * `force` traduit un geste explicite — « j'ai vérifié sur la plateforme,
+     * rien n'est arrivé ». Sans lui, une candidature « à vérifier » n'est
+     * jamais renvoyée sans preuve : c'est ce qui évite le double envoi.
+     */
+    retry: (id, { force = false } = {}) =>
+      req(`/applications/${id}/retry`, { method: 'POST', body: JSON.stringify({ force }) }),
     // Demande aux plateformes ce qu elles ont recu, et promeut ce qu elles
     // reconnaissent. Long : plusieurs pages lues dans un navigateur complet.
     reconcile: () => req('/applications/reconcile', { method: 'POST' }),
@@ -126,6 +149,16 @@ export const api = {
 
   history: {
     list: (query = '') => req(`/history${query}`),
+  },
+
+  /*
+   * Informations réclamées par les plateformes, et diagnostic des blocages.
+   * Les deux arrivent ensemble : ils se lisent ensemble.
+   */
+  questions: {
+    list: (query = '') => req(`/questions${query}`),
+    answer: (id, body) => req(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    remove: (id) => req(`/questions/${id}`, { method: 'DELETE' }),
   },
 
   preferences: {

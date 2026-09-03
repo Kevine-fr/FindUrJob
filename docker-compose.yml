@@ -144,8 +144,31 @@ services:
       - "4000:4000"
     volumes:
       - ./api:/app
+      # Le node_modules de l'image, protégé du montage ci-dessus. Attention :
+      # Docker ne remplit ce volume anonyme qu'à sa *création*, et ne le
+      # resynchronise jamais ensuite — même après un `--build`.
       - /app/node_modules
-    command: npm run dev
+    # Les dépendances du conteneur suivent le verrou, sans geste manuel.
+    #
+    # Une dépendance ajoutée après la création du volume se retrouvait dans
+    # l'image et dans le package.json, mais restait absente du conteneur, qui
+    # plantait au démarrage — pendant que la production, elle, tournait très
+    # bien sur le même code, faute de montage. Le décalage était invisible et
+    # le message d'erreur ne désignait pas le coupable.
+    #
+    # On compare donc l'empreinte du verrou à celle réellement installée, et on
+    # réinstalle quand elles divergent. Sans changement de dépendances, ça ne
+    # coûte que la lecture d'un fichier.
+    command: >
+      sh -c '
+      empreinte=/app/node_modules/.empreinte-verrou;
+      attendue=$$(md5sum package-lock.json | cut -d" " -f1);
+      if [ "$$(cat $$empreinte 2>/dev/null)" != "$$attendue" ]; then
+      echo "Dependances desynchronisees avec package-lock.json : installation...";
+      npm ci --no-audit --no-fund && echo "$$attendue" > "$$empreinte";
+      fi;
+      npm run dev
+      '
 
   web:
     build:

@@ -56,6 +56,21 @@ const applicationSchema = new mongoose.Schema(
      */
     retryCount: { type: Number, default: 0 },
     lastRetryAt: { type: Date },
+
+    /*
+     * L'écran au moment où ça a bloqué.
+     *
+     * Le robot photographiait déjà la page sur presque tous ses chemins
+     * d'échec — vingt et un endroits — et le serveur jetait l'image sans la
+     * regarder. Elle vaut pourtant mieux qu'un code et une phrase : « Ce champ
+     * est obligatoire » en rouge sous un champ précis se comprend d'un coup
+     * d'œil, là où « champs_manquants » demande d'aller vérifier.
+     *
+     * `select: false` : ces octets ne doivent jamais partir avec une liste de
+     * candidatures. Ils se demandent explicitement, une image à la fois.
+     */
+    failureShot: { type: Buffer, select: false },
+    failureShotAt: { type: Date },
   },
   { timestamps: true }
 );

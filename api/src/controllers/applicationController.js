@@ -318,3 +318,39 @@ export const retryApplication = asyncHandler(async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /applications/:id/screenshot — l'écran au moment du blocage.
+ *
+ * Servi comme une image, pas encodé dans le JSON de la candidature : une page
+ * de liste chargerait alors des centaines de kilo-octets que personne ne
+ * regarde. Ici, l'image n'est demandée que lorsqu'on ouvre la fiche.
+ */
+export const getFailureShot = asyncHandler(async (req, res) => {
+  /*
+   * Pas de `.lean()` ici, et ce n'est pas un détail.
+   *
+   * Un champ Buffer relu en `lean` revient tel que le pilote le rend — un
+   * `Binary`, dont `.length` est une *fonction*. Le garde-fou la trouvait donc
+   * toujours vraie, l'en-tête `Content-Length` valait le texte d'une fonction,
+   * et l'image ne pouvait pas s'afficher. Mongoose, lui, rend un vrai Buffer.
+   */
+  const application = await Application.findOne({ _id: req.params.id, user: req.user.id }).select(
+    '+failureShot failureShotAt'
+  );
+
+  if (!application) return res.status(404).json({ error: 'Candidature introuvable.' });
+  if (!application.failureShot?.length) {
+    return res.status(404).json({ error: 'Aucune capture pour cette candidature.' });
+  }
+
+  res.set({
+    'Content-Type': 'image/png',
+    'Content-Length': String(application.failureShot.length),
+    // La capture ne change qu'à la prochaine tentative : inutile de la
+    // retélécharger à chaque ouverture de la fiche.
+    'Cache-Control': 'private, max-age=300',
+    'Content-Disposition': 'inline; filename="blocage.png"',
+  });
+  res.end(application.failureShot);
+});

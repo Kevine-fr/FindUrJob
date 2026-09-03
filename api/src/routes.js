@@ -92,6 +92,8 @@ router.post('/applications/:id/tailor', applications.tailorApplication);
 // Relance d'un envoi qui n'a pas abouti. Les gardes anti-doublon vivent dans le
 // service : « à vérifier » n'est jamais relancé sans preuve ou accord explicite.
 router.post('/applications/:id/retry', applications.retryApplication);
+// L'écran au moment du blocage : servi à part, pour ne pas alourdir les listes.
+router.get('/applications/:id/screenshot', applications.getFailureShot);
 router.delete('/applications/:id', applications.deleteApplication);
 
 // Export PDF du CV : le front envoie le document, Chromium l'imprime.

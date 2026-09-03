@@ -3596,6 +3596,36 @@ img {
   flex-wrap: wrap;
 }
 
+/* L'écran au moment du blocage.
+   Bornée en hauteur : une page de plateforme est longue, et l'aperçu doit
+   rester lisible sans repousser la relance hors de l'écran. Le haut de l'image
+   porte l'essentiel — le formulaire et son message d'erreur. */
+.blocage {
+  /* Une règle plus haut rend les `figure` flex : sans ce rappel, la légende se
+     range à droite de l'image et `width: 100%` se résout sur la ligne flex —
+     la capture n'occupait alors que les deux tiers du panneau. */
+  display: block;
+  margin: 14px 0 0;
+}
+.blocage img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  object-position: top center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.blocage figcaption {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.blocage figcaption a {
+  text-decoration: underline;
+}
+
 /* Pastille du menu : ce qui attend une réponse se voit sans ouvrir la page. */
 .nav-badge {
   margin-left: auto;

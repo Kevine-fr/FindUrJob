@@ -37,6 +37,27 @@ export function appliquerResultat(application, outcome = {}, { platform = '', no
       at: new Date(),
       fields: champs.map(({ cle, libelle, forme }) => ({ cle, libelle, forme })),
     };
+
+    /*
+     * On garde l'écran tel qu'il était au moment du blocage.
+     *
+     * Une capture remplace dix minutes d'enquête : le champ refusé, la fenêtre
+     * de vérification, la page vide — tout se voit d'un coup. Elle remplace la
+     * précédente plutôt que de s'y ajouter : c'est le dernier essai qui
+     * renseigne, et empiler les images ferait grossir la candidature sans rien
+     * apprendre.
+     *
+     * Le plafond protège la base d'une page anormalement lourde ; au-delà, on
+     * préfère ne rien garder plutôt que d'alourdir chaque lecture du document.
+     */
+    const brut = outcome.screenshot;
+    if (typeof brut === 'string' && brut.length) {
+      const octets = Buffer.from(brut, 'base64');
+      if (octets.length && octets.length <= 3 * 1024 * 1024) {
+        application.failureShot = octets;
+        application.failureShotAt = new Date();
+      }
+    }
   };
 
   if (outcome.status === 'sent') {
@@ -52,6 +73,10 @@ export function appliquerResultat(application, outcome = {}, { platform = '', no
      * réparer — et inviterait à la renvoyer.
      */
     application.lastFailure = undefined;
+    // La capture appartient au diagnostic : elle s'en va avec lui. La garder
+    // ferait remonter l'écran d'un échec passé sur une candidature partie.
+    application.failureShot = undefined;
+    application.failureShotAt = undefined;
     return { categorie: 'sent', offerPatch: null, questions: [] };
   }
 

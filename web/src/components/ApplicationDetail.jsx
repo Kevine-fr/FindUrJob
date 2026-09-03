@@ -153,6 +153,34 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
               on vérifie avant de renvoyer ; ailleurs, il faudra confirmer.
             </p>
           )}
+
+          {/*
+            L'écran au moment du blocage.
+            Le robot le photographiait déjà ; l'image n'était simplement jamais
+            conservée. Elle en dit plus qu'un code : le champ refusé en rouge,
+            la vérification de sécurité, la page vide — tout se voit d'un coup.
+            Elle n'est chargée qu'ici, jamais dans les listes.
+          */}
+          {app.failureShotAt && (
+            <figure className="blocage">
+              <img
+                src={`/api/applications/${app._id}/screenshot`}
+                alt="Écran de la plateforme au moment du blocage"
+                loading="lazy"
+              />
+              <figcaption>
+                L'écran au moment du blocage,{' '}
+                {new Date(app.failureShotAt).toLocaleString('fr-FR')}.{' '}
+                <a
+                  href={`/api/applications/${app._id}/screenshot`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ouvrir en grand
+                </a>
+              </figcaption>
+            </figure>
+          )}
         </div>
       )}
 

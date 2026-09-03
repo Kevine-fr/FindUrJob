@@ -118,6 +118,9 @@ export default function QuestionsPage() {
       .then((reponse) => {
         setData(reponse);
         setError(null);
+        // La pastille du menu lit le même chiffre : elle doit retomber en même
+        // temps que la liste se vide, sans attendre un changement de page.
+        window.dispatchEvent(new CustomEvent('questions:maj'));
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -127,8 +130,18 @@ export default function QuestionsPage() {
   const enregistrer = (id, reponse) =>
     api.questions
       .answer(id, { reponse })
-      .then(() => {
-        toast.success('Réponse enregistrée : les prochaines candidatures s’en serviront.');
+      .then(({ propagees = 0 }) => {
+        /*
+         * Le report vers les autres plateformes se dit, sinon il ne se voit
+         * pas : la question disparaît d'ailleurs dans la liste sans qu'on
+         * comprenne pourquoi, et on continue de croire qu'il faudra répondre
+         * autant de fois qu'il y a de sites.
+         */
+        toast.success(
+          propagees > 0
+            ? `Réponse enregistrée, et reportée sur ${propagees} autre${propagees > 1 ? 's' : ''} plateforme${propagees > 1 ? 's' : ''} qui posait${propagees > 1 ? 'ent' : ''} la même question.`
+            : 'Réponse enregistrée : les prochaines candidatures s’en serviront.'
+        );
         load();
       })
       .catch((e) => toast.error(e.message));

@@ -1,7 +1,10 @@
 import mongoose from 'mongoose';
 import PlatformQuestion from '../models/PlatformQuestion.js';
+import User from '../models/User.js';
 import { infoEchec } from '../utils/applyFailure.js';
 import { journaliser } from './activityLog.js';
+import { notifier } from './webPush.js';
+import { appUrl, mailerConfigured, sendMail } from './mailer.js';
 
 /**
  * La boucle d'apprentissage des candidatures.
@@ -35,6 +38,28 @@ import { journaliser } from './activityLog.js';
 export async function enregistrerQuestions(champs = [], { user, platform, offer } = {}) {
   if (!champs.length || !user || !platform) return [];
 
+  /*
+   * Ce qu'on sait déjà, quelle que soit la plateforme qui l'avait demandé.
+   *
+   * Une question créée pour une nouvelle plateforme ne doit pas rejoindre la
+   * file d'attente si la réponse est connue : la personne l'a déjà donnée, et
+   * la reposer sous prétexte que l'annonce vient d'ailleurs est du travail
+   * qu'on lui inflige pour rien. La clé normalisée existe précisément pour
+   * autoriser ce rapprochement.
+   */
+  const connues = new Map(
+    (
+      await PlatformQuestion.find({
+        user,
+        cle: { $in: champs.map((c) => c?.cle).filter(Boolean) },
+        statut: 'repondue',
+        reponse: { $ne: '' },
+      })
+        .select('cle reponse')
+        .lean()
+    ).map((q) => [q.cle, q.reponse])
+  );
+
   const nouvelles = [];
   for (const champ of champs) {
     if (!champ?.cle) continue;
@@ -59,16 +84,20 @@ export async function enregistrerQuestions(champs = [], { user, platform, offer 
             libelle: champ.libelle || champ.cle,
             forme: champ.forme || 'texte',
             options: champ.options || [],
-            statut: 'en_attente',
             exempleOffre: offer || undefined,
+            // Déjà répondue ailleurs : la ligne naît réglée, et la personne
+            // n'en entend jamais parler.
+            ...(connues.has(champ.cle)
+              ? { reponse: connues.get(champ.cle), statut: 'repondue', repondueLe: new Date() }
+              : { statut: 'en_attente' }),
           },
         },
         { upsert: true, new: false, setDefaultsOnInsert: true }
       );
 
       // `new: false` rend le document d'avant : `null` signifie « créé à
-      // l'instant », donc une question que la personne n'a jamais vue.
-      if (!avant) nouvelles.push(champ.libelle || champ.cle);
+      // l'instant ». Seules celles qu'on ne sait pas remplir sont à signaler.
+      if (!avant && !connues.has(champ.cle)) nouvelles.push(champ.libelle || champ.cle);
     } catch (erreur) {
       // Une collision sur l'index unique veut dire qu'une autre passe vient de
       // créer la même question : c'est le résultat voulu, pas une panne.
@@ -86,9 +115,63 @@ export async function enregistrerQuestions(champs = [], { user, platform, offer 
         `candidater sur ${platform} : ${nouvelles.slice(0, 3).join(', ')}`,
       detail: { plateforme: platform, questions: nouvelles },
     });
+
+    /*
+     * Prévenir, et pas seulement journaliser.
+     *
+     * Une question qui attend est une candidature qui ne part pas. Tant que
+     * l'information ne dort que dans la pastille du menu, elle n'est vue qu'à
+     * la prochaine visite — et les campagnes de la nuit échouent toutes sur la
+     * même cause, réparable en trente secondes.
+     *
+     * La notification ne bloque jamais l'enregistrement : la connaissance est
+     * acquise même si le message ne part pas.
+     */
+    await prevenir(user, nouvelles, platform).catch((erreur) =>
+      console.error('[candidature] notification des questions :', erreur?.message)
+    );
   }
 
   return nouvelles;
+}
+
+/**
+ * Signale à la personne qu'une information lui est demandée.
+ *
+ * Les deux canaux sont tentés indépendamment : le courriel porte le détail,
+ * la notification poussée porte l'urgence. L'un peut être configuré sans
+ * l'autre, et l'échec de l'un ne doit pas empêcher l'autre.
+ */
+async function prevenir(user, questions, platform) {
+  const titre =
+    questions.length > 1
+      ? `${questions.length} informations à fournir`
+      : 'Une information à fournir';
+  const corps =
+    `${questions.slice(0, 3).join(', ')}${questions.length > 3 ? '…' : ''} — ` +
+    `réclamée${questions.length > 1 ? 's' : ''} par ${platform}. ` +
+    'Une fois répondu, les candidatures suivantes partent seules.';
+
+  const lien = `${appUrl()}/informations`;
+
+  await Promise.allSettled([
+    notifier(user, { title: titre, body: corps, url: lien, tag: 'questions' }),
+    (async () => {
+      if (!mailerConfigured()) return;
+      const compte = await User.findById(user).select('email fullName').lean();
+      if (!compte?.email) return;
+      await sendMail({
+        to: compte.email,
+        subject: `FindUrJob — ${titre.toLowerCase()} pour continuer à candidater`,
+        text: `${corps}\n\nRépondre ici : ${lien}\n`,
+        html:
+          `<p>${corps}</p>` +
+          `<p><a href="${lien}">Répondre aux questions</a></p>` +
+          `<p style="color:#666;font-size:13px">Chaque réponse élargit ce que le robot sait remplir : ` +
+          `elle vaut pour toutes les plateformes qui posent la même question.</p>`,
+      });
+    })(),
+  ]);
 }
 
 /**

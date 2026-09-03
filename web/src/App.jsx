@@ -202,11 +202,29 @@ export default function App() {
    */
   const [enAttente, setEnAttente] = useState(0);
   useEffect(() => {
-    if (!user) return;
-    api.questions
-      .list()
-      .then((data) => setEnAttente(data.enAttente || 0))
-      .catch(() => setEnAttente(0));
+    if (!user) return undefined;
+
+    const relire = () =>
+      api.questions
+        .list()
+        .then((data) => setEnAttente(data.enAttente || 0))
+        .catch(() => setEnAttente(0));
+
+    relire();
+
+    /*
+     * Répondre ne change pas d'adresse.
+     *
+     * Le compteur ne se relisait qu'au changement de page : on répondait à la
+     * dernière question et la pastille continuait d'annoncer du travail en
+     * attente jusqu'à la navigation suivante. Le seul signal que la personne
+     * regarde disait alors le contraire de ce que la page montrait.
+     *
+     * Un évènement plutôt qu'un contexte : une seule valeur, un seul lecteur,
+     * et la page des questions n'a pas à être branchée sur l'ossature du menu.
+     */
+    window.addEventListener('questions:maj', relire);
+    return () => window.removeEventListener('questions:maj', relire);
   }, [user, pathname]);
 
   // Changer de page ferme le tiroir : sinon il masque la page qu'on vient d'ouvrir.

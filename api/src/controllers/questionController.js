@@ -69,7 +69,33 @@ export const answerQuestion = asyncHandler(async (req, res) => {
   }
 
   await question.save();
-  res.json({ question });
+
+  /*
+   * Une réponse vaut pour toutes les plateformes qui posent la même question.
+   *
+   * Les questions sont stockées par plateforme — c'est ce qui permet de savoir
+   * laquelle réclame quoi. Mais « Années d'expérience » a la même réponse chez
+   * France Travail, à l'APEC et sur LinkedIn : la demander trois fois n'apporte
+   * rien et fait traîner trois fois plus longtemps la couverture des
+   * formulaires. Mesuré avant correction : répondre pour France Travail
+   * laissait l'APEC sans réponse.
+   *
+   * La clé normalisée est ce qui autorise ce rapprochement : c'est exactement
+   * ce pour quoi elle existe.
+   */
+  const propagation = await PlatformQuestion.updateMany(
+    {
+      user: req.user.id,
+      cle: question.cle,
+      _id: { $ne: question._id },
+      // On ne réécrit jamais une réponse déjà donnée à la main, ni une question
+      // délibérément ignorée : ce serait défaire un choix.
+      statut: 'en_attente',
+    },
+    { $set: { reponse: question.reponse, statut: question.statut, repondueLe: new Date() } }
+  );
+
+  res.json({ question, propagees: propagation.modifiedCount });
 });
 
 /** DELETE /questions/:id — oublier une question devenue sans objet. */

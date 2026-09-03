@@ -17,6 +17,7 @@
  */
 
 import { humanPause } from './common.js';
+import { RAISONS, captchaPresent, cleQuestion } from './failures.js';
 
 /** Ce qu'on sait reconnaître, du plus spécifique au plus général. */
 const ROLES = {
@@ -200,16 +201,128 @@ const manquants = (formulaire) =>
           .replace(/\s+/g, ' ')
           .replace(/\*$/, '')
           .trim()
-          .slice(0, 40);
+          .slice(0, 60);
+
+      /*
+       * On rend maintenant une description, pas seulement un libellé.
+       *
+       * Le libellé seul suffisait à écrire un message d'erreur. Il ne suffit
+       * pas à *poser la question* à la personne : pour cela il faut aussi
+       * savoir quelle forme attend le champ (un nombre, un téléphone, un choix
+       * dans une liste) et, pour un `select`, les réponses possibles. Sans ça,
+       * on demanderait « Niveau d'études » en texte libre là où la plateforme
+       * n'accepte que quatre valeurs précises.
+       */
+      const decrire = (el) => {
+        const options =
+          el.tagName === 'SELECT'
+            ? [...el.options]
+                .map((o) => (o.textContent || '').trim())
+                .filter((t) => t && !/^(choisir|s[ée]lectionner|--)/i.test(t))
+                .slice(0, 25)
+            : [];
+
+        let forme = 'texte';
+        if (el.tagName === 'SELECT') forme = 'choix';
+        else if (el.type === 'checkbox') forme = 'case';
+        else if (el.type === 'number') forme = 'nombre';
+        else if (el.type === 'tel') forme = 'telephone';
+        else if (el.type === 'date') forme = 'date';
+        else if (el.tagName === 'TEXTAREA') forme = 'paragraphe';
+
+        return { libelle: nommer(el), forme, options };
+      };
 
       return [...form.querySelectorAll('input, textarea, select')]
         .filter((el) => el.type !== 'hidden' && visible(el) && obligatoire(el))
         .filter((el) => (el.type === 'checkbox' ? !el.checked : el.type !== 'file' && !el.value))
-        .map(nommer)
-        .filter(Boolean)
-        .slice(0, 6);
+        .map(decrire)
+        .filter((champ) => champ.libelle)
+        .slice(0, 8);
     })
     .catch(() => []);
+
+/**
+ * Remplit les champs restants à partir des réponses déjà données.
+ *
+ * C'est ici que se joue l'apprentissage : la première rencontre avec « Années
+ * d'expérience » échoue et pose la question ; une fois répondue, toutes les
+ * candidatures suivantes qui la reposent la remplissent seules. Le
+ * rapprochement se fait sur le libellé normalisé — le même que celui sous
+ * lequel la réponse a été enregistrée.
+ */
+async function remplirDepuisReponses(formulaire, reponses) {
+  if (!reponses || !Object.keys(reponses).length) return [];
+
+  return formulaire
+    .evaluate(
+      (form, table) => {
+        const cle = (texte) =>
+          String(texte || '')
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 60);
+
+        const nommer = (el) =>
+          (
+            el.labels?.[0]?.textContent ||
+            el.getAttribute('aria-label') ||
+            el.placeholder ||
+            el.name ||
+            ''
+          )
+            .replace(/\s+/g, ' ')
+            .replace(/\*$/, '')
+            .trim();
+
+        const remplis = [];
+        for (const el of form.querySelectorAll('input, textarea, select')) {
+          if (el.disabled || el.readOnly || el.type === 'hidden' || el.type === 'file') continue;
+          if (el.type !== 'checkbox' && el.value) continue;
+
+          const valeur = table[cle(nommer(el))];
+          if (valeur === undefined || valeur === null || valeur === '') continue;
+
+          if (el.type === 'checkbox') {
+            // Une réponse « non » à une case obligatoire ne doit pas la cocher
+            // en douce : on respecte le refus et le champ restera signalé.
+            if (!/^(oui|yes|true|1)$/i.test(String(valeur))) continue;
+            if (!el.checked) {
+              el.checked = true;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              remplis.push(nommer(el));
+            }
+            continue;
+          }
+
+          if (el.tagName === 'SELECT') {
+            // On vise l'option dont le texte correspond, pas sa position :
+            // l'ordre d'une liste change d'une annonce à l'autre.
+            const cible = [...el.options].find(
+              (o) => cle(o.textContent) === cle(valeur) || o.value === valeur
+            );
+            if (!cible) continue;
+            el.value = cible.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            remplis.push(nommer(el));
+            continue;
+          }
+
+          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement : HTMLInputElement;
+          Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, String(valeur));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          remplis.push(nommer(el));
+        }
+        return remplis;
+      },
+      reponses
+    )
+    .catch(() => []);
+}
 
 /**
  * Candidate sur le formulaire de la page courante.
@@ -231,6 +344,12 @@ export async function applyForm(
     applicant = {},
     coverLetter,
     dryRun = false,
+    /*
+     * Réponses déjà données par la personne, indexées par libellé normalisé.
+     * Alimentées par la page « Informations demandées » : c'est ce qui fait
+     * qu'une question posée une fois ne bloque plus jamais.
+     */
+    answers = {},
     submitSelector = '[data-cy="submitButton"], button[type="submit"], input[type="submit"]',
     submitText = null,
     advanceText = null,
@@ -333,25 +452,56 @@ export async function applyForm(
         .catch(() => false);
 
       if (!joint) {
-        return { erreur: 'CV non accepté par la plateforme : envoi interrompu.' };
+        return {
+          erreur: 'CV non accepté par la plateforme : envoi interrompu.',
+          raison: RAISONS.CV_REFUSE,
+        };
       }
     }
 
+    // Les réponses connues passent avant le constat de manque : c'est tout
+    // l'intérêt de les avoir demandées.
+    await remplirDepuisReponses(scope, answers);
     await cocherCases(scope);
     await humanPause(400, 900);
 
     const vides = await manquants(scope);
     if (vides.length) {
-      return { erreur: `Champs obligatoires non renseignés : ${vides.join(', ')}.` };
+      return {
+        erreur: `Champs obligatoires non renseignés : ${vides.map((c) => c.libelle).join(', ')}.`,
+        raison: RAISONS.CHAMPS_MANQUANTS,
+        champs: vides.map((champ) => ({ ...champ, cle: cleQuestion(champ.libelle) })),
+      };
     }
 
     return { joint };
+  }
+
+  /*
+   * Un contrôle anti-robot se constate avant tout le reste.
+   *
+   * Sans cette vérification, la page de contrôle était traitée comme une page
+   * d'annonce ordinaire : on n'y trouvait pas de formulaire, et l'échec était
+   * classé « formulaire absent ». Le diagnostic désignait le mauvais coupable,
+   * et surtout il laissait croire à un défaut de sélecteur réparable — alors
+   * qu'aucun sélecteur n'aurait aidé.
+   */
+  if (await captchaPresent(page)) {
+    return {
+      status: 'manual',
+      reason: RAISONS.CAPTCHA,
+      message:
+        'Contrôle anti-robot sur la page : la candidature doit être terminée à la main ' +
+        'depuis la reprise en main.',
+      screenshot: await capture(),
+    };
   }
 
   const premier = await trouverFormulaire(page);
   if (!premier) {
     return {
       status: 'manual',
+      reason: RAISONS.FORMULAIRE_ABSENT,
       message: "Aucun formulaire de candidature sur la page : à faire depuis l'annonce.",
       screenshot: await capture(),
     };
@@ -359,7 +509,13 @@ export async function applyForm(
 
   const etat = await traiterEcran(premier);
   if (etat.erreur) {
-    return { status: 'manual', message: etat.erreur, screenshot: await capture() };
+    return {
+      status: 'manual',
+      reason: etat.raison || RAISONS.INCONNU,
+      fields: etat.champs || [],
+      message: etat.erreur,
+      screenshot: await capture(),
+    };
   }
   let cvJoint = etat.joint;
 
@@ -394,6 +550,7 @@ export async function applyForm(
   if (!(await (await bouton()).isVisible().catch(() => false))) {
     return {
       status: 'manual',
+      reason: RAISONS.BOUTON_ABSENT,
       message: "Bouton d'envoi introuvable sur la page.",
       screenshot: await capture(),
     };
@@ -433,6 +590,8 @@ export async function applyForm(
       if (pas.erreur) {
         return {
           status: 'manual',
+          reason: pas.raison || RAISONS.INCONNU,
+          fields: pas.champs || [],
           message: `Essai interrompu à l'étape ${etapes + 1} : ${pas.erreur}`,
           screenshot: await capture(),
         };
@@ -447,6 +606,7 @@ export async function applyForm(
 
     return {
       status: cvFile && !cvJoint ? 'manual' : 'dry-run',
+      ...(cvFile && !cvJoint ? { reason: RAISONS.CV_SANS_CHAMP } : {}),
       message:
         cvFile && !cvJoint
           ? `Formulaire prêt${parcours}, mais aucun champ pour joindre le CV (bouton « ${libelle} ») : à vérifier avant d'activer l'envoi.`
@@ -491,6 +651,10 @@ export async function applyForm(
        */
       return {
         status: 'uncertain',
+        reason: RAISONS.POST_ENVOI_INCOMPLET,
+        // Les champs restent utiles : c'est ce qui manquait au questionnaire
+        // complémentaire, et donc ce qu'il faudra savoir la prochaine fois.
+        fields: pas.champs || [],
         message:
           `Candidature soumise, puis étape ${etape + 2} restée incomplète (${pas.erreur}) — ` +
           'à vérifier sur la plateforme avant toute nouvelle tentative.',
@@ -504,6 +668,7 @@ export async function applyForm(
   // prudence, on ne conclut ni à l'envoi ni à l'échec.
   return {
     status: 'uncertain',
+    reason: RAISONS.SANS_CONFIRMATION,
     message: 'Formulaire soumis sans confirmation visible : à vérifier sur la plateforme.',
     screenshot: await capture(),
   };

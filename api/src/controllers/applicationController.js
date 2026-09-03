@@ -9,6 +9,7 @@ import { tailorCv } from '../services/tailoringService.js';
 import { renderCvPdf } from '../services/botService.js';
 import { buildTailoredCvHtml } from '../services/cvDocument.js';
 import { buildLetterHtml } from '../services/letterDocument.js';
+import { retenterCandidature } from '../services/applyRetry.js';
 import { APPLICATION_STATUSES } from '../utils/constants.js';
 
 const POPULATE = ['offer', 'cvVersion'];
@@ -289,4 +290,31 @@ export const reconcileApplications = asyncHandler(async (req, res) => {
     max: Math.min(400, Math.max(20, Number(req.body?.max) || 200)),
   });
   res.json(bilan);
+});
+
+/**
+ * POST /applications/:id/retry — relancer un envoi qui n'a pas abouti.
+ *
+ * Le service porte toutes les gardes : statut recevable, cause encore
+ * retentable, plafond de reprises, et surtout la vérification anti-doublon sur
+ * « à vérifier ». Le contrôleur ne fait que traduire son refus en réponse HTTP.
+ *
+ * `force` vient d'un geste explicite de la personne, jamais d'un réglage : il
+ * signifie « j'ai vérifié sur la plateforme, rien n'est arrivé ».
+ */
+export const retryApplication = asyncHandler(async (req, res) => {
+  try {
+    const bilan = await retenterCandidature(req.user.id, req.params.id, {
+      force: Boolean(req.body?.force),
+    });
+    res.json(bilan);
+  } catch (erreur) {
+    if (!erreur.status) throw erreur;
+    res.status(erreur.status).json({
+      error: erreur.message,
+      reason: erreur.reason || null,
+      action: erreur.action || null,
+      needsConfirmation: Boolean(erreur.needsConfirmation),
+    });
+  }
 });

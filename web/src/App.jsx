@@ -14,6 +14,8 @@ import PasswordPage from './pages/PasswordPage.jsx';
 import VerifyEmailPage from './pages/VerifyEmailPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AlertsPage from './pages/AlertsPage.jsx';
+import QuestionsPage from './pages/QuestionsPage.jsx';
+import { api } from './api/client.js';
 import { useAuth } from './lib/auth.jsx';
 
 /*
@@ -76,6 +78,19 @@ const NAV = [
       <svg viewBox="0 0 24 24" {...stroke}>
         <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6z" />
         <path d="M10.3 20a2 2 0 0 0 3.4 0" />
+      </svg>
+    ),
+  },
+  {
+    to: '/informations',
+    label: 'Informations',
+    // Le compteur des questions en attente s'accroche ici : c'est la seule
+    // entrée du menu qui réclame un geste pour débloquer des candidatures.
+    badge: 'questions',
+    icon: (
+      <svg viewBox="0 0 24 24" {...stroke}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.2a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.4M12 17h.01" />
       </svg>
     ),
   },
@@ -177,6 +192,23 @@ export default function App() {
   const { pathname } = useLocation();
   const { user, ready, logout, isAdmin } = useAuth();
 
+  /*
+   * Questions en attente, pour la pastille du menu.
+   *
+   * C'est la notification demandée : une information réclamée par une
+   * plateforme n'a d'intérêt que si on apprend qu'elle attend. Relue au
+   * changement de page — après avoir répondu, le compteur doit retomber sans
+   * qu'on ait à recharger.
+   */
+  const [enAttente, setEnAttente] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    api.questions
+      .list()
+      .then((data) => setEnAttente(data.enAttente || 0))
+      .catch(() => setEnAttente(0));
+  }, [user, pathname]);
+
   // Changer de page ferme le tiroir : sinon il masque la page qu'on vient d'ouvrir.
   useEffect(() => setMenuOpen(false), [pathname]);
 
@@ -264,6 +296,11 @@ export default function App() {
           >
             {item.icon}
             {item.label}
+            {item.badge === 'questions' && enAttente > 0 && (
+              <span className="nav-badge" aria-label={`${enAttente} information(s) à fournir`}>
+                {enAttente}
+              </span>
+            )}
           </NavLink>
         ))}
         <div className="nav-spacer" />
@@ -301,6 +338,7 @@ export default function App() {
             <Route path="/candidatures/:id" element={<ApplicationsPage />} />
             <Route path="/historique" element={<HistoryPage />} />
             <Route path="/alertes" element={<AlertsPage />} />
+            <Route path="/informations" element={<QuestionsPage />} />
             <Route path="/preferences" element={<PreferencesPage />} />
             <Route path="/campagne" element={<CampaignPage />} />
             <Route path="/comptes" element={<AccountsPage />} />

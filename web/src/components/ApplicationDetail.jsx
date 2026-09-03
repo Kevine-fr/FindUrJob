@@ -1,8 +1,18 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, API_BASE } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
 import { useToast } from './Toast.jsx';
 import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
+
+/*
+ * Les deux seuls statuts qui se relancent.
+ *
+ * « Postulé » est parti — le relancer serait candidater deux fois. Les statuts
+ * posés à la main (entretien, refus, abandon) racontent une suite qui n'a rien
+ * à voir avec l'envoi.
+ */
+const RELANCABLES = ['echec_envoi', 'a_verifier'];
 
 export default function ApplicationDetail({ application, onBack, onChange }) {
   const toast = useToast();
@@ -14,6 +24,39 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
   const cvId = app.cvVersion?._id;
   const pdfUrl = cvId ? `${API_BASE}/cv-versions/${cvId}/pdf` : null;
   const lettreUrl = `${API_BASE}/applications/${app._id}/letter.pdf`;
+
+  /**
+   * Relance l'envoi.
+   *
+   * Le serveur refuse d'emblée ce qui ne se relance pas, et refuse aussi de
+   * renvoyer une candidature « à vérifier » sur une plateforme qu'il ne sait
+   * pas interroger. Ce second refus arrive avec `needsConfirmation` : c'est là
+   * qu'on demande à la personne d'aller regarder, plutôt que de décider à sa
+   * place. La confirmation ne se garde pas — chaque relance la redemande.
+   */
+  const relancer = async (force) => {
+    setBusy(true);
+    try {
+      const bilan = await api.applications.retry(app._id, { force });
+      const frais = await api.applications.get(app._id);
+      setApp(frais);
+      onChange?.();
+      if (bilan.categorie === 'sent') toast.success('Candidature envoyée.');
+      else toast.error(bilan.message || "L'envoi n'a toujours pas abouti.");
+    } catch (erreur) {
+      if (erreur.payload?.needsConfirmation) {
+        const sur = window.confirm(
+          `${erreur.message}\n\nRelancer quand même ? Si la candidature était déjà partie, ` +
+            'le recruteur en recevra une seconde.'
+        );
+        if (sur) return relancer(true);
+      } else {
+        toast.error(erreur.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const changeStatus = async (status) => {
     if (status === app.status) return;
@@ -65,6 +108,53 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
           {meta.label}
         </span>
       </div>
+
+      {/* ---- Ce qui a bloqué, et la relance ---- */}
+      {RELANCABLES.includes(app.status) && (
+        <div className="panel relance">
+          <div className="relance-head">
+            <div style={{ minWidth: 0 }}>
+              <h2>
+                {app.status === 'a_verifier'
+                  ? 'Issue incertaine'
+                  : "L'envoi n'a pas abouti"}
+              </h2>
+              <p className="muted" style={{ margin: '4px 0 0', fontSize: 13.5 }}>
+                {app.lastFailure?.message ||
+                  'Aucun diagnostic enregistré pour cette tentative.'}
+              </p>
+              {app.lastFailure?.fields?.length > 0 && (
+                <p style={{ margin: '8px 0 0', fontSize: 13.5 }}>
+                  Manquait :{' '}
+                  {app.lastFailure.fields.map((champ) => (
+                    <span key={champ.cle} className="chip" style={{ marginRight: 4 }}>
+                      {champ.libelle}
+                    </span>
+                  ))}
+                  <Link to="/informations" style={{ marginLeft: 6, textDecoration: 'underline' }}>
+                    Renseigner
+                  </Link>
+                </p>
+              )}
+            </div>
+            <button
+              className={`btn btn-primary btn-sm${busy ? ' is-busy' : ''}`}
+              disabled={busy}
+              onClick={() => relancer(false)}
+            >
+              Relancer l'envoi
+            </button>
+          </div>
+          {/* Sur « à vérifier », le risque est le double envoi : on le nomme
+              plutôt que de laisser le bouton faire croire à un geste anodin. */}
+          {app.status === 'a_verifier' && (
+            <p className="callout callout-warn" style={{ marginTop: 12 }}>
+              La candidature est peut-être déjà partie. Sur les plateformes qui tiennent une liste,
+              on vérifie avant de renvoyer ; ailleurs, il faudra confirmer.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="detail">
         {/* ---- Le dossier envoyé ---- */}

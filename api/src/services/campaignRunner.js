@@ -12,6 +12,9 @@ import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
 import { reconcilier } from './reconciliation.js';
 import { journaliser } from './activityLog.js';
+import { enregistrerQuestions, reponsesPour } from './applyKnowledge.js';
+import { appliquerResultat } from './applyOutcome.js';
+import { deviner } from '../utils/applyFailure.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
 /**
@@ -546,6 +549,10 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
            * du résumé une candidature pourtant bien créée.
            */
           try {
+            // Les réponses de cette plateforme, relues une fois par offre : la
+            // personne peut en avoir ajouté depuis le début de la passe.
+            const reponses = await reponsesPour(user, source).catch(() => ({}));
+
             // Le PDF voyage avec la demande : le bot n'a aucun fichier à aller
             // chercher, et les deux services n'ont pas de disque en commun.
             const envoyer = () =>
@@ -569,6 +576,14 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               applicant: identite,
               coverLetter: result.coverLetter || "",
               dryRun,
+              /*
+               * Ce que la personne a déjà répondu aux questions de cette
+               * plateforme. C'est ce qui fait qu'une question posée une fois ne
+               * bloque plus : sans ces réponses, chaque annonce réclamant
+               * « Années d'expérience » échouerait indéfiniment, la même
+               * information manquant à chaque passage.
+               */
+              answers: reponses,
             });
 
             /*
@@ -594,78 +609,38 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               outcome = await envoyer();
             }
 
-            if (outcome.status === 'sent') {
-              application.status = 'postule';
-              application.appliedAt = new Date();
-              application.timeline.push({
-                status: 'postule',
-                note: 'Envoyée par la campagne, CV reciblé joint.',
-              });
+            /*
+             * La qualification est partagée avec la reprise manuelle.
+             *
+             * Décider si une candidature compte comme partie est le point où
+             * une erreur coûte le plus : soit un double envoi, soit un dossier
+             * perdu qu'on croit arrivé. Deux copies de cette chaîne auraient
+             * fini par diverger — et la divergence aurait porté exactement là.
+             */
+            const bilan = appliquerResultat(application, outcome, {
+              platform: source,
+              note: 'Envoyée par la campagne, CV reciblé joint.',
+            });
+
+            if (bilan.offerPatch) {
+              // La leçon s'écrit sur l'offre : ni cette passe ni les suivantes
+              // n'y regoûtent, et l'adresse du recruteur reste sous la main.
+              await JobOffer.updateOne({ _id: offer._id }, { $set: bilan.offerPatch }).catch(() => {});
+            }
+            await enregistrerQuestions(bilan.questions, {
+              user,
+              platform: source,
+              offer: offer._id,
+            });
+
+            if (bilan.categorie === 'sent') {
               cv.sentAt = new Date();
               await cv.save();
               summary.sent += 1;
               summary.perSource[source].sent += 1;
-            } else if (outcome.status === 'dry-run') {
-              // Essai : le formulaire était prêt à partir, on n'a pas appuyé.
-              // La candidature reste « à postuler », rien n'est daté.
-              application.timeline.push({
-                status: 'a_postuler',
-                note: `Essai concluant : ${outcome.message || 'formulaire prêt.'}`,
-              });
+            } else if (bilan.categorie === 'ready') {
               summary.ready += 1;
-            } else if (outcome.status === 'uncertain') {
-              /*
-               * Le bouton a été actionné, la plateforme n'a rien confirmé.
-               *
-               * Ni « postulé » — ce serait affirmer sans preuve — ni « échec » :
-               * la candidature est peut-être arrivée, et c'est précisément le
-               * cas qui a produit un double envoi. On le nomme pour ce qu'il
-               * est, et personne n'y retouche automatiquement.
-               */
-              application.status = 'a_verifier';
-              application.notes += ` — à vérifier : ${outcome.message || ''}`;
-              application.timeline.push({
-                status: 'a_verifier',
-                note: outcome.message || 'Issue inconnue.',
-              });
-              summary.manual += 1;
-              summary.perSource[source].manual += 1;
-            } else if (outcome.status === 'external' || outcome.status === 'blocked') {
-              /*
-               * Rien n'a échoué : il n'y avait rien à envoyer ici.
-               *
-               * L'annonce renvoie vers l'ATS de l'employeur, ou la plateforme
-               * refuse le navigateur piloté. Le statut reste « à finir à la
-               * main » — c'est bien ce qu'il reste à faire — mais la leçon est
-               * écrite sur l'offre, pour que ni cette passe ni les suivantes
-               * n'y regoûtent, et l'adresse du recruteur est conservée : la
-               * candidature se termine alors en un clic au lieu de se chercher.
-               */
-              const mode = outcome.status === 'external' ? 'externe' : 'bloque';
-              await JobOffer.updateOne(
-                { _id: offer._id },
-                { $set: { applyMode: mode, ...(outcome.externalUrl ? { applyUrl: outcome.externalUrl } : {}) } }
-              ).catch(() => {});
-
-              application.status = 'echec_envoi';
-              application.notes += ` — ${outcome.message || ''}`;
-              application.timeline.push({
-                status: 'echec_envoi',
-                note: outcome.message || 'Candidature à faire hors plateforme.',
-              });
-              summary.manual += 1;
-              summary.perSource[source].manual += 1;
             } else {
-              // « manual » : l'envoi a bien été tenté, et il n'a pas abouti —
-              // formulaire absent, CV refusé, question de l'employeur. Le noter
-              // « à postuler » le rendait indiscernable d'une préparation
-              // réussie : c'est précisément ce qu'on veut voir.
-              application.status = 'echec_envoi';
-              application.notes += ` — à finir à la main : ${outcome.message || ''}`;
-              application.timeline.push({
-                status: 'echec_envoi',
-                note: outcome.message || 'À finir à la main.',
-              });
               summary.manual += 1;
               summary.perSource[source].manual += 1;
             }
@@ -673,6 +648,18 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
             application.status = 'echec_envoi';
             application.notes += ` — envoi impossible : ${sendError.message}`;
             application.timeline.push({ status: 'echec_envoi', note: sendError.message });
+            /*
+             * Une exception n'a pas de code : on le déduit du message, ce qui
+             * range aussi les incidents réseau. Le 409 est le seul cas où le
+             * transport dit lui-même de quoi il s'agit — une session fermée.
+             */
+            application.lastFailure = {
+              reason: sendError.status === 409 ? 'session_expiree' : deviner(sendError.message),
+              message: sendError.message,
+              platform: source,
+              at: new Date(),
+              fields: [],
+            };
             summary.prepared += 1;
             summary.perSource[source].prepared += 1;
             summary.errors.push(`${source} : ${sendError.message}`);

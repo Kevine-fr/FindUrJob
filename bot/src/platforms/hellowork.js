@@ -1,5 +1,6 @@
 import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
 import { applyForm } from './applyForm.js';
+import { RAISONS } from './failures.js';
 import { lireBlocs } from './mesCandidatures.js';
 
 /**
@@ -243,10 +244,23 @@ export async function apply(context, offer, options = {}) {
       // Le lien n'est parfois qu'une ancre (« #postuler ») : la vraie
       // redirection se fait au clic. L'afficher n'apprendrait rien.
       const cible = await externe.getAttribute('href').catch(() => null);
-      const utile = cible && /^https?:\/\//.test(cible) ? ` : ${cible}` : '';
+      const externeUtile = cible && /^https?:\/\//.test(cible) ? cible : null;
+      /*
+       * Une candidature qui se fait ailleurs n'est pas un envoi raté.
+       *
+       * Ce cas rendait « manual », donc un échec d'envoi indifférencié : la
+       * campagne redépensait son quota sur la même annonce à chaque passage, et
+       * la statistique comptait un échec là où il n'y avait rien à envoyer. Les
+       * autres plateformes le disent déjà avec `external` ; HelloWork était le
+       * dernier à ne pas le faire.
+       */
       return {
-        status: 'manual',
-        message: `L'employeur reçoit les candidatures sur son propre site${utile} — rien à remplir sur HelloWork.`,
+        status: 'external',
+        reason: RAISONS.REDIRECTION_EXTERNE,
+        message: `L'employeur reçoit les candidatures sur son propre site${
+          externeUtile ? ` : ${externeUtile}` : ''
+        } — rien à remplir sur HelloWork.`,
+        ...(externeUtile ? { externalUrl: externeUtile } : {}),
       };
     }
 

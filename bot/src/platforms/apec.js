@@ -1,5 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
+import { RAISONS } from './failures.js';
 
 /**
  * APEC.
@@ -208,17 +209,39 @@ export async function apply(context, offer, options = {}) {
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'commit', timeout: 45_000 });
     await dismissConsent(page);
-    // Application Angular : le contenu arrive bien après le DOM. On attend la
-    // page réelle plutôt qu'un délai arbitraire, qui la manquait une fois sur deux.
-    await page
-      .waitForFunction(() => document.body.innerText.length > 1200, undefined, { timeout: 25_000 })
-      .catch(() => {});
+
+    /*
+     * On cesse d'attendre une page qui ne viendra pas.
+     *
+     * L'APEC est une application Angular : son contenu arrive bien après le
+     * DOM, d'où l'attente. Mais quand l'anti-bot a déjà répondu 403, cette
+     * page n'arrivera jamais — et on dépensait les vingt-cinq secondes en
+     * entier avant de conclure. Mesuré sur dix annonces : trente-trois à
+     * trente-sept secondes chacune, pour un verdict connu dès la première.
+     *
+     * Le blocage est donc une condition d'arrêt à part entière, au même titre
+     * que l'arrivée du contenu. Sur une campagne, c'est plusieurs minutes
+     * rendues aux plateformes qui, elles, acceptent les candidatures.
+     */
+    await Promise.race([
+      page
+        .waitForFunction(() => document.body.innerText.length > 1200, undefined, { timeout: 25_000 })
+        .catch(() => {}),
+      (async () => {
+        for (let reste = 25_000; reste > 0 && !bloque; reste -= 250) {
+          await page.waitForTimeout(250).catch(() => {});
+        }
+      })(),
+    ]);
+
+    if (bloque) return refus();
 
     const externe = await externalApplyUrl(page, 'apec.fr');
     if (externe) {
       return {
         status: 'external',
-        message: `L'employeur reçoit les candidatures sur son propre site : `,
+        reason: RAISONS.REDIRECTION_EXTERNE,
+        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
         externalUrl: externe,
       };
     }

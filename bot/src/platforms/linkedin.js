@@ -1,5 +1,6 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
-import { applyForm } from './applyForm.js';
+import { applyForm, externalApplyUrl } from './applyForm.js';
+import { RAISONS } from './failures.js';
 import { lireBlocs, deroulerListe } from './mesCandidatures.js';
 
 /**
@@ -278,11 +279,35 @@ export async function apply(context, offer, options = {}) {
       // Distinguer « pas de candidature simplifiée » de « session fermée » :
       // les deux donnent une page sans bouton, mais ne se règlent pas pareil.
       const invite = await page.locator('.sign-up-modal__outlet').count();
+      if (invite) {
+        return {
+          status: 'manual',
+          reason: RAISONS.SESSION_EXPIREE,
+          message: 'LinkedIn affiche la page publique : la session est fermée ou expirée.',
+        };
+      }
+
+      /*
+       * Pas de candidature simplifiée : l'employeur reçoit sur son propre site.
+       *
+       * Ce cas rendait « manual », donc un échec d'envoi indifférencié : la
+       * campagne rejouait le même mur à chaque passage, et l'offre n'était
+       * jamais retenue comme non candidatable ici. C'est précisément ce qui
+       * bloquait sur les annonces à redirection.
+       *
+       * On ne clique pas le bouton pour récupérer l'adresse : LinkedIn marque
+       * l'offre comme candidatée dès qu'on le suit, et on inscrirait une
+       * candidature qui n'a jamais eu lieu. On se contente du lien s'il est
+       * écrit dans la page.
+       */
+      const versEmployeur = await externalApplyUrl(page, 'linkedin.com');
       return {
-        status: 'manual',
-        message: invite
-          ? 'LinkedIn affiche la page publique : la session est fermée ou expirée.'
-          : "Cette offre n'a pas de candidature simplifiée (candidature sur le site de l'employeur).",
+        status: 'external',
+        reason: RAISONS.REDIRECTION_EXTERNE,
+        message: versEmployeur
+          ? `L'employeur reçoit les candidatures sur son propre site : ${versEmployeur}`
+          : "Cette offre n'a pas de candidature simplifiée : elle se postule sur le site de l'employeur.",
+        ...(versEmployeur ? { externalUrl: versEmployeur } : {}),
       };
     }
 

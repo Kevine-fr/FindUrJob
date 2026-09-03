@@ -186,21 +186,89 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *
  * @param motifHorsSession Ce qu'on lit dans l'URL quand la session est fermée.
  */
+/**
+ * Plafond global de la vérification de session.
+ *
+ * Chaque attente interne est bornée, et pourtant l'ensemble pouvait ne jamais
+ * rendre la main : `newPage` et `evaluate` n'ont pas de délai propre, et une
+ * page qui ne se stabilise jamais les fige. Mesuré sur France Travail : la
+ * vérification restait bloquée plus de trois minutes, l'appelant concluait
+ * « session fermée », et la campagne sautait une plateforme parfaitement
+ * connectée — en silence.
+ *
+ * Un plafond franc vaut mieux qu'une attente indéfinie : au pire on se trompe
+ * une fois, et `apply` découvrira la vérité, alors qu'un blocage ne se répare
+ * jamais tout seul.
+ */
+const PLAFOND_SESSION = 35_000;
+
+/**
+ * Attend que la page cesse de changer d'adresse.
+ *
+ * `networkidle` ne convient pas : certains sites ne l'atteignent jamais — des
+ * scripts de mesure gardent une requête ouverte en permanence — et on dépensait
+ * le délai entier à chaque contrôle sans rien apprendre.
+ *
+ * Ce qui compte ici n'est pas le réseau mais la **fin de la chaîne de
+ * redirections** : `/espacepersonnel/` renvoie vers `app-login-auto/…` côté
+ * client, après `domcontentloaded`. Interroger la page pendant ce saut la
+ * détruisait sous nos pieds — « Execution context was destroyed » — l'erreur
+ * était avalée, et le verdict devenait un tirage au sort : la même session
+ * répondait « ouverte » puis « fermée » d'un appel à l'autre.
+ *
+ * On rend la main dès que l'adresse tient une seconde et demie : c'est plus
+ * rapide qu'un délai fixe dans le cas courant, et plus sûr quand ça redirige.
+ */
+async function urlStabilisee(page, { pas = 400, stable = 1500, plafond = 12_000 } = {}) {
+  let derniere = page.url();
+  let inchangeeDepuis = Date.now();
+  const fin = Date.now() + plafond;
+
+  while (Date.now() < fin) {
+    await page.waitForTimeout(pas);
+    const maintenant = page.url();
+    if (maintenant !== derniere) {
+      derniere = maintenant;
+      inchangeeDepuis = Date.now();
+      continue;
+    }
+    if (Date.now() - inchangeeDepuis >= stable) return derniere;
+  }
+  return page.url();
+}
+
 export async function sessionOuverte(page, url, motifHorsSession) {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  // Les redirections d'authentification sont des navigations à part entière.
-  await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
+  const controle = (async () => {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25_000 });
+    await urlStabilisee(page);
 
-  if (motifHorsSession.test(page.url())) return false;
+    if (motifHorsSession.test(page.url())) return false;
 
-  const formulaireDeConnexion = await page
-    .evaluate(() => {
-      const champ = document.querySelector('input[type="password"]');
-      return Boolean(champ && (champ.offsetParent !== null || champ.getClientRects().length > 0));
-    })
-    .catch(() => false);
+    /*
+     * Une seconde tentative, et elle n'est pas décorative : si la page a
+     * navigué juste avant l'appel, la première lève et un `catch` unique
+     * conclurait « pas de formulaire », donc « session ouverte », sur une page
+     * dont on n'a rien lu.
+     */
+    const lireFormulaire = () =>
+      page.evaluate(() => {
+        const champ = document.querySelector('input[type="password"]');
+        return Boolean(champ && (champ.offsetParent !== null || champ.getClientRects().length > 0));
+      });
 
-  return !formulaireDeConnexion;
+    const formulaireDeConnexion = await lireFormulaire().catch(async () => {
+      await urlStabilisee(page, { plafond: 6_000 });
+      return lireFormulaire().catch(() => false);
+    });
+
+    return !formulaireDeConnexion;
+  })();
+
+  const plafond = new Promise((_, rejette) =>
+    setTimeout(() => rejette(new Error('Vérification de session : délai dépassé.')), PLAFOND_SESSION)
+  );
+
+  return Promise.race([controle, plafond]);
 }
 
 /*

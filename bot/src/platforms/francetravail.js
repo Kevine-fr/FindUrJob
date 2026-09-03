@@ -173,7 +173,34 @@ export async function apply(context, offer, options = {}) {
      * candidature ne puisse atteindre le recruteur.
      */
     await postuler.click().catch(() => {});
-    await humanPause(2000, 3000);
+
+    /*
+     * Ce que « Postuler » ouvre est chargé en asynchrone : on l'attend.
+     *
+     * Le bouton porte `data-async-trigger="true"` — son contenu arrive par une
+     * requête, pas avec la page. Une pause fixe de deux à trois secondes le
+     * rattrapait parfois et le manquait le reste du temps : mesuré sur dix
+     * annonces, cinq repartaient en « aucun formulaire de candidature » alors
+     * que le contenu s'affichait une demi-seconde à trois secondes après le
+     * clic. Le diagnostic était donc faux une fois sur deux, et une annonce
+     * parfaitement candidatable était comptée en échec.
+     *
+     * On attend l'un des deux aboutissements possibles — le rappel des
+     * critères, ou la bulle vers le site du recruteur — plutôt qu'une durée.
+     */
+    await page
+      .waitForFunction(
+        () => {
+          if (/envoyer ma candidature/i.test(document.body.innerText || '')) return true;
+          return [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].some(
+            (el) => el.offsetParent !== null && (el.textContent || '').trim().length > 10
+          );
+        },
+        undefined,
+        { timeout: 20_000 }
+      )
+      .catch(() => {});
+    await humanPause(400, 900);
 
     /*
      * Beaucoup d'annonces ne se candidatent pas ici, et on ne l'apprend

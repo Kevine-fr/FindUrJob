@@ -1,5 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
+import { RAISONS } from './failures.js';
 
 /**
  * Welcome to the Jungle.
@@ -201,7 +202,8 @@ export async function apply(context, offer, options = {}) {
     if (externe) {
       return {
         status: 'external',
-        message: `L'employeur reçoit les candidatures sur son propre site : `,
+        reason: RAISONS.REDIRECTION_EXTERNE,
+        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
         externalUrl: externe,
       };
     }

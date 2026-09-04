@@ -54,6 +54,74 @@ export async function isLoggedIn(context) {
 }
 
 /**
+ * La bulle « Postuler » est-elle celle d'un visiteur non connecté ?
+ *
+ * Exportée pour être éprouvable : c'est une lecture de DOM, et la seule façon
+ * d'en vérifier la justesse est de la confronter aux deux variantes réelles de
+ * la bulle. Laissée en ligne dans `apply`, elle n'aurait pu être testée qu'en
+ * candidatant pour de bon.
+ *
+ * On lit les **boutons et liens**, jamais le texte entier : le mot
+ * « connexion » traîne dans le pied de page de la quasi-totalité des sites, et
+ * s'y fier ferait déclarer toute annonce anonyme.
+ *
+ * Le motif est ancré (`^…$`) : « Se connecter » est un bouton, tandis que
+ * « Vous pouvez créer un compte même si vous n'êtes pas inscrit » est une
+ * phrase d'aide qui ne doit rien déclencher.
+ */
+export async function bulleAnonyme(page) {
+  return page
+    .evaluate(() => {
+      const zones = [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].filter(
+        (el) => el.offsetParent !== null
+      );
+      return zones.some((zone) =>
+        [...zone.querySelectorAll('a, button')].some((el) =>
+          /^\s*(se connecter|cr[ée]er un compte|s'identifier)\s*$/i.test(el.textContent || '')
+        )
+      );
+    })
+    .catch(() => false);
+}
+
+/**
+ * L'écran « Vous êtes connecté », et la confiance accordée au navigateur.
+ *
+ * France Travail termine sa connexion par une page de confirmation qui propose
+ * « Faire confiance à ce navigateur » — et annonce, en toutes lettres, que la
+ * vérification d'identité ne sera plus demandée pendant trois mois.
+ *
+ * Cliquer ce bouton est ce qui rend la session durable. Sans lui, chaque
+ * expiration relance une authentification renforcée, dont le code n'arrive que
+ * chez la personne : la campagne se retrouve bloquée sur France Travail tous
+ * les quelques jours, sans rien pouvoir faire seule.
+ *
+ * C'est un réglage du compte, pas un contournement : la case existe pour ça, et
+ * le profil du navigateur piloté est dédié à cette personne. Le message de
+ * retour le dit explicitement, pour que le choix ne soit pas invisible.
+ *
+ * @returns {null|{confiance: boolean}} `null` si ce n'est pas cet écran.
+ */
+export async function confirmerNavigateur(page) {
+  const texte = await page.innerText('body').catch(() => '');
+  if (!/vous [êe]tes connect[ée]|tout est pr[êe]t/i.test(texte)) return null;
+
+  const bouton = page
+    .getByRole('button', { name: /faire confiance à ce navigateur/i })
+    .or(page.getByRole('link', { name: /faire confiance à ce navigateur/i }))
+    .first();
+
+  if (!(await bouton.isVisible().catch(() => false))) return { confiance: false };
+
+  await bouton.click().catch(() => {});
+  // La confirmation renvoie vers l'espace personnel : on laisse la redirection
+  // aboutir, sans quoi la page suivante serait interrogée pendant le saut.
+  await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => {});
+  await humanPause(800, 1500);
+  return { confiance: true };
+}
+
+/**
  * Pas d'automatisation ici, et c'est délibéré : l'authentification renforcée
  * de France Travail attend un code que seule la personne reçoit.
  */
@@ -114,6 +182,28 @@ export async function login(context, { email, password }) {
           'France Travail demande un code de vérification (courriel ou SMS). ' +
           'Ouvre la reprise en main pour le saisir : la session tient ensuite.',
         screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
+    }
+
+    /*
+     * L'écran de succès vit **sur le domaine d'authentification**, et c'est ce
+     * qui faisait passer une connexion réussie pour un échec.
+     *
+     * Après validation, France Travail affiche « Vous êtes connecté — Tout est
+     * prêt ! » sur `authentification-candidat.francetravail.fr`. Le contrôle
+     * d'URL juste en dessous y voyait la preuve d'un refus et rendait
+     * « vérification requise » : la session était pourtant ouverte, mais
+     * personne ne le savait, et la campagne n'essayait même pas de postuler.
+     */
+    const confirme = await confirmerNavigateur(page);
+    if (confirme) {
+      return {
+        status: 'connected',
+        message: confirme.confiance
+          ? 'Session France Travail ouverte, et ce navigateur est désormais reconnu ' +
+            'pour trois mois : plus de code de vérification à saisir d’ici là.'
+          : 'Session France Travail ouverte.',
+        url: page.url(),
       };
     }
 
@@ -254,6 +344,40 @@ export async function apply(context, offer, options = {}) {
         status: 'external',
         reason: RAISONS.REDIRECTION_EXTERNE,
         message: `Cette annonce ne se candidate pas en ligne — ${consigne}`,
+      };
+    }
+
+    /*
+     * La bulle a deux visages, et c'est là que tout se jouait.
+     *
+     * Connecté, le rappel des critères se termine par « Envoyer ma
+     * candidature ». Déconnecté, la **même** bulle s'affiche — mêmes critères,
+     * même mise en page — mais le bouton devient « Se connecter », suivi de
+     * « Vous n'avez pas de compte ? Créer un compte ».
+     *
+     * Rien avant ce point ne permettait de les distinguer : la vérification de
+     * session d'`isLoggedIn` avait répondu « ouverte », le bouton « Postuler »
+     * existait, la bulle s'était ouverte. Le parcours continuait donc jusqu'au
+     * remplissage générique, qui ne trouvait aucun champ et concluait « aucun
+     * formulaire de candidature sur la page » — un diagnostic qui accusait les
+     * sélecteurs alors que la cause était une session fermée.
+     *
+     * C'est pourquoi France Travail ne postulait jamais : l'échec était réel,
+     * mais réparable, et personne ne pouvait le savoir.
+     */
+    if (await bulleAnonyme(page)) {
+      /*
+       * `session` est traduit en 409 par le serveur du robot, ce qui déclenche
+       * la reprise de session déjà en place côté API : on rouvre, puis on
+       * réessaie une fois. Rendre un simple échec aurait laissé la candidature
+       * morte alors qu'il suffit de se reconnecter.
+       */
+      return {
+        status: 'session',
+        reason: RAISONS.SESSION_EXPIREE,
+        message:
+          'France Travail affiche « Se connecter » au moment de postuler : la session était ' +
+          'fermée malgré le contrôle préalable.',
       };
     }
 

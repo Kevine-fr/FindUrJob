@@ -347,6 +347,28 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
     const empreinte = (offer) =>
       `${(offer.title || '').trim().toLowerCase()}|${(offer.company || '').trim().toLowerCase()}`;
 
+    /*
+     * Une seule reprise de session par plateforme et par passe.
+     *
+     * Le commentaire du rattrapage 409 l'annonçait déjà, mais rien ne le
+     * garantissait : la reprise vivait dans la boucle des offres, si bien
+     * qu'une session France Travail restée fermée relançait une connexion
+     * complète **à chaque annonce** — dix offres, dix authentifications en
+     * quelques minutes. C'est précisément ce qui fait qu'un compte se voit
+     * demander une vérification renforcée, puis se retrouve bloqué : le
+     * rattrapage aggravait la panne qu'il devait réparer.
+     *
+     * La promesse est mémorisée, et non son résultat : deux offres traitées
+     * coup sur coup attendent alors la même reconnexion au lieu d'en lancer
+     * deux. Une reprise ratée reste ratée pour toute la passe — la campagne
+     * suivante retentera, une fois.
+     */
+    const reprises = new Map();
+    const reprendreSession = (plateforme) => {
+      if (!reprises.has(plateforme)) reprises.set(plateforme, tryRevive(plateforme, user));
+      return reprises.get(plateforme);
+    };
+
     for (const { source, quota, pool } of candidates) {
       let done = 0;
       summary.perSource[source] = { prepared: 0, sent: 0, manual: 0, belowScore: 0 };
@@ -612,7 +634,7 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               outcome = await envoyer();
             } catch (sessionError) {
               if (sessionError.status !== 409) throw sessionError;
-              if (!(await tryRevive(source, user))) throw sessionError;
+              if (!(await reprendreSession(source))) throw sessionError;
               summary.errors.push(`${source} : session expirée, rouverte automatiquement.`);
               outcome = await envoyer();
             }

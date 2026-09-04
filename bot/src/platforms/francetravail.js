@@ -1,5 +1,5 @@
 import { humanPause, dismissConsent, sessionOuverte } from './common.js';
-import { applyForm, externalApplyUrl } from './applyForm.js';
+import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
 import { RAISONS } from './failures.js';
 
 /**
@@ -236,11 +236,7 @@ export async function apply(context, offer, options = {}) {
     // ou demandent un envoi par courriel : ni l'un ni l'autre ne s'automatise.
     const externe = await externalApplyUrl(page, 'francetravail.fr');
     if (externe) {
-      return {
-        status: 'external',
-        message: `Le recruteur reçoit les candidatures sur son propre site : ${externe}`,
-        externalUrl: externe,
-      };
+      return await postulerSurSiteExterne(page, externe, options);
     }
 
     const postuler = page.getByRole('button', { name: /postuler|je postule|candidater/i }).first();
@@ -308,12 +304,7 @@ export async function apply(context, offer, options = {}) {
      */
     const versRecruteur = await externalApplyUrl(page, 'francetravail.fr');
     if (versRecruteur) {
-      return {
-        status: 'external',
-        reason: RAISONS.REDIRECTION_EXTERNE,
-        message: `Le recruteur reçoit les candidatures sur son propre site : ${versRecruteur}`,
-        externalUrl: versRecruteur,
-      };
+      return await postulerSurSiteExterne(page, versRecruteur, options);
     }
 
     /*

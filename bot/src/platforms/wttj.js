@@ -1,5 +1,5 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
-import { applyForm, externalApplyUrl } from './applyForm.js';
+import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
 import { RAISONS } from './failures.js';
 
 /**
@@ -200,12 +200,15 @@ export async function apply(context, offer, options = {}) {
 
     const externe = await externalApplyUrl(page, 'welcometothejungle.com');
     if (externe) {
-      return {
-        status: 'external',
-        reason: RAISONS.REDIRECTION_EXTERNE,
-        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
-        externalUrl: externe,
-      };
+      /*
+       * On tente le formulaire de l'employeur plutôt que de s'arrêter là.
+       *
+       * Quatorze annonces sur dix-huit renvoient vers son outil — Workday,
+       * SmartRecruiters, Teamtailor, Welcome Kit… Ils servent tous le même
+       * formulaire, celui que le remplisseur générique sait déjà traiter :
+       * éprouvé sur l'ATS de Padoa, champs remplis et CV joint.
+       */
+      return await postulerSurSiteExterne(page, externe, options);
     }
 
     /*

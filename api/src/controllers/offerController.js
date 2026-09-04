@@ -266,9 +266,25 @@ export async function collectOffers(userId, body = {}) {
       continue;
     }
 
-    const identity = offer.externalId
-      ? { source: offer.source, externalId: offer.externalId }
-      : { source: offer.source, title: offer.title, company: offer.company };
+    /*
+     * L'adresse de l'annonce identifie le poste, mieux que l'identifiant.
+     *
+     * Welcome to the Jungle publie une même annonce sous plusieurs
+     * enregistrements — un par bureau — chacun avec son propre `externalId`.
+     * Dédoublonner dessus créait donc trois offres pour un seul poste, puis
+     * trois candidatures : la liste affichait Galadrim trois fois, toutes
+     * « Postulé ». Mesuré sur une collecte réelle : dix-sept titres en double
+     * sur soixante, tous identiques jusqu'à l'URL près.
+     *
+     * On passe donc par `sourceUrl` en premier. L'`externalId` reste utile pour
+     * les sources qui n'exposent pas d'adresse stable, et le titre + société
+     * ferment la marche pour les saisies à la main.
+     */
+    const identity = offer.sourceUrl
+      ? { source: offer.source, sourceUrl: offer.sourceUrl }
+      : offer.externalId
+        ? { source: offer.source, externalId: offer.externalId }
+        : { source: offer.source, title: offer.title, company: offer.company };
 
     const existing = await JobOffer.findOne({ ...identity, user: userId });
     if (existing) {

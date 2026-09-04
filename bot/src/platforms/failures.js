@@ -36,6 +36,8 @@ export const RAISONS = {
   SESSION_EXPIREE: 'session_expiree',
   /** L'annonce a disparu entre la collecte et l'envoi. */
   OFFRE_DISPARUE: 'offre_disparue',
+  /** L'onglet piloté s'est arrêté : mémoire épuisée, page trop lourde. */
+  NAVIGATEUR_INTERROMPU: 'navigateur_interrompu',
   /** Délai dépassé, coupure : rien ne dit que la plateforme soit en cause. */
   RESEAU: 'reseau',
   /** Rien de reconnu — à documenter quand le cas se présente. */
@@ -109,4 +111,30 @@ export function cleQuestion(libelle) {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 60);
+}
+
+/**
+ * Nomme une panne technique à partir de l'exception qui l'a produite.
+ *
+ * Les `catch` de fin de parcours rendaient le message brut de Playwright et
+ * rien d'autre. « locator.count: Target crashed » ne ressemble à aucun motif
+ * connu : la candidature repartait en « cause non identifiée », et
+ * l'historique se remplissait d'échecs illisibles — impossible d'y voir que
+ * le navigateur mourait faute de mémoire.
+ *
+ * Nommer ne répare rien en soi. Mais un navigateur interrompu est retentable,
+ * là où une cause inconnue ne dit ni quoi faire ni s'il vaut la peine
+ * d'insister.
+ */
+const TECHNIQUES = [
+  [
+    /target crashed|page crashed|target closed|browser (has been )?closed|browser has disconnected|protocol error/i,
+    RAISONS.NAVIGATEUR_INTERROMPU,
+  ],
+  [/timeout|d[ée]lai d[ée]pass|net::err|econnrefused|econnreset|socket hang up/i, RAISONS.RESEAU],
+];
+
+export function raisonTechnique(error) {
+  const texte = String(error?.message || error || '');
+  return TECHNIQUES.find(([motif]) => motif.test(texte))?.[1] || RAISONS.INCONNU;
 }

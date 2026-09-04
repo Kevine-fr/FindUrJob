@@ -1,6 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl } from './applyForm.js';
-import { RAISONS } from './failures.js';
+import { RAISONS, raisonTechnique } from './failures.js';
 
 /**
  * Welcome to the Jungle.
@@ -227,7 +227,11 @@ export async function apply(context, offer, options = {}) {
 
     return await applyForm(page, options);
   } catch (error) {
-    return { status: 'manual', message: `Candidature WTTJ : ${error.message}` };
+    return {
+      status: 'manual',
+      reason: raisonTechnique(error),
+      message: `Candidature WTTJ : ${error.message}`,
+    };
   } finally {
     await page.close().catch(() => {});
   }

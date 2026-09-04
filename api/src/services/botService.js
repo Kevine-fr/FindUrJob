@@ -58,6 +58,9 @@ async function json(path, options) {
   if (!response.ok) {
     const err = new Error(data.error || `Navigateur piloté : ${response.status}`);
     err.status = response.status === 409 ? 409 : 502;
+    // Le robot nomme la panne quand il la reconnaît : la perdre ici obligerait
+    // à la redeviner depuis le message, moins bien.
+    if (data.reason) err.reason = data.reason;
     throw err;
   }
   return data;

@@ -679,12 +679,15 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
             application.notes += ` — envoi impossible : ${sendError.message}`;
             application.timeline.push({ status: 'echec_envoi', note: sendError.message });
             /*
-             * Une exception n'a pas de code : on le déduit du message, ce qui
-             * range aussi les incidents réseau. Le 409 est le seul cas où le
-             * transport dit lui-même de quoi il s'agit — une session fermée.
+             * Le code vient du robot quand il a su nommer la panne, du message
+             * sinon. Le 409 reste le cas où le transport tranche lui-même —
+             * une session fermée.
              */
             application.lastFailure = {
-              reason: sendError.status === 409 ? 'session_expiree' : deviner(sendError.message),
+              reason:
+                sendError.status === 409
+                  ? 'session_expiree'
+                  : sendError.reason || deviner(sendError.message),
               message: sendError.message,
               platform: source,
               at: new Date(),

@@ -303,15 +303,34 @@ export function createApp() {
           }
         : null;
 
-      res.json(
-        await platform.apply(context, offer, {
-          cvFile: fichier,
-          applicant,
-          coverLetter,
-          dryRun,
-          answers: answers || {},
-        })
-      );
+      const resultat = await platform.apply(context, offer, {
+        cvFile: fichier,
+        applicant,
+        coverLetter,
+        dryRun,
+        answers: answers || {},
+      });
+
+      /*
+       * Session découverte fermée **pendant** la candidature.
+       *
+       * Le contrôle d'avant l'envoi peut se tromper : celui de France Travail
+       * est borné dans le temps et conclut « ouverte » quand il n'aboutit pas,
+       * pour ne pas rester bloqué. La vérité se découvre alors sur la page —
+       * un bouton « Se connecter » là où devrait être « Envoyer ma
+       * candidature ».
+       *
+       * On répond 409, le même code que le contrôle préalable : l'API sait
+       * déjà le traiter, elle rouvre la session et réessaie une fois. Rendre
+       * un échec ordinaire aurait laissé la candidature morte alors qu'il
+       * suffisait de se reconnecter — c'est exactement ce qui empêchait France
+       * Travail d'aboutir.
+       */
+      if (resultat?.status === 'session') {
+        return res.status(409).json({ error: resultat.message, reason: resultat.reason });
+      }
+
+      res.json(resultat);
     })
   );
 

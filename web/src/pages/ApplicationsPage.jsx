@@ -130,10 +130,19 @@ export default function ApplicationsPage() {
     [data.sources]
   );
 
+  /*
+   * Remplace une candidature dans la liste et dans la fiche ouverte.
+   *
+   * Le garde-fou n'est pas décoratif : appelée sans argument, cette fonction
+   * lisait `undefined._id` **dans un setter d'état**. React ne rattrape pas une
+   * exception à cet endroit — il démonte l'arbre entier, et l'écran devient
+   * noir. Un appelant distrait ne doit pas pouvoir faire disparaître la page.
+   */
   const refreshOne = (updated) => {
+    if (!updated?._id) return;
     setData((etat) => ({
       ...etat,
-      applications: etat.applications.map((a) => (a._id === updated._id ? updated : a)),
+      applications: (etat.applications || []).map((a) => (a._id === updated._id ? updated : a)),
     }));
     setSelected(updated);
   };

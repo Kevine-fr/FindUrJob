@@ -40,7 +40,10 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
       const bilan = await api.applications.retry(app._id, { force });
       const frais = await api.applications.get(app._id);
       setApp(frais);
-      onChange?.();
+      // `onChange` attend la candidature à jour : appelé à vide, le parent
+      // lisait `undefined._id` dans un setter d'état, et React démontait tout
+      // l'arbre — d'où l'écran noir après la relance.
+      onChange?.(frais);
       if (bilan.categorie === 'sent') toast.success('Candidature envoyée.');
       else toast.error(bilan.message || "L'envoi n'a toujours pas abouti.");
     } catch (erreur) {

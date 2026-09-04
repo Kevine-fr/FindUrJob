@@ -397,6 +397,70 @@ async function remplirDepuisReponses(formulaire, reponses) {
 }
 
 /**
+ * Les champs fichier de l'écran, rangés par ce qu'ils acceptent.
+ *
+ * Prendre « le premier champ fichier » était faux, et cher : sur Welcome to
+ * the Jungle, le premier est la **photo de profil**. Le CV en PDF y atterrissait
+ * et la plateforme répondait « Format non pris en charge : gif, jpeg, png,
+ * svg » — un refus provoqué par nous, sur un formulaire qui aurait abouti.
+ *
+ * On lit donc `accept`, et à défaut le libellé. Un champ qui ne veut que des
+ * images n'est pas un champ de CV, et rien ne sert d'y insister : c'est une
+ * information à demander à la personne, avec son type.
+ */
+const champsFichier = (scope) =>
+  scope
+    .evaluate((form) => {
+      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+      const nommer = (el) =>
+        (
+          el.labels?.[0]?.textContent ||
+          el.getAttribute('aria-label') ||
+          el.closest('label')?.textContent ||
+          el.name ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .replace(/\*$/, '')
+          .trim()
+          .slice(0, 60);
+
+      return [...form.querySelectorAll('input[type="file"]')].map((el, index) => {
+        const accept = (el.accept || '').toLowerCase();
+        const libelle = nommer(el);
+        const contexte = `${libelle} ${el.name || ''} ${accept}`.toLowerCase();
+
+        // Un `accept` qui ne cite que des images ferme la question.
+        const imagesSeulement =
+          Boolean(accept) &&
+          accept
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .every((t) => /^image\//.test(t) || /\.(png|jpe?g|gif|svg|webp|bmp)$/.test(t));
+
+        const documentPossible =
+          !accept || /pdf|msword|document|\.docx?|\.odt|\.rtf|officedocument/.test(accept);
+
+        return {
+          index,
+          libelle: libelle || (imagesSeulement ? 'Photo' : 'Document'),
+          accept,
+          requis: el.required || el.getAttribute('aria-required') === 'true',
+          visible: visible(el),
+          imagesSeulement,
+          // Le CV se reconnaît à ce qu'il accepte, et le libellé départage les
+          // champs sans `accept` : « Photo de profil » n'est pas un CV.
+          pourCv:
+            documentPossible &&
+            !imagesSeulement &&
+            !/photo|avatar|portrait|image|logo/.test(contexte),
+        };
+      });
+    })
+    .catch(() => []);
+
+/**
  * Candidate sur le formulaire de la page courante.
  *
  * @param page          Onglet déjà positionné sur l'annonce, formulaire ouvert.
@@ -472,9 +536,20 @@ export async function applyForm(
 
     let joint = false;
     let depose = false;
-    const upload = scope.locator('input[type="file"]').first();
 
-    if (cvFile && (await upload.count())) {
+    /*
+     * Le CV va dans un champ qui accepte des documents, pas dans le premier
+     * venu. Les autres champs fichier — une photo de profil, un portfolio —
+     * sont pris en charge plus bas : ce sont des informations à fournir, pas
+     * des endroits où pousser le CV.
+     */
+    const fichiers = await champsFichier(scope);
+    const pourCv = fichiers.filter((f) => f.pourCv);
+    const upload = pourCv.length
+      ? scope.locator('input[type="file"]').nth(pourCv[0].index)
+      : scope.locator('input[type="file"]').first();
+
+    if (cvFile && pourCv.length) {
       await upload.setInputFiles(cvFile).catch(() => {});
       depose = true;
     } else if (cvFile) {
@@ -555,10 +630,66 @@ export async function applyForm(
     // Les réponses connues passent avant le constat de manque : c'est tout
     // l'intérêt de les avoir demandées.
     await remplirDepuisReponses(scope, answers);
+
+    /*
+     * Les réponses qui sont des fichiers se déposent, elles ne se tapent pas.
+     *
+     * `remplirDepuisReponses` travaille dans la page et ne peut pas alimenter
+     * un `input[type=file]` — le navigateur l'interdit, à raison. C'est donc
+     * Playwright qui le fait ici, depuis les octets que la personne a fournis
+     * une fois pour toutes dans l'onglet Informations.
+     */
+    for (const champ of await champsFichier(scope)) {
+      const reponse = answers[cleQuestion(champ.libelle)];
+      if (!reponse || typeof reponse !== 'object' || !reponse.contenu) continue;
+      await scope
+        .locator('input[type="file"]')
+        .nth(champ.index)
+        .setInputFiles({
+          name: reponse.nom || 'piece-jointe',
+          mimeType: reponse.mime || 'application/octet-stream',
+          buffer: Buffer.from(reponse.contenu, 'base64'),
+        })
+        .catch(() => {});
+      await humanPause(400, 900);
+    }
+
     await cocherCases(scope);
     await humanPause(400, 900);
 
-    const vides = await manquants(scope);
+    /*
+     * Les pièces demandées en plus du CV deviennent des questions.
+     *
+     * Welcome to the Jungle exige une « Photo de profil » et refuse d'envoyer
+     * sans elle. Ce n'est ni un défaut de sélecteur ni un mur : c'est une
+     * information qu'on n'a pas. Elle rejoint donc les autres dans l'onglet
+     * Informations — avec son **type**, sans quoi on demanderait une photo dans
+     * un champ de texte.
+     *
+     * On ne les signale qu'après avoir tenté de les remplir depuis les réponses
+     * déjà données : une photo fournie une fois sert partout ensuite.
+     */
+    const piecesManquantes = [];
+    for (const champ of await champsFichier(scope)) {
+      if (!champ.requis || !champ.visible) continue;
+      if (champ.pourCv && depose) continue;
+
+      const rempli = await scope
+        .locator('input[type="file"]')
+        .nth(champ.index)
+        .evaluate((el) => el.files?.length > 0)
+        .catch(() => false);
+      if (rempli) continue;
+
+      piecesManquantes.push({
+        libelle: champ.libelle,
+        forme: champ.imagesSeulement ? 'image' : 'fichier',
+        options: [],
+        accept: champ.accept || '',
+      });
+    }
+
+    const vides = [...(await manquants(scope)), ...piecesManquantes];
     if (vides.length) {
       return {
         erreur: `Champs obligatoires non renseignés : ${vides.map((c) => c.libelle).join(', ')}.`,

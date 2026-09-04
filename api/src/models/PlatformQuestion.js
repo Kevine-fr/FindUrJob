@@ -37,13 +37,39 @@ const platformQuestionSchema = new mongoose.Schema(
      */
     forme: {
       type: String,
-      enum: ['texte', 'paragraphe', 'nombre', 'telephone', 'date', 'case', 'choix'],
+      enum: [
+        'texte',
+        'paragraphe',
+        'nombre',
+        'telephone',
+        'date',
+        'case',
+        'choix',
+        // Une pièce à joindre, et non une valeur à saisir. Distinguer l'image du
+        // fichier quelconque n'est pas cosmétique : la plateforme refuse un PDF
+        // dans un champ « Photo de profil », et l'écran doit donc proposer le
+        // bon sélecteur plutôt qu'une zone de texte.
+        'image',
+        'fichier',
+      ],
       default: 'texte',
     },
     /** Réponses possibles, quand le champ est une liste. */
     options: { type: [String], default: [] },
+    /** Ce que le champ accepte, tel que la plateforme le déclare (`accept`). */
+    accept: { type: String, default: '' },
 
     reponse: { type: String, default: '' },
+
+    /*
+     * La pièce jointe, quand la réponse est un fichier.
+     *
+     * `select: false` : ces octets ne partent jamais avec la liste des
+     * questions. `reponse` garde alors le nom du fichier, ce qui suffit à
+     * l'afficher et à savoir que la question est réglée.
+     */
+    fichier: { type: Buffer, select: false },
+    fichierMime: { type: String, default: '' },
 
     /*
      * `en_attente` tant que rien n'a été répondu, `repondue` ensuite.

@@ -157,6 +157,7 @@ export const api = {
    */
   questions: {
     list: (query = '') => req(`/questions${query}`),
+    answerFile: (id, file) => upload('/questions/' + id + '/fichier', file),
     answer: (id, body) => req(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     remove: (id) => req(`/questions/${id}`, { method: 'DELETE' }),
   },

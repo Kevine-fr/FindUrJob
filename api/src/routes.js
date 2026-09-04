@@ -160,6 +160,7 @@ router.get('/history', history.listHistory);
  */
 router.get('/questions', questions.listQuestions);
 router.patch('/questions/:id', questions.answerQuestion);
+router.post('/questions/:id/fichier', questions.answerWithFile);
 router.delete('/questions/:id', questions.deleteQuestion);
 
 /*

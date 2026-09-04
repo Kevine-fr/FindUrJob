@@ -27,7 +27,7 @@ const FORME_AIDE = {
 };
 
 /** Une question, et le champ pour y répondre. */
-function Question({ question, onEnregistre, onIgnore, onSupprime }) {
+function Question({ question, onEnregistre, onFichier, onIgnore, onSupprime }) {
   const [valeur, setValeur] = useState(question.reponse || '');
   const [busy, setBusy] = useState(false);
   const modifie = valeur.trim() !== (question.reponse || '').trim();
@@ -60,7 +60,28 @@ function Question({ question, onEnregistre, onIgnore, onSupprime }) {
       </div>
 
       <div className="question-form">
-        {question.forme === 'choix' && question.options?.length ? (
+        {/*
+          Une pièce à joindre, pas une valeur à saisir.
+          Welcome to the Jungle réclame une photo de profil et refuse d'envoyer
+          sans elle : proposer un champ de texte là ne mènerait nulle part. Le
+          `accept` est celui que la plateforme déclare, pour que le sélecteur ne
+          propose que ce qu'elle acceptera.
+        */}
+        {question.forme === 'image' || question.forme === 'fichier' ? (
+          <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer' }}>
+            {question.reponse ? `Remplacer (${question.reponse})` : 'Choisir un fichier'}
+            <input
+              type="file"
+              hidden
+              accept={question.accept || (question.forme === 'image' ? 'image/*' : undefined)}
+              onChange={(e) => {
+                const fichier = e.target.files?.[0];
+                e.target.value = '';
+                if (fichier) onFichier(question._id, fichier);
+              }}
+            />
+          </label>
+        ) : question.forme === 'choix' && question.options?.length ? (
           <select className="select" value={valeur} onChange={(e) => setValeur(e.target.value)}>
             <option value="">— choisir —</option>
             {question.options.map((option) => (
@@ -87,13 +108,17 @@ function Question({ question, onEnregistre, onIgnore, onSupprime }) {
           />
         )}
 
-        <button
-          className={`btn btn-primary btn-sm${busy ? ' is-busy' : ''}`}
-          disabled={busy || !modifie}
-          onClick={enregistrer}
-        >
-          Enregistrer
-        </button>
+        {/* Pour une pièce jointe, le dépôt vaut envoi : un bouton
+            « Enregistrer » de plus ne ferait qu'ajouter un geste. */}
+        {question.forme !== 'image' && question.forme !== 'fichier' && (
+          <button
+            className={`btn btn-primary btn-sm${busy ? ' is-busy' : ''}`}
+            disabled={busy || !modifie}
+            onClick={enregistrer}
+          >
+            Enregistrer
+          </button>
+        )}
         {question.statut !== 'ignoree' && (
           <button className="btn btn-ghost btn-sm" onClick={() => onIgnore(question._id)}>
             Ne me concerne pas
@@ -141,6 +166,20 @@ export default function QuestionsPage() {
           propagees > 0
             ? `Réponse enregistrée, et reportée sur ${propagees} autre${propagees > 1 ? 's' : ''} plateforme${propagees > 1 ? 's' : ''} qui posait${propagees > 1 ? 'ent' : ''} la même question.`
             : 'Réponse enregistrée : les prochaines candidatures s’en serviront.'
+        );
+        load();
+      })
+      .catch((e) => toast.error(e.message));
+
+  /** Répondre par une pièce jointe : une photo de profil, un portfolio. */
+  const envoyerFichier = (id, fichier) =>
+    api.questions
+      .answerFile(id, fichier)
+      .then(({ propagees = 0 }) => {
+        toast.success(
+          propagees > 0
+            ? `Pièce enregistrée, et reportée sur ${propagees} autre${propagees > 1 ? 's' : ''} plateforme${propagees > 1 ? 's' : ''}.`
+            : 'Pièce enregistrée : les prochaines candidatures la joindront.'
         );
         load();
       })
@@ -219,6 +258,7 @@ export default function QuestionsPage() {
                     key={question._id}
                     question={question}
                     onEnregistre={enregistrer}
+                    onFichier={envoyerFichier}
                     onIgnore={ignorer}
                     onSupprime={supprimer}
                   />
@@ -239,6 +279,7 @@ export default function QuestionsPage() {
                     key={question._id}
                     question={question}
                     onEnregistre={enregistrer}
+                    onFichier={envoyerFichier}
                     onIgnore={ignorer}
                     onSupprime={supprimer}
                   />

@@ -424,19 +424,249 @@ export async function apply(context, offer, options = {}) {
         };
       }
 
-      await confirmer.click().catch(() => {});
-      await humanPause(3000, 4500);
+      /*
+       * « Envoyer ma candidature » ouvre un **nouvel onglet**.
+       *
+       * Le lien porte `target="_blank"` — son libellé accessible le dit
+       * d'ailleurs : « (nouvelle fenêtre) ». On cliquait, la page d'origine
+       * restait sur l'annonce, et le reste du parcours l'analysait elle : d'où
+       * « Aucun formulaire de candidature sur la page », sur une candidature
+       * dont le formulaire s'était ouvert à côté, invisible pour nous.
+       *
+       * Plutôt que de gérer un second onglet, on suit l'adresse dans celui-ci.
+       * C'est la même destination — `/candidature/postulerenligne/<id>` — et le
+       * parcours reste sur une seule page, donc analysable de bout en bout.
+       */
+      const versFormulaire = await confirmer.getAttribute('href').catch(() => null);
+      if (versFormulaire) {
+        await page
+          .goto(new URL(versFormulaire, page.url()).href, {
+            waitUntil: 'domcontentloaded',
+            timeout: 45_000,
+          })
+          .catch(() => {});
+      } else {
+        await confirmer.click().catch(() => {});
+        await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => {});
+      }
+      await page
+        .waitForFunction(
+          () =>
+            /candidature.*(envoy|transmis|enregistr)|merci pour votre candidature|d[ée]j[àa] postul/i.test(
+              document.body.innerText || ''
+            ) || document.querySelectorAll('form input, form textarea').length > 0,
+          undefined,
+          { timeout: 20_000 }
+        )
+        .catch(() => {});
+      await humanPause(600, 1200);
 
       const texte = await page.innerText('body').catch(() => '');
-      if (/candidature.*(envoy|transmis|enregistr)|merci pour votre candidature/i.test(texte)) {
-        return { status: 'sent', message: 'Candidature envoyée via France Travail.' };
+
+      /*
+       * « Vous avez déjà postulé sur cette offre ! »
+       *
+       * Constaté en vrai : la candidature était partie lors d'un passage
+       * précédent, sans qu'on ait su le voir. La compter en échec pousse à
+       * recommencer — exactement ce qu'il ne faut pas faire.
+       */
+      if (/d[ée]j[àa] postul[ée]/i.test(texte)) {
+        return {
+          status: 'sent',
+          message: 'France Travail a déjà reçu cette candidature.',
+        };
       }
-      // Pas de confirmation : un formulaire a pu s'ouvrir, on le laisse remplir.
+
+      /*
+       * La page de candidature demande **quel CV** joindre.
+       *
+       * Des boutons radio `choix-cv` listent les CV du profil, puis un
+       * `<button type="submit">Envoyer</button>` conclut. Aucun n'est marqué
+       * `required`, mais rien ne part sans choix : le remplisseur générique, qui
+       * ne coche que l'obligatoire, laissait donc le formulaire incomplet.
+       */
+      /*
+       * Trois choses, et aucune n'est marquée obligatoire en HTML.
+       *
+       * Relevé sur le formulaire réel : un CV à choisir parmi ceux du profil,
+       * une lettre de motivation dont seul le *libellé* dit « (obligatoire) »,
+       * et une case « Je confirme que mes coordonnées ci-dessus sont valides ».
+       *
+       * Rien ne porte `required` ni `aria-required` : nos contrôles génériques
+       * ne voyaient donc rien à signaler, le bouton « Envoyer » restait actif,
+       * le clic partait — et la page ne bougeait pas, sans le moindre message
+       * d'erreur. C'est ce silence qui rendait la panne si difficile à lire.
+       */
+      const choixCv = page.locator('input[name="choix-cv"]').first();
+      if (await choixCv.count()) {
+        await choixCv.check({ force: true }).catch(() => {});
+        await humanPause(500, 1000);
+      }
+
+      const lettre = page.locator('textarea[name="textMessage"]').first();
+      if (await lettre.count()) {
+        await lettre
+          .fill(
+            options.coverLetter ||
+              'Bonjour,\n\nVotre annonce a retenu mon attention et je vous adresse ma ' +
+                'candidature. Vous trouverez mon parcours détaillé dans le CV joint.\n\n' +
+                'Je reste disponible pour en échanger.\n\nCordialement.'
+          )
+          .catch(() => {});
+        await humanPause(400, 900);
+      }
+
+      /*
+       * La case se coche par son libellé, et on le vérifie.
+       *
+       * `check({ force: true })` sur l'input restait sans effet — la case
+       * demeurait décochée, et « Envoyer » ne faisait rien, sans message. On
+       * relit donc l'état plutôt que de supposer, et on passe par le `<label>`
+       * quand la case n'a pas suivi : c'est ce qui marche sur cette page.
+       */
+      const confirmation = page.locator('input[name="confirmcoordonnees"]').first();
+      if (await confirmation.count()) {
+        await confirmation.check({ force: true }).catch(() => {});
+        if (!(await confirmation.isChecked().catch(() => false))) {
+          await page.locator('label[for="confirmcoordonnees"]').click({ force: true }).catch(() => {});
+        }
+        await humanPause(400, 900);
+      }
+
+      const envoyer = page.getByRole('button', { name: /^\s*envoyer\s*$/i }).first();
+      if (!(await envoyer.count())) {
+        return {
+          status: 'manual',
+          reason: RAISONS.BOUTON_ABSENT,
+          message: "Page de candidature France Travail sans bouton « Envoyer ».",
+          screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+        };
+      }
+
+      await envoyer.click().catch(() => {});
+      await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => {});
+      await humanPause(2000, 3000);
+
+      /*
+       * On demande à France Travail, au lieu de lire un message.
+       *
+       * Se fier au texte affiché avait produit un faux « envoyée » : la page du
+       * formulaire contient elle-même les mots « candidature » et « envoyer »,
+       * et le motif les rapprochait. Annoncer un envoi qui n'a pas eu lieu est
+       * la pire erreur possible ici — la candidature est perdue et personne ne
+       * le sait.
+       *
+       * La page « postuler en ligne » répond sans ambiguïté : elle affiche
+       * « Vous avez déjà postulé sur cette offre ! » quand la candidature est
+       * arrivée, et le formulaire sinon. C'est la plateforme qui tranche.
+       */
+      const identifiant = /detail\/([^/?#]+)/.exec(offer.sourceUrl || '')?.[1];
+      if (identifiant) {
+        await page
+          .goto(`https://candidat.francetravail.fr/candidature/postulerenligne/${identifiant}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30_000,
+          })
+          .catch(() => {});
+        await humanPause(1500, 2500);
+        const verdict = await page.innerText('body').catch(() => '');
+        if (/d[ée]j[àa] postul[ée]/i.test(verdict)) {
+          return { status: 'sent', message: 'Candidature envoyée via France Travail (confirmée).' };
+        }
+      }
+
+      return {
+        status: 'uncertain',
+        reason: RAISONS.SANS_CONFIRMATION,
+        message:
+          "Formulaire France Travail soumis, mais la plateforme ne confirme pas encore l'avoir " +
+          'reçue : à vérifier dans « Mes candidatures ».',
+        screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+      };
     }
 
     return await applyForm(page, options);
   } catch (error) {
     return { status: 'manual', message: `Candidature France Travail : ${error.message}` };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+/**
+ * Les candidatures que France Travail déclare avoir reçues.
+ *
+ * Cette page a longtemps été réputée inexistante ici — j'avais cherché sept
+ * adresses plausibles et conclu qu'il n'y en avait pas. Elle existe : c'est
+ * `/candidature/mescandidatures`, et on n'y arrive pas en devinant une URL mais
+ * en suivant « Accéder à mes candidatures » depuis une annonce déjà candidatée.
+ *
+ * Ce qu'elle change est considérable : les envois France Travail aboutissaient
+ * déjà — « Candidature envoyée le 03/09/2026 à 19h26 » — sans jamais être
+ * reconnus comme tels faute de pouvoir le vérifier. Le rapprochement peut
+ * désormais les promouvoir en « Postulé » au lieu de les laisser « à vérifier ».
+ */
+export async function listApplications(context, { max = 120 } = {}) {
+  const page = await context.newPage();
+
+  try {
+    await page.goto('https://candidat.francetravail.fr/candidature/mescandidatures', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await dismissConsent(page);
+    await page.waitForTimeout(5000);
+
+    /*
+     * On lit les blocs qui portent une date d'envoi.
+     *
+     * C'est le seul repère stable de cette liste : le titre et l'employeur
+     * changent de balise au gré des refontes, mais « Candidature envoyée le … »
+     * est la phrase qui définit une entrée. Elle sert donc à la fois à trouver
+     * les blocs et à écarter l'entête et les filtres.
+     */
+    return await page.evaluate((limite) => {
+      const ENVOI = /Candidature envoy[ée]e le\s+([0-9/]+)/i;
+      const vus = new Set();
+      const sortie = [];
+
+      /*
+       * L'entrée est un `<li class="candidature">`.
+       *
+       * Chercher « le plus petit bloc contenant la phrase » ne marchait pas :
+       * la date vit dans un `<p class="description">` enfant, si bien que tout
+       * conteneur était écarté comme « trop grand » et la liste ressortait
+       * vide. On vise donc l'entrée elle-même, avec un repli sur les `li` qui
+       * portent la phrase si la classe venait à changer.
+       */
+      let entrees = [...document.querySelectorAll('li.candidature, li[class*="candidature"]')];
+      if (!entrees.length) {
+        entrees = [...document.querySelectorAll('li')].filter((el) =>
+          ENVOI.test((el.textContent || '').replace(/\s+/g, ' '))
+        );
+      }
+
+      for (const el of entrees) {
+        const texte = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!ENVOI.test(texte) || texte.length > 600) continue;
+
+        const titre = (texte.split('(voir le détail')[0] || '').trim();
+        const employeur = (/Employeur\s*:\s*([^0-9]+?)(?:\d{2}\s*-|$)/i.exec(texte) || [])[1] || '';
+        const statut = (/EN COURS[^.]*|CANDIDATURE RETENUE|NON RETENUE|CL[OÔ]TUR[ÉE]E/i.exec(texte) || [])[0] || '';
+        const cle = `${titre}|${employeur}`;
+        if (!titre || vus.has(cle)) continue;
+        vus.add(cle);
+
+        sortie.push({
+          titre,
+          societe: employeur.trim(),
+          statut: statut.trim(),
+          url: el.querySelector('a[href]')?.href || '',
+        });
+        if (sortie.length >= limite) break;
+      }
+      return sortie;
+    }, max);
   } finally {
     await page.close().catch(() => {});
   }

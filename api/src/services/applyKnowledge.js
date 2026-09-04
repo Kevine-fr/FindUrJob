@@ -84,6 +84,9 @@ export async function enregistrerQuestions(champs = [], { user, platform, offer 
             libelle: champ.libelle || champ.cle,
             forme: champ.forme || 'texte',
             options: champ.options || [],
+            // Ce que la plateforme accepte : l'écran s'en sert pour proposer le
+            // bon sélecteur, et pour refuser un fichier qui serait rejeté.
+            accept: champ.accept || '',
             exempleOffre: offer || undefined,
             // Déjà répondue ailleurs : la ligne naît réglée, et la personne
             // n'en entend jamais parler.
@@ -186,11 +189,28 @@ export async function reponsesPour(user, platform) {
     platform,
     statut: 'repondue',
     reponse: { $ne: '' },
-  })
-    .select('cle reponse')
-    .lean();
+  }).select('cle reponse forme fichierMime +fichier');
 
-  return Object.fromEntries(questions.map((q) => [q.cle, q.reponse]));
+  /*
+   * Une réponse peut être un fichier.
+   *
+   * Le robot ne peut pas « taper » dans un champ fichier — le navigateur
+   * l'interdit — il lui faut les octets. On les lui passe encodés, sous une
+   * forme qu'il distingue d'une valeur texte au premier coup d'œil : une
+   * chaîne se saisit, un objet se dépose.
+   */
+  return Object.fromEntries(
+    questions.map((q) => [
+      q.cle,
+      q.fichier?.length
+        ? {
+            nom: q.reponse,
+            mime: q.fichierMime || 'application/octet-stream',
+            contenu: q.fichier.toString('base64'),
+          }
+        : q.reponse,
+    ])
+  );
 }
 
 /**

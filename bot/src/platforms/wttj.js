@@ -232,3 +232,64 @@ export async function apply(context, offer, options = {}) {
     await page.close().catch(() => {});
   }
 }
+
+/**
+ * Les candidatures que Welcome to the Jungle déclare avoir reçues.
+ *
+ * Le suivi vit à `/fr/me/application-tracker`. Sans cette lecture, quatorze
+ * candidatures réellement envoyées restaient invisibles : le robot ne voyait
+ * pas de confirmation à l'écran et rendait « issue incertaine », alors que la
+ * plateforme affichait « Candidature reçue » à côté.
+ *
+ * On lit les feuilles du bloc plutôt que son texte entier : la société, le
+ * titre et le statut y sont concaténés sans séparateur, et les découper au
+ * jugé produirait des titres tronqués à la première refonte.
+ */
+export async function listApplications(context, { max = 120 } = {}) {
+  const page = await context.newPage();
+
+  try {
+    await page.goto('https://www.welcometothejungle.com/fr/me/application-tracker', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+    await dismissConsent(page);
+    await page.waitForTimeout(7000);
+
+    return await page.evaluate((limite) => {
+      const ENVOI = /envoy[ée]e il y a|candidature (re[çc]ue|envoy[ée]e)/i;
+      const vus = new Set();
+      const sortie = [];
+
+      for (const li of document.querySelectorAll('li')) {
+        if (li.offsetParent === null) continue;
+        const entier = (li.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!ENVOI.test(entier) || entier.length > 340) continue;
+
+        // Les feuilles portent chacune un morceau : société, intitulé, statut.
+        const morceaux = [...li.querySelectorAll('*')]
+          .filter((el) => !el.querySelector('*'))
+          .map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+
+        const societe = morceaux[0] || '';
+        const titre = morceaux[1] || '';
+        const statut = morceaux.find((m) => /candidature|entretien|refus|retenue/i.test(m)) || '';
+        const cle = `${societe}|${titre}`;
+        if (!titre || vus.has(cle)) continue;
+        vus.add(cle);
+
+        sortie.push({
+          titre,
+          societe,
+          statut,
+          url: li.querySelector('a[href]')?.href || '',
+        });
+        if (sortie.length >= limite) break;
+      }
+      return sortie;
+    }, max);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}

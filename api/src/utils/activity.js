@@ -46,6 +46,12 @@ export const ACTIVITY_CATEGORIES = [
  * préfixe, et qu'ajouter un geste ne demande pas de toucher au filtre.
  */
 export const ACTIVITY_KINDS = [
+  // L'entretien des candidatures : relancer en lot, et vérifier ce que les
+  // plateformes déclarent avoir reçu. Journalisés parce qu'aucun document ne
+  // les garde — le document d'entretien n'a qu'un dernier bilan, écrasé à
+  // chaque passage, et une relance nocturne n'aurait donc laissé aucune trace.
+  'candidature.relance',
+  'candidature.verification',
   'campagne.execution',
   'campagne.reglage',
   'alerte.execution',

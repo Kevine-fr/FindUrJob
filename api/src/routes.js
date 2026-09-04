@@ -14,6 +14,7 @@ import * as cvExport from './controllers/cvExportController.js';
 import * as campaign from './controllers/campaignController.js';
 import * as alerts from './controllers/alertController.js';
 import * as questions from './controllers/questionController.js';
+import * as upkeep from './controllers/upkeepController.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -145,7 +146,21 @@ router.post('/profile/compose', profile.composeProfileCv);
 router.get('/preferences', preferences.getPreferences);
 router.put('/preferences', preferences.updatePreferences);
 
-// Rapprochement : ce que les plateformes disent avoir recu.
+/*
+ * Entretien des candidatures : relance en lot et vérification.
+ *
+ * Les deux se lancent et se poursuivent en fond — la vérification ouvre un
+ * navigateur par plateforme, la relance un par candidature, soit plusieurs
+ * minutes qu'aucune requête HTTP ne tiendrait. L'avancement se relit sur
+ * `GET /upkeep`, l'automatisation se règle sur `PUT /upkeep`.
+ */
+router.get('/upkeep', upkeep.getUpkeep);
+router.put('/upkeep', upkeep.updateUpkeep);
+router.post('/upkeep/retry', upkeep.startRetry);
+router.post('/upkeep/verify', upkeep.startVerify);
+
+// Rapprochement synchrone, conservé : la campagne l'appelle en fin de passe,
+// où elle a besoin du bilan immédiatement plutôt que d'un accusé de réception.
 router.post('/applications/reconcile', applications.reconcileApplications);
 
 // Historique : statuts journalisés + CV générés, en un seul flux

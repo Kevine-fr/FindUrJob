@@ -2,7 +2,7 @@ import express from 'express';
 import morgan from 'morgan';
 
 import { renderPdf } from './pdf.js';
-import { getContext, closeContext, forgetContext, knownProfiles } from './browser.js';
+import { getContext, closeContext, forgetContext, knownProfiles, pageVivante } from './browser.js';
 import { getPlatform, PLATFORM_NAMES } from './platforms/index.js';
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -179,9 +179,21 @@ export function createApp() {
       const context = await getContext(platformName, { user });
       // Un onglet par destination : garder la plateforme et Gmail ouverts côte
       // à côte est tout l'intérêt quand on attend un code de vérification.
-      const page = target === 'plateforme' ? context.pages()[0] || (await context.newPage()) : await context.newPage();
+      const page =
+        target === 'plateforme' ? await pageVivante(platformName, user) : await context.newPage();
 
-      await page.bringToFront();
+      /*
+       * Mettre l'onglet au premier plan est un confort, pas une condition.
+       *
+       * Sur un onglet planté, `bringToFront` lève « Target crashed » — et comme
+       * l'erreur remontait, la connexion manuelle devenait impossible sur
+       * toutes les plateformes restantes. Or c'est le seul écran depuis lequel
+       * on peut rouvrir une session : la panne se refermait sur elle-même.
+       *
+       * `pageVivante` garantit désormais un onglet sain ; ce filet ne couvre
+       * plus que le cas où l'écran virtuel refuse le focus, qui n'empêche rien.
+       */
+      await page.bringToFront().catch(() => {});
       await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
       res.json({

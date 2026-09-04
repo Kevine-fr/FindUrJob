@@ -2,10 +2,19 @@
 # Il préfixe les images, les réseaux et les volumes (findurjob_mongo_data).
 name: findurjob
 
-# Plafonds de ressources (VPS mutualisé 8 vCPU / 24 Go) : voir CAPACITY.md dans
-# le dépôt Infrastructure. `mem_limit` est un garde-fou anti-emballement — pas
-# une réservation — et `cpu_shares` ne joue qu'en cas de contention CPU
-# (1024 = trafic de production, 256 = tâches de fond et exporters).
+# Aucun plafond de ressources sur ces services, et c'est délibéré.
+#
+# Les limites précédentes (`mem_limit`, `cpus`, `cpu_shares`) produisaient des
+# pannes qu'on ne savait pas lire. Le cas le plus net : le conteneur `bot`
+# était plafonné à 2 Go **dont 1 Go de tmpfs /dev/shm** — le tmpfs compte dans
+# la mémoire du cgroup. Il restait donc à peine 1 Go pour Chromium, et le
+# tueur de mémoire du noyau abattait l'onglet en cours dès qu'une page était
+# lourde. Playwright n'en rapportait que « Target crashed », que rien ne
+# permettait de relier à un manque de mémoire : la candidature repartait en
+# « cause non identifiée ».
+#
+# Le VPS a de la marge (8 vCPU / 24 Go). Le plafond ne protégeait donc de rien
+# de réel, et coûtait des candidatures.
 x-logging: &logging
   driver: "json-file"
   options:
@@ -26,11 +35,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # WiredTiger dimensionne son cache sur la limite du cgroup : sans plafond,
-    # il réserverait la moitié de la RAM de l'hôte (~11 Go) pour lui seul.
-    mem_limit: 768m
-    cpus: 1
-    cpu_shares: 1024
     logging: *logging
     networks:
         - web
@@ -53,9 +57,6 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-    mem_limit: 128m
-    cpus: 0.2
-    cpu_shares: 256
     logging: *logging
     networks:
         - web
@@ -86,9 +87,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    mem_limit: 768m
-    cpus: 1.5
-    cpu_shares: 1024
     logging: *logging
     networks:
         - web
@@ -125,12 +123,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    # Le plus gourmand du lot : Chromium + le tmpfs /dev/shm ci-dessus, qui
-    # compte lui aussi dans la mémoire du conteneur. D'où 2 Go (1 Go de shm
-    # + le navigateur) plutôt que la limite plus serrée des autres services.
-    mem_limit: 2g
-    cpus: 2
-    cpu_shares: 512
     logging: *logging
     networks:
         - web
@@ -188,9 +180,6 @@ services:
     # `npm start` (node) et non `npm run dev` (nodemon) : en production, rien ne
     # doit surveiller les fichiers ni redémarrer le processus tout seul.
     command: npm start
-    mem_limit: 640m
-    cpus: 1.5
-    cpu_shares: 1024
     logging: *logging
     networks:
         - web
@@ -209,9 +198,6 @@ services:
     expose:
       - "5173"
     # Ni montage de sources ni `command` : l'image contient le site compilé.
-    mem_limit: 192m
-    cpus: 1
-    cpu_shares: 1024
     logging: *logging
     networks:
         - web

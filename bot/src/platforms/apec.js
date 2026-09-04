@@ -1,6 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS } from './failures.js';
+import { RAISONS, raisonTechnique } from './failures.js';
 
 /**
  * APEC.
@@ -289,7 +289,11 @@ export async function apply(context, offer, options = {}) {
 
     return await applyForm(page, options);
   } catch (error) {
-    return { status: 'manual', message: `Candidature APEC : ${error.message}` };
+    return {
+      status: 'manual',
+      reason: raisonTechnique(error),
+      message: `Candidature APEC : ${error.message}`,
+    };
   } finally {
     await page.close().catch(() => {});
   }

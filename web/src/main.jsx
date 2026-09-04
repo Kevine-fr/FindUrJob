@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import { AuthProvider } from './lib/auth.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './styles/tokens.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -11,7 +12,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          <App />
+          {/* Le filet est sous les fournisseurs : une erreur de rendu doit
+              pouvoir s'afficher avec les styles et les notifications en place. */}
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

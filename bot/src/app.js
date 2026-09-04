@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import { renderPdf } from './pdf.js';
 import { getContext, closeContext, forgetContext, knownProfiles, pageVivante } from './browser.js';
 import { getPlatform, PLATFORM_NAMES } from './platforms/index.js';
+import { raisonTechnique } from './platforms/failures.js';
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -362,7 +363,18 @@ export function createApp() {
   // eslint-disable-next-line no-unused-vars -- Express reconnaît le gestionnaire d'erreurs à ses 4 arguments
   app.use((err, _req, res, _next) => {
     console.error('bot:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Erreur du navigateur piloté' });
+    /*
+     * Le code accompagne le message, même ici.
+     *
+     * Les plateformes sans `catch` propre laissent remonter l'exception brute
+     * jusqu'ici : « locator.count: Target crashed » arrivait alors côté API
+     * sans rien pour le classer, et la candidature repartait en « cause non
+     * identifiée ». Le robot sait, lui, de quoi il s'agit — autant le dire.
+     */
+    res.status(err.status || 500).json({
+      error: err.message || 'Erreur du navigateur piloté',
+      reason: raisonTechnique(err),
+    });
   });
 
   return app;

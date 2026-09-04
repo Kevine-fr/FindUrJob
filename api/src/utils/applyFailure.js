@@ -100,6 +100,16 @@ export const RAISONS_ECHEC = {
     reparable: false,
     retentable: false,
   },
+  navigateur_interrompu: {
+    label: 'Navigateur interrompu',
+    explication:
+      'L’onglet piloté s’est arrêté en cours de route — le plus souvent faute de mémoire sur ' +
+      'le serveur, parfois sur une page particulièrement lourde. La plateforme n’y est pour rien, ' +
+      'et la candidature n’est jamais partie.',
+    action: 'Relancer : la tentative suivante repart d’un navigateur neuf.',
+    reparable: false,
+    retentable: true,
+  },
   reseau: {
     label: 'Incident réseau',
     explication: 'Délai dépassé ou coupure. Rien ne dit que la plateforme soit en cause.',
@@ -155,6 +165,18 @@ const EMPREINTES = [
   [/refuse le navigateur|bloqu/i, 'plateforme_bloquee'],
   [/session (expir|ferm)/i, 'session_expiree'],
   [/annonce (retir|introuvable|ferm)|offre .*(retir|disparu)/i, 'offre_disparue'],
+  /*
+   * Le navigateur est mort en cours de route.
+   *
+   * Playwright n'en dit que « Target crashed » ou « Target closed » : un
+   * message qui ne ressemble à rien de connu, et qui repartait donc en
+   * « cause non identifiée ». C'est ce qui remplissait l'historique d'erreurs
+   * illisibles pendant que le conteneur du robot manquait de mémoire.
+   *
+   * Il passe **avant** le motif réseau : « Timeout … Target closed » est un
+   * navigateur abattu, pas une coupure.
+   */
+  [/target crashed|page crashed|target closed|browser (has been )?closed|browser has disconnected|protocol error/i, 'navigateur_interrompu'],
   [/timeout|d[ée]lai d[ée]pass|econnrefused|réseau|network/i, 'reseau'],
   [/[ée]tape .* rest[ée]e incompl/i, 'post_envoi_incomplet'],
   [/sans confirmation/i, 'sans_confirmation'],

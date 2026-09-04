@@ -4,7 +4,7 @@ import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
 import CVVersion from '../models/CVVersion.js';
 import { asyncHandler } from '../middleware.js';
-import { reconcilier } from '../services/reconciliation.js';
+import { reconcilier, verifierUne } from '../services/reconciliation.js';
 import { tailorCv } from '../services/tailoringService.js';
 import { renderCvPdf } from '../services/botService.js';
 import { buildTailoredCvHtml } from '../services/cvDocument.js';
@@ -290,6 +290,21 @@ export const reconcileApplications = asyncHandler(async (req, res) => {
     max: Math.min(400, Math.max(20, Number(req.body?.max) || 200)),
   });
   res.json(bilan);
+});
+
+/**
+ * POST /applications/:id/verify — cette candidature est-elle déjà partie ?
+ *
+ * La passe complète existait déjà, mais elle se lance depuis la liste et
+ * parcourt tout. Depuis une fiche « à vérifier », la seule action possible
+ * était de relancer, c'est-à-dire de risquer le doublon sans savoir. Ce
+ * bouton pose la question à la plateforme, pour cette candidature-là.
+ *
+ * Le service porte les verdicts, y compris « impossible » : une plateforme
+ * qui ne tient pas de liste n'est pas une erreur, c'est une réponse.
+ */
+export const verifyApplication = asyncHandler(async (req, res) => {
+  res.json(await verifierUne(req.user.id, req.params.id));
 });
 
 /**

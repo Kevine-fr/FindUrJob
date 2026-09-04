@@ -92,6 +92,7 @@ router.patch('/applications/:id/status', applications.updateStatus);
 router.post('/applications/:id/tailor', applications.tailorApplication);
 // Relance d'un envoi qui n'a pas abouti. Les gardes anti-doublon vivent dans le
 // service : « à vérifier » n'est jamais relancé sans preuve ou accord explicite.
+router.post('/applications/:id/verify', applications.verifyApplication);
 router.post('/applications/:id/retry', applications.retryApplication);
 // L'écran au moment du blocage : servi à part, pour ne pas alourdir les listes.
 router.get('/applications/:id/screenshot', applications.getFailureShot);

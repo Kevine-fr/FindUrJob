@@ -54,34 +54,131 @@ export async function isLoggedIn(context) {
 }
 
 /**
- * La bulle « Postuler » est-elle celle d'un visiteur non connecté ?
+ * Repère le bouton d'envoi **dans un document**, et le marque pour Playwright.
  *
- * Exportée pour être éprouvable : c'est une lecture de DOM, et la seule façon
- * d'en vérifier la justesse est de la confronter aux deux variantes réelles de
- * la bulle. Laissée en ligne dans `apply`, elle n'aurait pu être testée qu'en
- * candidatant pour de bon.
+ * Cette fonction est exécutée dans la page : elle ne doit rien capturer de son
+ * entourage. Elle est exportée pour être éprouvée sur de vraies pages rendues,
+ * seule façon de vérifier une lecture de DOM sans candidater pour de bon.
  *
- * On lit les **boutons et liens**, jamais le texte entier : le mot
- * « connexion » traîne dans le pied de page de la quasi-totalité des sites, et
- * s'y fier ferait déclarer toute annonce anonyme.
+ * Plutôt que de rendre un sélecteur — qui n'aurait rien d'unique — elle pose un
+ * attribut sur l'élément trouvé : Playwright n'a plus qu'à cliquer dessus, dans
+ * le cadre où il se trouve.
  *
- * Le motif est ancré (`^…$`) : « Se connecter » est un bouton, tandis que
- * « Vous pouvez créer un compte même si vous n'êtes pas inscrit » est une
- * phrase d'aide qui ne doit rien déclencher.
+ * Quand rien ne correspond, elle rend **ce qu'elle a vu** : les libellés de la
+ * fenêtre ouverte. Un échec qui dit « il n'y avait que ceci » se corrige à la
+ * lecture ; un échec muet se rediagnostique de zéro à chaque fois.
  */
-export async function bulleAnonyme(page) {
-  return page
-    .evaluate(() => {
-      const zones = [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].filter(
-        (el) => el.offsetParent !== null
-      );
-      return zones.some((zone) =>
-        [...zone.querySelectorAll('a, button')].some((el) =>
-          /^\s*(se connecter|cr[ée]er un compte|s'identifier)\s*$/i.test(el.textContent || '')
-        )
-      );
-    })
-    .catch(() => false);
+export function repererEnvoi() {
+  const ENVOI =
+    /envoyer\s+(ma|la|votre)\s+candidature|valider\s+ma\s+candidature|confirmer\s+ma\s+candidature/i;
+  // Dans la fenêtre déjà ouverte, un libellé court suffit : le contexte est
+  // sans ambiguïté. Hors d'elle, il serait dangereux — d'où les deux passes.
+  const COURT = /^\s*(envoyer|confirmer|valider|je postule)\s*$/i;
+  const ANONYME = /^\s*(se connecter|cr[ée]er un compte|s'identifier)\s*$/i;
+
+  const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+  const lisible = (el) =>
+    [
+      el.innerText || el.textContent || '',
+      el.getAttribute('aria-label') || '',
+      el.getAttribute('title') || '',
+      el.value || '',
+    ]
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const SELECTEUR =
+    'a, button, [role="button"], input[type="submit"], input[type="button"]';
+  const bulles = [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].filter(visible);
+  const dansBulles = bulles.flatMap((b) => [...b.querySelectorAll(SELECTEUR)].filter(visible));
+
+  // Passe 1 : le libellé complet, où qu'il soit — il ne peut désigner rien
+  // d'autre. Passe 2 : un libellé court, mais seulement dans la fenêtre.
+  const cible =
+    [...document.querySelectorAll(SELECTEUR)].filter(visible).find((el) => ENVOI.test(lisible(el))) ||
+    dansBulles.find((el) => COURT.test(lisible(el)));
+
+  if (cible) {
+    cible.setAttribute('data-fuj-envoi', '1');
+    return { trouve: true, libelle: lisible(cible).slice(0, 80), anonyme: false };
+  }
+
+  /*
+   * Pas de bouton d'envoi : la fenêtre est-elle celle d'un visiteur anonyme ?
+   *
+   * Connecté, le rappel des critères se termine par « Envoyer ma candidature ».
+   * Déconnecté, la **même** fenêtre s'affiche — mêmes critères, même mise en
+   * page — mais le bouton devient « Se connecter ». On ne lit que les boutons
+   * et liens de la fenêtre : le mot « connexion » traîne dans le pied de page
+   * de la quasi-totalité des sites, et s'y fier rendrait toute annonce anonyme.
+   */
+  const anonyme = dansBulles.some((el) => ANONYME.test(lisible(el)));
+
+  return {
+    trouve: false,
+    anonyme,
+    /*
+     * Une fenêtre ouverte, même sans rien à cliquer, est un aboutissement.
+     *
+     * « Veuillez vous présenter directement à l'adresse suivante » n'a ni
+     * bouton ni lien : sans ce drapeau, l'attente irait jusqu'à son terme —
+     * vingt secondes perdues par annonce — pour un cas déjà tranché juste
+     * après.
+     */
+    bulle: bulles.some((b) => (b.textContent || '').trim().length > 10),
+    // Ce que la fenêtre proposait réellement, pour que l'échec soit lisible.
+    libelles: [...new Set(dansBulles.map(lisible).filter(Boolean))].slice(0, 8),
+  };
+}
+
+/**
+ * Le même repérage, mais **dans tous les cadres de la page**.
+ *
+ * C'est le manque qui faisait échouer France Travail alors que la capture
+ * d'écran du blocage montrait « Envoyer ma candidature » à l'écran : la
+ * recherche ne portait que sur le document principal. Une fenêtre servie dans
+ * un cadre séparé y est invisible, le remplissage générique ne trouvait aucun
+ * champ, et le diagnostic devenait « aucun formulaire de candidature » — un
+ * verdict qui accusait les sélecteurs alors que le bouton était là, à côté.
+ *
+ * On rend aussi le cadre : cliquer suppose de savoir où.
+ */
+export async function repererEnvoiPartout(page) {
+  const vus = [];
+  let anonyme = false;
+  let bulle = false;
+
+  for (const frame of page.frames()) {
+    const bilan = await frame.evaluate(repererEnvoi).catch(() => null);
+    if (!bilan) continue;
+    if (bilan.trouve) return { ...bilan, frame };
+    anonyme = anonyme || bilan.anonyme;
+    bulle = bulle || bilan.bulle;
+    vus.push(...(bilan.libelles || []));
+  }
+
+  return { trouve: false, anonyme, bulle, libelles: [...new Set(vus)].slice(0, 8), frame: null };
+}
+
+/**
+ * Attend que « Postuler » ait fini d'ouvrir ce qu'il ouvre.
+ *
+ * Le bouton porte `data-async-trigger="true"` : son contenu arrive par une
+ * requête, pas avec la page. Une pause fixe le rattrapait une fois sur deux.
+ * On attend donc un **aboutissement** — le bouton d'envoi, ou une fenêtre non
+ * vide — plutôt qu'une durée, et dans tous les cadres.
+ */
+export async function attendreBulle(page, timeout = 20_000) {
+  const fin = Date.now() + timeout;
+  let dernier = { trouve: false, anonyme: false, bulle: false, libelles: [], frame: null };
+
+  while (Date.now() < fin) {
+    dernier = await repererEnvoiPartout(page);
+    if (dernier.trouve || dernier.anonyme || dernier.bulle) return dernier;
+    await page.waitForTimeout(400);
+  }
+  return dernier;
 }
 
 /**
@@ -279,18 +376,7 @@ export async function apply(context, offer, options = {}) {
      * On attend l'un des deux aboutissements possibles — le rappel des
      * critères, ou la bulle vers le site du recruteur — plutôt qu'une durée.
      */
-    await page
-      .waitForFunction(
-        () => {
-          if (/envoyer ma candidature/i.test(document.body.innerText || '')) return true;
-          return [...document.querySelectorAll('.dropdown-menu, [role="dialog"]')].some(
-            (el) => el.offsetParent !== null && (el.textContent || '').trim().length > 10
-          );
-        },
-        undefined,
-        { timeout: 20_000 }
-      )
-      .catch(() => {});
+    await attendreBulle(page);
     await humanPause(400, 900);
 
     /*
@@ -348,24 +434,31 @@ export async function apply(context, offer, options = {}) {
     }
 
     /*
-     * La bulle a deux visages, et c'est là que tout se jouait.
+     * Où est le bouton d'envoi ? La question se pose dans **tous les cadres**.
+     *
+     * C'est ce qui manquait. La capture d'écran du blocage montrait « Envoyer
+     * ma candidature » en clair, et le robot concluait pourtant « aucun
+     * formulaire de candidature sur la page » : la recherche ne portait que
+     * sur le document principal, et ne voyait rien d'une fenêtre servie dans
+     * un cadre séparé. Le diagnostic accusait les sélecteurs de l'annonce
+     * alors que le bouton était affiché, à l'écran, au moment même.
+     *
+     * On lit aussi le libellé dans `aria-label` et `value`, pas seulement dans
+     * le texte : France Travail habille son envoi tantôt en bouton, tantôt en
+     * lien, et pas toujours avec du texte visible.
+     */
+    const envoi = await repererEnvoiPartout(page);
+
+    /*
+     * La fenêtre a deux visages, et il faut les distinguer.
      *
      * Connecté, le rappel des critères se termine par « Envoyer ma
-     * candidature ». Déconnecté, la **même** bulle s'affiche — mêmes critères,
-     * même mise en page — mais le bouton devient « Se connecter », suivi de
-     * « Vous n'avez pas de compte ? Créer un compte ».
-     *
-     * Rien avant ce point ne permettait de les distinguer : la vérification de
-     * session d'`isLoggedIn` avait répondu « ouverte », le bouton « Postuler »
-     * existait, la bulle s'était ouverte. Le parcours continuait donc jusqu'au
-     * remplissage générique, qui ne trouvait aucun champ et concluait « aucun
-     * formulaire de candidature sur la page » — un diagnostic qui accusait les
-     * sélecteurs alors que la cause était une session fermée.
-     *
-     * C'est pourquoi France Travail ne postulait jamais : l'échec était réel,
-     * mais réparable, et personne ne pouvait le savoir.
+     * candidature ». Déconnecté, la **même** fenêtre s'affiche — mêmes
+     * critères, même mise en page — mais le bouton devient « Se connecter ».
+     * Rien avant ce point ne les séparait : `isLoggedIn` avait répondu
+     * « ouverte », le bouton « Postuler » existait, la fenêtre s'était ouverte.
      */
-    if (await bulleAnonyme(page)) {
+    if (!envoi.trouve && envoi.anonyme) {
       /*
        * `session` est traduit en 409 par le serveur du robot, ce qui déclenche
        * la reprise de session déjà en place côté API : on rouvre, puis on
@@ -384,14 +477,14 @@ export async function apply(context, offer, options = {}) {
     /*
      * Le rappel des critères porte le vrai bouton d'envoi. Il n'y a rien à
      * remplir : France Travail joint le dossier de l'espace personnel.
+     *
+     * Le clic passe par l'attribut posé au repérage, dans le cadre où
+     * l'élément a été trouvé — un sélecteur de page n'aurait pas su l'y
+     * atteindre.
      */
-    // Cherché sur le texte et non sur le rôle : France Travail habille son
-    // envoi en lien, pas en bouton, et `getByRole('button')` passait à côté.
-    const confirmer = page
-      .locator('a, button, [role="button"]')
-      .filter({ hasText: /envoyer ma candidature/i })
-      .first();
-    if (await confirmer.count()) {
+    if (envoi.trouve) {
+      const confirmer = envoi.frame.locator('[data-fuj-envoi="1"]').first();
+
       if (options.dryRun) {
         /*
          * Le filet ne se pose qu'ici, et pas plus tôt : la fenêtre de rappel
@@ -417,7 +510,7 @@ export async function apply(context, offer, options = {}) {
           status: 'dry-run',
           message: suite
             ? 'Prêt à envoyer — non soumis (mode essai). Un formulaire suit la confirmation : le CV adapté peut y être joint.'
-            : "Prêt à envoyer — non soumis (mode essai). Bouton : « Envoyer ma candidature ». " +
+            : `Prêt à envoyer — non soumis (mode essai). Bouton : « ${envoi.libelle} ». ` +
               "France Travail envoie le dossier de ton espace personnel : c'est ce CV-là " +
               "qui part, pas celui adapté à l'offre.",
           screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
@@ -427,14 +520,40 @@ export async function apply(context, offer, options = {}) {
       await confirmer.click().catch(() => {});
       await humanPause(3000, 4500);
 
-      const texte = await page.innerText('body').catch(() => '');
-      if (/candidature.*(envoy|transmis|enregistr)|merci pour votre candidature/i.test(texte)) {
+      /*
+       * La confirmation peut s'afficher dans le cadre plutôt que dans la page :
+       * on lit les deux, sans quoi un envoi réussi repartirait en « à
+       * vérifier » — le pire des verdicts, celui qui invite à renvoyer.
+       */
+      const dits = await Promise.all(
+        page.frames().map((f) => f.innerText('body').catch(() => ''))
+      );
+      const CONFIRME =
+        /candidature.*(envoy|transmis|enregistr)|merci pour votre candidature|votre candidature a bien/i;
+      if (dits.some((t) => CONFIRME.test(t))) {
         return { status: 'sent', message: 'Candidature envoyée via France Travail.' };
       }
       // Pas de confirmation : un formulaire a pu s'ouvrir, on le laisse remplir.
     }
 
-    return await applyForm(page, options);
+    const bilan = await applyForm(page, options);
+
+    /*
+     * Un échec qui dit ce qu'il a vu se corrige à la lecture.
+     *
+     * « Aucun formulaire de candidature » est vrai mais muet : il ne dit pas si
+     * la fenêtre était vide, si elle proposait autre chose, ou si le libellé
+     * du bouton a changé. En y joignant les libellés réellement présents, la
+     * prochaine itération part d'un constat au lieu d'une enquête — c'est
+     * exactement ce que l'historique des échecs doit accumuler.
+     */
+    if (bilan.reason === RAISONS.FORMULAIRE_ABSENT && envoi.libelles?.length) {
+      return {
+        ...bilan,
+        message: `${bilan.message} La fenêtre de France Travail ne proposait que : ${envoi.libelles.join(' · ')}.`,
+      };
+    }
+    return bilan;
   } catch (error) {
     return { status: 'manual', message: `Candidature France Travail : ${error.message}` };
   } finally {

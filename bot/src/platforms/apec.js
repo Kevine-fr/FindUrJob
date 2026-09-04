@@ -1,5 +1,5 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
-import { applyForm, externalApplyUrl } from './applyForm.js';
+import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
 import { RAISONS, raisonTechnique } from './failures.js';
 
 /**
@@ -238,12 +238,10 @@ export async function apply(context, offer, options = {}) {
 
     const externe = await externalApplyUrl(page, 'apec.fr');
     if (externe) {
-      return {
-        status: 'external',
-        reason: RAISONS.REDIRECTION_EXTERNE,
-        message: `L'employeur reçoit les candidatures sur son propre site : ${externe}`,
-        externalUrl: externe,
-      };
+      // On tente le formulaire de l'employeur plutôt que de s'arrêter à son
+      // adresse : ces outils servent tous le même formulaire, et le remplisseur
+      // générique sait déjà le traiter.
+      return await postulerSurSiteExterne(page, externe, options);
     }
 
     /*

@@ -198,6 +198,138 @@ async function cocherCases(formulaire) {
  * personne, là où « Mobile phone number » se corrige tout de suite.
  */
 /**
+ * Décrire un champ : son libellé, sa forme, ses réponses possibles.
+ *
+ * Écrite une fois et injectée dans la page, parce que trois traitements s'en
+ * servent — les champs vides, ceux que la plateforme vient de refuser, et le
+ * remplissage depuis les réponses connues. Une heuristique aussi subtile ne
+ * supporte pas d'exister en trois exemplaires : celui qui progresse laisse les
+ * autres en arrière, et la clé sous laquelle une question est *posée* cesse de
+ * correspondre à celle sous laquelle on la *remplit*.
+ *
+ * Le point délicat est le **groupe de boutons radio**. Le libellé d'un radio
+ * est « Oui » ou « Non » ; la question, elle, vit dans le `<legend>` du groupe.
+ * S'en tenir au champ faisait enregistrer « Oui » comme question à poser —
+ * inexploitable — et c'est pour cela que les deux questions de LinkedIn
+ * (« Êtes-vous légalement autorisé(e) à travailler… », « parrainage
+ * d'immigration ») n'atteignaient jamais l'onglet Informations.
+ */
+function outilsDom() {
+  const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+
+  const propre = (texte) =>
+    String(texte || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\*$/, '')
+      .trim();
+
+  /** Le conteneur qui porte la question d'un groupe de choix, s'il existe. */
+  const groupeDe = (el) => {
+    if (el.type !== 'radio' && el.type !== 'checkbox') return null;
+    return el.closest('fieldset, [role="radiogroup"], [role="group"]');
+  };
+
+  /** L'énoncé de la question, y compris quand il coiffe plusieurs boutons. */
+  const nommer = (el) => {
+    const groupe = groupeDe(el);
+    if (groupe) {
+      let enonce =
+        propre(groupe.querySelector('legend')?.textContent) ||
+        propre(groupe.getAttribute('aria-label')) ||
+        propre(document.getElementById(groupe.getAttribute('aria-labelledby') || '')?.textContent);
+
+      /*
+       * LinkedIn n'étiquette pas ses groupes.
+       *
+       * Relevé sur un formulaire réel : `<fieldset role="radiogroup">` sans
+       * `legend`, sans `aria-label`, sans `aria-labelledby` — l'énoncé n'est
+       * qu'un texte libre parmi les enfants, et ses classes sont des empreintes
+       * régénérées à chaque déploiement. On retombait donc sur le `name`, du
+       * genre « radio-group-«r1h» », qui ne veut rien dire pour personne : la
+       * question atterrissait bien dans l'onglet Informations, mais illisible,
+       * donc sans réponse possible.
+       *
+       * On soustrait donc du texte du groupe ce qu'on sait déjà nommer — les
+       * libellés des boutons et le message d'erreur — et ce qui reste est la
+       * question.
+       */
+      if (!enonce) {
+        const nettoyer = (texte) =>
+          String(texte || '')
+            .replace(/ce champ est obligatoire|this field is required|champ obligatoire/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        /*
+         * L'énoncé est **au-dessus** du groupe, pas dedans.
+         *
+         * Le `<fieldset>` de LinkedIn ne contient que les boutons : son texte
+         * entier vaut « OuiNon ». La question est un frère précédent, dans le
+         * bloc parent. On soustrait donc le groupe de son parent, et ce qui
+         * reste est l'énoncé — « Êtes-vous légalement autorisé(e) à travailler
+         * dans le pays suivant ? France ».
+         */
+        const dansLeGroupe = nettoyer(groupe.textContent);
+        let parent = groupe.parentElement;
+        for (let n = 0; n < 3 && parent && !enonce; n += 1) {
+          const autour = nettoyer(parent.textContent);
+          const reste = nettoyer(dansLeGroupe ? autour.split(dansLeGroupe).join(' ') : autour);
+          // Assez long pour être une question, assez court pour ne pas être
+          // l'écran entier.
+          if (reste.length >= 8 && reste.length <= 200) enonce = reste;
+          parent = parent.parentElement;
+        }
+      }
+
+      // Un groupe sans énoncé ne vaut pas mieux que le libellé du bouton.
+      if (enonce) return enonce.slice(0, 120);
+    }
+    return (
+      propre(el.labels?.[0]?.textContent) ||
+      propre(el.getAttribute('aria-label')) ||
+      propre(el.placeholder) ||
+      propre(el.name) ||
+      propre(el.type)
+    ).slice(0, 120);
+  };
+
+  const decrire = (el) => {
+    const groupe = groupeDe(el);
+    let options = [];
+
+    if (el.tagName === 'SELECT') {
+      options = [...el.options]
+        .map((o) => propre(o.textContent))
+        .filter((t) => t && !/^(choisir|s[ée]lectionner|--)/i.test(t))
+        .slice(0, 25);
+    } else if (groupe && el.type === 'radio') {
+      // Les réponses possibles sont les autres boutons du groupe : sans elles,
+      // on demanderait en texte libre ce qui n'accepte que « Oui » ou « Non ».
+      options = [...groupe.querySelectorAll('input[type="radio"]')]
+        .map((r) => propre(r.labels?.[0]?.textContent || r.value))
+        .filter(Boolean)
+        .slice(0, 25);
+    }
+
+    let forme = 'texte';
+    if (el.tagName === 'SELECT') forme = 'choix';
+    else if (el.type === 'radio') forme = options.length ? 'choix' : 'texte';
+    else if (el.type === 'checkbox') forme = 'case';
+    else if (el.type === 'number') forme = 'nombre';
+    else if (el.type === 'tel') forme = 'telephone';
+    else if (el.type === 'date') forme = 'date';
+    else if (el.tagName === 'TEXTAREA') forme = 'paragraphe';
+
+    return { libelle: nommer(el), forme, options };
+  };
+
+  return { visible, nommer, decrire, groupeDe, propre };
+}
+
+/** La source de l'outil, pour l'injecter dans la page. */
+const OUTILS = outilsDom.toString();
+
+/**
  * Les champs que la plateforme vient de refuser, lus dans ses propres messages.
  *
  * Complète `manquants`, qui ne voit que ce que le HTML déclare : LinkedIn
@@ -211,9 +343,9 @@ async function cocherCases(formulaire) {
  */
 const erreurAffichee = (page) =>
   page
-    .evaluate(() => {
+    .evaluate((source) => {
+      const { visible, decrire } = new Function(`return ${source}`)()();
       const MOTIF = /ce champ est obligatoire|champ obligatoire|this field is required|required field|veuillez (renseigner|saisir|compl[ée]ter)/i;
-      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
 
       const trouves = [];
       for (const el of document.querySelectorAll('span, div, p, label, small')) {
@@ -221,89 +353,38 @@ const erreurAffichee = (page) =>
         if (texte.length > 90 || !MOTIF.test(texte) || !visible(el)) continue;
         if (el.querySelector('span, div, p, label, small')) continue; // on veut la feuille
 
-        // Le champ concerné est le plus proche au-dessus, dans le même bloc.
+        /*
+         * Le champ fautif est le plus proche au-dessus, dans le même bloc.
+         *
+         * On remonte jusqu'à six niveaux : LinkedIn intercale le message, le
+         * groupe de boutons et son énoncé, ce qui met facilement cinq
+         * générations entre l'erreur et le premier `input`. À quatre, les
+         * questions à boutons radio n'étaient rattachées à aucun champ, donc
+         * pas enregistrées du tout.
+         */
         let bloc = el.parentElement;
         let champ = null;
-        for (let n = 0; n < 4 && bloc && !champ; n += 1) {
-          champ = bloc.querySelector('input, textarea, select');
+        for (let n = 0; n < 6 && bloc && !champ; n += 1) {
+          champ = bloc.querySelector('input:not([type="hidden"]), textarea, select');
           bloc = bloc.parentElement;
         }
-        const libelle = (
-          champ?.labels?.[0]?.textContent ||
-          champ?.getAttribute('aria-label') ||
-          champ?.placeholder ||
-          champ?.name ||
-          ''
-        )
-          .replace(/\s+/g, ' ')
-          .replace(/\*$/, '')
-          .trim()
-          .slice(0, 60);
+        if (!champ) continue;
 
-        if (libelle && !trouves.some((t) => t.libelle === libelle)) {
-          trouves.push({
-            libelle,
-            forme: champ?.tagName === 'SELECT' ? 'liste' : champ?.type === 'number' ? 'nombre' : 'texte',
-            options: champ?.tagName === 'SELECT'
-              ? [...champ.options].map((o) => o.textContent.trim()).filter(Boolean).slice(0, 12)
-              : [],
-          });
+        const decrit = decrire(champ);
+        if (decrit.libelle && !trouves.some((t) => t.libelle === decrit.libelle)) {
+          trouves.push(decrit);
         }
       }
-      return trouves.slice(0, 5);
-    })
+      return trouves.slice(0, 6);
+    }, OUTILS)
     .then((champs) => champs.map((c) => ({ ...c, cle: cleQuestion(c.libelle) })))
     .catch(() => []);
 
 const manquants = (formulaire) =>
   formulaire
-    .evaluate((form) => {
-      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
-      const obligatoire = (el) =>
-        el.required || el.getAttribute('aria-required') === 'true';
-      const nommer = (el) =>
-        (
-          el.labels?.[0]?.textContent ||
-          el.getAttribute('aria-label') ||
-          el.placeholder ||
-          el.name ||
-          el.type ||
-          ''
-        )
-          .replace(/\s+/g, ' ')
-          .replace(/\*$/, '')
-          .trim()
-          .slice(0, 60);
-
-      /*
-       * On rend maintenant une description, pas seulement un libellé.
-       *
-       * Le libellé seul suffisait à écrire un message d'erreur. Il ne suffit
-       * pas à *poser la question* à la personne : pour cela il faut aussi
-       * savoir quelle forme attend le champ (un nombre, un téléphone, un choix
-       * dans une liste) et, pour un `select`, les réponses possibles. Sans ça,
-       * on demanderait « Niveau d'études » en texte libre là où la plateforme
-       * n'accepte que quatre valeurs précises.
-       */
-      const decrire = (el) => {
-        const options =
-          el.tagName === 'SELECT'
-            ? [...el.options]
-                .map((o) => (o.textContent || '').trim())
-                .filter((t) => t && !/^(choisir|s[ée]lectionner|--)/i.test(t))
-                .slice(0, 25)
-            : [];
-
-        let forme = 'texte';
-        if (el.tagName === 'SELECT') forme = 'choix';
-        else if (el.type === 'checkbox') forme = 'case';
-        else if (el.type === 'number') forme = 'nombre';
-        else if (el.type === 'tel') forme = 'telephone';
-        else if (el.type === 'date') forme = 'date';
-        else if (el.tagName === 'TEXTAREA') forme = 'paragraphe';
-
-        return { libelle: nommer(el), forme, options };
-      };
+    .evaluate((form, source) => {
+      const { visible, decrire } = new Function(`return ${source}`)()();
+      const obligatoire = (el) => el.required || el.getAttribute('aria-required') === 'true';
 
       return [...form.querySelectorAll('input, textarea, select')]
         .filter((el) => el.type !== 'hidden' && visible(el) && obligatoire(el))
@@ -311,7 +392,7 @@ const manquants = (formulaire) =>
         .map(decrire)
         .filter((champ) => champ.libelle)
         .slice(0, 8);
-    })
+    }, OUTILS)
     .catch(() => []);
 
 /**
@@ -328,7 +409,17 @@ async function remplirDepuisReponses(formulaire, reponses) {
 
   return formulaire
     .evaluate(
-      (form, table) => {
+      (form, { table, source }) => {
+        /*
+         * Le même nommage que celui qui a posé la question.
+         *
+         * C'est la condition pour que la boucle se referme : une question
+         * enregistrée sous l'énoncé du groupe et cherchée ici sous le libellé
+         * du bouton (« Oui ») ne se retrouverait jamais, et la réponse donnée
+         * dans l'onglet Informations resterait sans effet.
+         */
+        const { nommer, groupeDe, propre } = new Function(`return ${source}`)()();
+
         const cle = (texte) =>
           String(texte || '')
             .normalize('NFD')
@@ -338,21 +429,44 @@ async function remplirDepuisReponses(formulaire, reponses) {
             .replace(/^_+|_+$/g, '')
             .slice(0, 60);
 
-        const nommer = (el) =>
-          (
-            el.labels?.[0]?.textContent ||
-            el.getAttribute('aria-label') ||
-            el.placeholder ||
-            el.name ||
-            ''
-          )
-            .replace(/\s+/g, ' ')
-            .replace(/\*$/, '')
-            .trim();
-
         const remplis = [];
+        const groupesVus = new Set();
+
         for (const el of form.querySelectorAll('input, textarea, select')) {
           if (el.disabled || el.readOnly || el.type === 'hidden' || el.type === 'file') continue;
+
+          /*
+           * Un groupe de boutons radio se traite une fois, pas bouton par bouton.
+           *
+           * La question est celle du groupe — « Êtes-vous légalement autorisé(e)
+           * à travailler… » — et la réponse dit lequel cocher. Les traiter
+           * séparément reviendrait à chercher une réponse à « Oui ».
+           */
+          if (el.type === 'radio') {
+            const groupe = groupeDe(el);
+            const enonce = nommer(el);
+            if (groupesVus.has(enonce)) continue;
+
+            const choix = table[cle(enonce)];
+            if (choix === undefined || choix === null || choix === '') continue;
+            groupesVus.add(enonce);
+
+            const boutons = groupe
+              ? [...groupe.querySelectorAll('input[type="radio"]')]
+              : [...form.querySelectorAll(`input[type="radio"][name="${el.name}"]`)];
+
+            const cible = boutons.find(
+              (r) => cle(propre(r.labels?.[0]?.textContent || r.value)) === cle(choix)
+            );
+            if (!cible || cible.checked) continue;
+
+            cible.checked = true;
+            cible.dispatchEvent(new Event('click', { bubbles: true }));
+            cible.dispatchEvent(new Event('change', { bubbles: true }));
+            remplis.push(enonce);
+            continue;
+          }
+
           if (el.type !== 'checkbox' && el.value) continue;
 
           const valeur = table[cle(nommer(el))];
@@ -391,10 +505,74 @@ async function remplirDepuisReponses(formulaire, reponses) {
         }
         return remplis;
       },
-      reponses
+      { table: reponses, source: OUTILS }
     )
     .catch(() => []);
 }
+
+/**
+ * Les champs fichier de l'écran, rangés par ce qu'ils acceptent.
+ *
+ * Prendre « le premier champ fichier » était faux, et cher : sur Welcome to
+ * the Jungle, le premier est la **photo de profil**. Le CV en PDF y atterrissait
+ * et la plateforme répondait « Format non pris en charge : gif, jpeg, png,
+ * svg » — un refus provoqué par nous, sur un formulaire qui aurait abouti.
+ *
+ * On lit donc `accept`, et à défaut le libellé. Un champ qui ne veut que des
+ * images n'est pas un champ de CV, et rien ne sert d'y insister : c'est une
+ * information à demander à la personne, avec son type.
+ */
+const champsFichier = (scope) =>
+  scope
+    .evaluate((form) => {
+      const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+      const nommer = (el) =>
+        (
+          el.labels?.[0]?.textContent ||
+          el.getAttribute('aria-label') ||
+          el.closest('label')?.textContent ||
+          el.name ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .replace(/\*$/, '')
+          .trim()
+          .slice(0, 60);
+
+      return [...form.querySelectorAll('input[type="file"]')].map((el, index) => {
+        const accept = (el.accept || '').toLowerCase();
+        const libelle = nommer(el);
+        const contexte = `${libelle} ${el.name || ''} ${accept}`.toLowerCase();
+
+        // Un `accept` qui ne cite que des images ferme la question.
+        const imagesSeulement =
+          Boolean(accept) &&
+          accept
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .every((t) => /^image\//.test(t) || /\.(png|jpe?g|gif|svg|webp|bmp)$/.test(t));
+
+        const documentPossible =
+          !accept || /pdf|msword|document|\.docx?|\.odt|\.rtf|officedocument/.test(accept);
+
+        return {
+          index,
+          libelle: libelle || (imagesSeulement ? 'Photo' : 'Document'),
+          accept,
+          requis: el.required || el.getAttribute('aria-required') === 'true',
+          visible: visible(el),
+          imagesSeulement,
+          // Le CV se reconnaît à ce qu'il accepte, et le libellé départage les
+          // champs sans `accept` : « Photo de profil » n'est pas un CV.
+          pourCv:
+            documentPossible &&
+            !imagesSeulement &&
+            !/photo|avatar|portrait|image|logo/.test(contexte),
+        };
+      });
+    })
+    .catch(() => []);
 
 /**
  * Candidate sur le formulaire de la page courante.
@@ -472,9 +650,20 @@ export async function applyForm(
 
     let joint = false;
     let depose = false;
-    const upload = scope.locator('input[type="file"]').first();
 
-    if (cvFile && (await upload.count())) {
+    /*
+     * Le CV va dans un champ qui accepte des documents, pas dans le premier
+     * venu. Les autres champs fichier — une photo de profil, un portfolio —
+     * sont pris en charge plus bas : ce sont des informations à fournir, pas
+     * des endroits où pousser le CV.
+     */
+    const fichiers = await champsFichier(scope);
+    const pourCv = fichiers.filter((f) => f.pourCv);
+    const upload = pourCv.length
+      ? scope.locator('input[type="file"]').nth(pourCv[0].index)
+      : scope.locator('input[type="file"]').first();
+
+    if (cvFile && pourCv.length) {
       await upload.setInputFiles(cvFile).catch(() => {});
       depose = true;
     } else if (cvFile) {
@@ -555,10 +744,66 @@ export async function applyForm(
     // Les réponses connues passent avant le constat de manque : c'est tout
     // l'intérêt de les avoir demandées.
     await remplirDepuisReponses(scope, answers);
+
+    /*
+     * Les réponses qui sont des fichiers se déposent, elles ne se tapent pas.
+     *
+     * `remplirDepuisReponses` travaille dans la page et ne peut pas alimenter
+     * un `input[type=file]` — le navigateur l'interdit, à raison. C'est donc
+     * Playwright qui le fait ici, depuis les octets que la personne a fournis
+     * une fois pour toutes dans l'onglet Informations.
+     */
+    for (const champ of await champsFichier(scope)) {
+      const reponse = answers[cleQuestion(champ.libelle)];
+      if (!reponse || typeof reponse !== 'object' || !reponse.contenu) continue;
+      await scope
+        .locator('input[type="file"]')
+        .nth(champ.index)
+        .setInputFiles({
+          name: reponse.nom || 'piece-jointe',
+          mimeType: reponse.mime || 'application/octet-stream',
+          buffer: Buffer.from(reponse.contenu, 'base64'),
+        })
+        .catch(() => {});
+      await humanPause(400, 900);
+    }
+
     await cocherCases(scope);
     await humanPause(400, 900);
 
-    const vides = await manquants(scope);
+    /*
+     * Les pièces demandées en plus du CV deviennent des questions.
+     *
+     * Welcome to the Jungle exige une « Photo de profil » et refuse d'envoyer
+     * sans elle. Ce n'est ni un défaut de sélecteur ni un mur : c'est une
+     * information qu'on n'a pas. Elle rejoint donc les autres dans l'onglet
+     * Informations — avec son **type**, sans quoi on demanderait une photo dans
+     * un champ de texte.
+     *
+     * On ne les signale qu'après avoir tenté de les remplir depuis les réponses
+     * déjà données : une photo fournie une fois sert partout ensuite.
+     */
+    const piecesManquantes = [];
+    for (const champ of await champsFichier(scope)) {
+      if (!champ.requis || !champ.visible) continue;
+      if (champ.pourCv && depose) continue;
+
+      const rempli = await scope
+        .locator('input[type="file"]')
+        .nth(champ.index)
+        .evaluate((el) => el.files?.length > 0)
+        .catch(() => false);
+      if (rempli) continue;
+
+      piecesManquantes.push({
+        libelle: champ.libelle,
+        forme: champ.imagesSeulement ? 'image' : 'fichier',
+        options: [],
+        accept: champ.accept || '',
+      });
+    }
+
+    const vides = [...(await manquants(scope)), ...piecesManquantes];
     if (vides.length) {
       return {
         erreur: `Champs obligatoires non renseignés : ${vides.map((c) => c.libelle).join(', ')}.`,
@@ -884,4 +1129,85 @@ export async function externalApplyUrl(page, hote) {
       return null;
     }, hote)
     .catch(() => null);
+}
+
+/**
+ * Candidater sur le site de l'employeur, quand l'annonce y renvoie.
+ *
+ * Une annonce sur trois environ ne se candidate pas sur la plateforme : elle
+ * pointe vers l'outil du recruteur — Greenhouse, Lever, SmartRecruiters,
+ * Teamtailor, Welcome Kit… Jusqu'ici on s'arrêtait là, en donnant l'adresse.
+ * C'était honnête mais c'était renoncer : ces outils servent tous le même
+ * formulaire — nom, adresse, téléphone, CV — celui que le remplisseur générique
+ * sait déjà traiter.
+ *
+ * On tente donc, avec les mêmes garde-fous que partout : jamais d'envoi en mode
+ * essai, arrêt net devant un contrôle anti-robot, et les champs qu'on ne sait
+ * pas remplir deviennent des questions plutôt que des abandons.
+ *
+ * L'échec reste un `external` porteur de l'adresse : ne pas savoir remplir le
+ * formulaire d'un ATS inconnu n'est pas une panne, et la personne doit garder
+ * le lien pour finir à la main.
+ */
+export async function postulerSurSiteExterne(page, url, options = {}) {
+  const externe = {
+    status: 'external',
+    reason: RAISONS.REDIRECTION_EXTERNE,
+    externalUrl: url,
+  };
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  } catch {
+    return { ...externe, message: `Le site de l'employeur n'a pas répondu : ${url}` };
+  }
+
+  const { dismissConsent } = await import('./common.js');
+  await dismissConsent(page).catch(() => {});
+  await humanPause(1500, 2500);
+
+  // Un anti-robot se constate et ne se force pas.
+  if (await captchaPresent(page)) {
+    return {
+      status: 'manual',
+      reason: RAISONS.CAPTCHA,
+      message: `Le site de l'employeur oppose un contrôle anti-robot : ${url}`,
+      externalUrl: url,
+      screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
+    };
+  }
+
+  /*
+   * Beaucoup d'ATS n'affichent le formulaire qu'après un « Postuler ».
+   *
+   * On ne clique que des libellés d'ouverture, jamais d'envoi : la garde du
+   * mode essai vit plus bas, mais elle ne protège que ce qu'elle voit.
+   */
+  const ouvrir = page
+    .getByRole('button', { name: /^\s*(postuler|apply( now)?|candidater)\s*$/i })
+    .or(page.getByRole('link', { name: /^\s*(postuler|apply( now)?|candidater)\s*$/i }))
+    .first();
+  if (await ouvrir.isVisible().catch(() => false)) {
+    await ouvrir.click().catch(() => {});
+    await humanPause(2000, 3000);
+  }
+
+  const issue = await applyForm(page, options);
+
+  /*
+   * Rien à remplir ici : on rend l'adresse, comme avant.
+   *
+   * Les deux causes visées sont « aucun formulaire » et « bouton d'envoi
+   * introuvable » — c'est ce que rend un ATS dont le parcours nous échappe.
+   * Les autres issues, elles, décrivent une tentative réelle : des champs
+   * manquants sont des questions à poser, et un envoi est un envoi.
+   */
+  if (issue.status === 'manual' && [RAISONS.FORMULAIRE_ABSENT, RAISONS.BOUTON_ABSENT].includes(issue.reason)) {
+    return {
+      ...externe,
+      message: `L'employeur reçoit les candidatures sur son propre site : ${url}`,
+    };
+  }
+
+  return { ...issue, externalUrl: url };
 }

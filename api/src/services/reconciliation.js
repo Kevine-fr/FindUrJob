@@ -37,8 +37,16 @@ export function cleRapprochement(titre, societe = '') {
 // on ne repromeut pas ce qui est déjà promu.
 const A_CONFIRMER = ['a_verifier', 'echec_envoi', 'a_postuler'];
 
-/** Plateformes qui tiennent une liste lisible. Les autres sont ignorées. */
-const AVEC_LISTE = ['hellowork', 'linkedin'];
+/*
+ * Plateformes qui tiennent une liste lisible. Les autres sont ignorées.
+ *
+ * France Travail en fait partie depuis qu'on a trouvé sa page — je l'avais
+ * cherchée en devinant des adresses et conclu à tort qu'elle n'existait pas.
+ * Elle se trouve à `/candidature/mescandidatures`, atteignable depuis une
+ * annonce déjà candidatée. Ses envois aboutissaient donc déjà sans jamais
+ * pouvoir être confirmés : ils restaient « à vérifier » indéfiniment.
+ */
+const AVEC_LISTE = ['hellowork', 'linkedin', 'francetravail', 'welcometothejungle'];
 
 /**
  * @param user     compte concerné

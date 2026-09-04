@@ -107,3 +107,63 @@ export const deleteQuestion = asyncHandler(async (req, res) => {
   if (!deletedCount) return res.status(404).json({ error: 'Question introuvable.' });
   res.status(204).end();
 });
+
+/**
+ * POST /questions/:id/fichier — répondre par une pièce jointe.
+ *
+ * Certaines plateformes ne demandent pas une valeur mais un document : Welcome
+ * to the Jungle exige une photo de profil et refuse d'envoyer sans elle. La
+ * réponse est alors le fichier lui-même ; `reponse` n'en garde que le nom, ce
+ * qui suffit à l'afficher et à savoir que la question est réglée.
+ */
+export const answerWithFile = asyncHandler(async (req, res) => {
+  if (!req.body?.length) return res.status(400).json({ error: 'Aucun fichier reçu.' });
+
+  const question = await PlatformQuestion.findOne({ _id: req.params.id, user: req.user.id });
+  if (!question) return res.status(404).json({ error: 'Question introuvable.' });
+
+  let nom = 'piece-jointe';
+  try {
+    nom = decodeURIComponent(req.get('X-Filename') || '') || nom;
+  } catch {
+    nom = req.get('X-Filename') || nom;
+  }
+
+  /*
+   * Le type est déduit de l'extension, pas de l'en-tête envoyé par le
+   * navigateur : c'est lui qui repartira vers la plateforme, et un type
+   * approximatif fait rejeter le fichier — précisément l'erreur qu'on répare.
+   */
+  const TYPES = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    svg: 'image/svg+xml', webp: 'image/webp', pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  const extension = (nom.split('.').pop() || '').toLowerCase();
+  const mime = TYPES[extension] || req.get('Content-Type') || 'application/octet-stream';
+
+  // Une question qui attend une image ne se règle pas avec un PDF : la
+  // plateforme le refuserait, et on aurait juste déplacé l'échec.
+  if (question.forme === 'image' && !mime.startsWith('image/')) {
+    return res.status(415).json({
+      error: `Cette question attend une image (${question.accept || 'png, jpeg, gif, svg'}).`,
+    });
+  }
+
+  question.fichier = req.body;
+  question.fichierMime = mime;
+  question.reponse = nom;
+  question.statut = 'repondue';
+  question.repondueLe = new Date();
+  await question.save();
+
+  // Même report que pour une réponse texte : une photo fournie une fois vaut
+  // pour toutes les plateformes qui la réclament.
+  const propagation = await PlatformQuestion.updateMany(
+    { user: req.user.id, cle: question.cle, _id: { $ne: question._id }, statut: 'en_attente' },
+    { $set: { reponse: nom, fichier: req.body, fichierMime: mime, statut: 'repondue', repondueLe: new Date() } }
+  );
+
+  res.json({ question: { ...question.toObject(), fichier: undefined }, propagees: propagation.modifiedCount });
+});

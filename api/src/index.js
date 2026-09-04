@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { connectDb } from './config/db.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
 import { adoptOrphans } from './utils/adoptOrphans.js';
+import { dedupeOffers } from './utils/dedupeOffers.js';
 import { dedupeApplications } from './utils/dedupeApplications.js';
 import { syncIndexes } from './utils/syncIndexes.js';
 
@@ -16,6 +17,15 @@ const app = createApp();
 connectDb(MONGO_URI)
   // Les données d'avant l'authentification rejoignent le compte administrateur.
   .then(() => adoptOrphans().catch((e) => console.error('adoption :', e.message)))
+  /*
+   * Les offres d'abord, les candidatures ensuite.
+   *
+   * Fusionner deux offres rapatrie leurs candidatures sur la survivante, ce qui
+   * en met mécaniquement plusieurs sur la même offre : c'est au dédoublonnage
+   * des candidatures de finir le travail. L'inverse laisserait les doublons
+   * intacts et l'index unique refuserait de se construire.
+   */
+  .then(() => dedupeOffers().catch((e) => console.error('offres en double :', e.message)))
   // Avant que l'index unique ne se construise : Mongo le refuserait sur des
   // doublons préexistants, et la protection manquerait sans le dire.
   .then(() => dedupeApplications().catch((e) => console.error('dédoublonnage :', e.message)))

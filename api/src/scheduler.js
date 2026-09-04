@@ -6,6 +6,8 @@ import { runCampaign } from './services/campaignRunner.js';
 import Alert from './models/Alert.js';
 import { runAlert } from './services/alertRunner.js';
 import { veillerSessions } from './services/sessionWatchdog.js';
+import Upkeep from './models/Upkeep.js';
+import { relancerLot, verifierAupresDesPlateformes } from './services/upkeep.js';
 
 /**
  * Planificateur des campagnes.
@@ -209,9 +211,82 @@ export async function startScheduler() {
   } catch (error) {
     console.error('alertes : programmation impossible —', error.message);
   }
+
+  // Même isolement : un entretien mal réglé ne doit priver ni de campagnes ni
+  // de notifications.
+  try {
+    const { active } = await rescheduleUpkeep();
+    console.log(`entretien : ${active} programme(s)`);
+  } catch (error) {
+    console.error('entretien : programmation impossible —', error.message);
+  }
+}
+
+/*
+ * L'entretien des candidatures a son propre registre.
+ *
+ * Il se reprogramme à chaque réglage, bien plus souvent que les campagnes — et
+ * les mélanger obligerait à détruire puis recréer des campagnes en cours pour
+ * un simple changement de rythme.
+ */
+const upkeepTasks = new Map(); // « id:travail » → tâche cron
+
+export function stopUpkeep() {
+  for (const task of upkeepTasks.values()) task.stop();
+  upkeepTasks.clear();
+}
+
+/**
+ * Programme la relance en lot et la vérification, pour qui les a demandées.
+ *
+ * Les deux travaux sont programmés séparément, et c'est délibéré : on peut
+ * vouloir vérifier chaque matin sans jamais relancer tout seul. La vérification
+ * ne fait que lire ce que les plateformes déclarent ; la relance, elle, envoie
+ * des candidatures — ce n'est pas le même engagement.
+ */
+export async function rescheduleUpkeep() {
+  stopUpkeep();
+
+  const docs = await Upkeep.find({
+    $or: [{ 'retry.enabled': true }, { 'verify.enabled': true }],
+  });
+
+  let actives = 0;
+
+  for (const doc of docs) {
+    if (!doc.user) continue;
+    const user = doc.user.toString();
+
+    for (const [quoi, travail] of [
+      ['retry', () => relancerLot(user)],
+      ['verify', () => verifierAupresDesPlateformes(user)],
+    ]) {
+      const reglage = doc[quoi];
+      if (!reglage?.enabled) continue;
+
+      if (!cron.validate(reglage.cron)) {
+        console.warn(`entretien ${quoi} ${user} : expression invalide (${reglage.cron})`);
+        continue;
+      }
+
+      const task = cron.schedule(reglage.cron, () => {
+        travail()
+          .then((bilan) =>
+            console.log(`entretien ${quoi} ${user} :`, bilan?.resume || bilan?.skipped || 'fait')
+          )
+          .catch((error) => console.error(`entretien ${quoi} ${user} :`, error.message));
+      });
+
+      upkeepTasks.set(`${user}:${quoi}`, task);
+      actives += 1;
+    }
+  }
+
+  return { active: actives };
 }
 
 export function stopScheduler() {
   stopAll();
   stopAlerts();
+  stopUpkeep();
 }

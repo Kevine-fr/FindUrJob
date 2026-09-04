@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 import { STATUS_META, STATUS_ORDER, SOURCE_LABELS } from '../lib/status.js';
 import { ilYA, fraicheur, candidats, concurrence, UNITES } from '../lib/freshness.js';
 import ApplicationDetail from '../components/ApplicationDetail.jsx';
+import Entretien from '../components/Entretien.jsx';
 import {
   SearchField,
   ChipGroup,
@@ -57,6 +58,8 @@ export default function ApplicationsPage() {
   const [filtres, setFiltres] = useState(FILTRES_VIDES);
   // Bilan du dernier rapprochement, affiche sous les filtres.
   const [verif, setVerif] = useState('');
+  const [entretien, setEntretien] = useState(null);
+  const [reglages, setReglages] = useState(false);
 
   const set = (cle, valeur) => setFiltres((f) => ({ ...f, [cle]: valeur }));
 
@@ -87,6 +90,52 @@ export default function ApplicationsPage() {
   }, [query, page]);
 
   useEffect(load, [load]);
+
+  /*
+   * L'état de l'entretien, relu tant qu'un travail tourne.
+   *
+   * C'est ce qui remplace l'attente devant un bouton figé : la page reste
+   * utilisable, et l'avancement arrive tout seul. On ne scrute que pendant le
+   * travail — au repos, une seule lecture suffit, et un intervalle permanent
+   * ferait des requêtes pour rien toute la journée.
+   */
+  const [tic, setTic] = useState(0);
+  useEffect(() => {
+    let vivant = true;
+    api.upkeep
+      .get()
+      .then((etat) => {
+        if (!vivant) return;
+        setEntretien(etat);
+        // Un travail vient de se terminer : la liste a changé sous nos pieds.
+        if (tic && !etat.retry?.running && !etat.verify?.running) {
+          setVerif(etat.retry?.lastResult || etat.verify?.lastResult || '');
+          load();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      vivant = false;
+    };
+  }, [tic, load]);
+
+  useEffect(() => {
+    if (!entretien?.retry?.running && !entretien?.verify?.running) return undefined;
+    const minuteur = setTimeout(() => setTic((n) => n + 1), 3000);
+    return () => clearTimeout(minuteur);
+  }, [entretien, tic]);
+
+  /** Démarre un travail d'entretien, puis laisse la scrutation prendre le relais. */
+  const lancer = async (quoi) => {
+    setVerif('');
+    try {
+      await api.upkeep.start(quoi);
+      setEntretien((e) => ({ ...e, [quoi]: { ...e?.[quoi], running: true, done: 0 } }));
+      setTic((n) => n + 1);
+    } catch (e) {
+      setVerif(`Impossible de démarrer : ${e.message}`);
+    }
+  };
 
   // Changer un filtre repart de la première page : rester en page 4 d'un
   // résultat qui n'en compte plus qu'une affichait un vide trompeur.
@@ -184,30 +233,47 @@ export default function ApplicationsPage() {
           <h1>Candidatures</h1>
           <p>Le fil de tes candidatures — statut, historique et CV ciblé par offre.</p>
         </div>
-        {/* Le robot ne marque « Postulé » que s'il voit une confirmation, et une
-            confirmation ne s'affiche pas toujours. Ce bouton va demander aux
-            plateformes ce qu'elles ont réellement reçu. */}
-        <button
-          className="btn btn-sm"
-          onClick={async () => {
-            setVerif('Vérification auprès des plateformes…');
-            try {
-              const bilan = await api.applications.reconcile();
-              setVerif(
-                bilan.confirmed
-                  ? `${bilan.confirmed} candidature${bilan.confirmed > 1 ? 's' : ''} confirmée${bilan.confirmed > 1 ? 's' : ''} sur ${bilan.examined} vérifiée${bilan.examined > 1 ? 's' : ''}.`
-                  : `Aucune confirmation nouvelle sur ${bilan.examined || 0} vérifiée(s).`
-              );
-              load();
-            } catch (e) {
-              setVerif(`Échec : ${e.message}`);
+        {/*
+          Deux gestes d'entretien, lancés en fond.
+          Le robot ne marque « Postulé » que s'il voit une confirmation, et une
+          confirmation ne s'affiche pas toujours : la vérification demande aux
+          plateformes ce qu'elles ont réellement reçu. La relance, elle, reprend
+          d'un coup tout ce qui n'a pas abouti.
+        */}
+        <div className="inline">
+          <button
+            className="btn btn-sm"
+            onClick={() => lancer('verify')}
+            disabled={entretien?.verify?.running}
+          >
+            {entretien?.verify?.running ? 'Vérification…' : 'Vérifier auprès des plateformes'}
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => lancer('retry')}
+            disabled={entretien?.retry?.running || !entretien?.relancables}
+            title={
+              entretien?.relancables
+                ? `${entretien.relancables} candidature(s) peuvent être relancées`
+                : 'Aucune candidature à relancer'
             }
-          }}
-          disabled={Boolean(verif) && verif.endsWith('…')}
-        >
-          Vérifier auprès des plateformes
-        </button>
+          >
+            {entretien?.retry?.running
+              ? 'Relance…'
+              : `Relancer${entretien?.relancables ? ` (${entretien.relancables})` : ''}`}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setReglages((v) => !v)}>
+            Automatiser
+          </button>
+        </div>
       </div>
+
+      <Entretien
+        etat={entretien}
+        ouvert={reglages}
+        onFermer={() => setReglages(false)}
+        onRegle={setEntretien}
+      />
 
       {verif && <div className="map-notice">{verif}</div>}
 

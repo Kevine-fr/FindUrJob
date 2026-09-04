@@ -104,4 +104,29 @@ jobOfferSchema.index(
   { unique: true, partialFilterExpression: { externalId: { $type: 'string' } } }
 );
 
+/*
+ * Une annonce, une offre — garanti par la base, pas seulement par le code.
+ *
+ * Welcome to the Jungle publie une même annonce sous plusieurs enregistrements,
+ * un par bureau, chacun avec son propre `externalId` : la déduplication par
+ * identifiant en créait donc trois pour un seul poste, et trois candidatures
+ * s'ensuivaient. Leur adresse, elle, est rigoureusement la même.
+ *
+ * Le contrôle côté collecte ne suffit pas : deux passes simultanées peuvent
+ * lire « rien en base » avant que l'une n'écrive. C'est l'index qui tranche.
+ *
+ * Une adresse vide n'identifie rien, et deux offres saisies à la main sans URL
+ * ne sont pas la même annonce : il faut donc les exclure de l'index.
+ *
+ * `$gt: ''` et non `$ne: ''` — MongoDB n'accepte qu'un jeu restreint
+ * d'opérateurs dans un `partialFilterExpression`, et `$ne` n'en fait pas
+ * partie. Il refusait la spécification entière, sans que rien n'échoue par
+ * ailleurs : l'index n'existait pas, et la garantie non plus. Toute chaîne non
+ * vide est strictement supérieure à la chaîne vide, la condition est la même.
+ */
+jobOfferSchema.index(
+  { user: 1, source: 1, sourceUrl: 1 },
+  { unique: true, partialFilterExpression: { sourceUrl: { $type: 'string', $gt: '' } } }
+);
+
 export default mongoose.model('JobOffer', jobOfferSchema);

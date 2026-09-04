@@ -266,18 +266,67 @@ export async function collectOffers(userId, body = {}) {
       continue;
     }
 
-    const identity = offer.externalId
-      ? { source: offer.source, externalId: offer.externalId }
-      : { source: offer.source, title: offer.title, company: offer.company };
+    /*
+     * L'adresse de l'annonce identifie le poste, mieux que l'identifiant.
+     *
+     * Welcome to the Jungle publie une même annonce sous plusieurs
+     * enregistrements — un par bureau — chacun avec son propre `externalId`.
+     * Dédoublonner dessus créait donc trois offres pour un seul poste, puis
+     * trois candidatures : la liste affichait Galadrim trois fois, toutes
+     * « Postulé ». Mesuré sur une collecte réelle : dix-sept titres en double
+     * sur soixante, tous identiques jusqu'à l'URL près.
+     *
+     * On passe donc par `sourceUrl` en premier. L'`externalId` reste utile pour
+     * les sources qui n'exposent pas d'adresse stable, et le titre + société
+     * ferment la marche pour les saisies à la main.
+     */
+    /*
+     * On reconnaît une offre par **l'une ou l'autre** de ses identités.
+     *
+     * Chercher uniquement par adresse était une erreur, et elle cassait la
+     * collecte : l'adresse d'une annonce Adzuna change d'un passage à l'autre
+     * — paramètres de suivi, redirection — alors que son `externalId` ne bouge
+     * pas. L'offre n'était donc pas retrouvée, on tentait de la créer, et
+     * l'index unique `(user, source, externalId)` la refusait :
+     * « E11000 duplicate key ». Une seule annonce dans ce cas interrompait
+     * toute la recherche.
+     *
+     * Les deux clés désignent la même chose et doivent donc être cherchées
+     * ensemble. Un `$or` suffit : la première qui correspond gagne.
+     */
+    const identites = [];
+    if (offer.sourceUrl) identites.push({ source: offer.source, sourceUrl: offer.sourceUrl });
+    if (offer.externalId) identites.push({ source: offer.source, externalId: offer.externalId });
+    if (!identites.length) {
+      identites.push({ source: offer.source, title: offer.title, company: offer.company });
+    }
 
-    const existing = await JobOffer.findOne({ ...identity, user: userId });
-    if (existing) {
-      existing.set(offer);
-      await existing.save();
-      updated += 1;
-    } else {
-      await JobOffer.create({ ...offer, user: userId });
-      imported += 1;
+    try {
+      const existing = await JobOffer.findOne({ user: userId, $or: identites });
+      if (existing) {
+        existing.set(offer);
+        await existing.save();
+        updated += 1;
+      } else {
+        await JobOffer.create({ ...offer, user: userId });
+        imported += 1;
+      }
+    } catch (erreur) {
+      /*
+       * Une annonce qui coince ne fait pas tomber la collecte entière.
+       *
+       * Elle en ramène des dizaines : perdre les cinquante suivantes parce que
+       * la douzième pose problème est hors de proportion, et c'est exactement
+       * ce qui se passait — « Recherche interrompue » sur un seul doublon.
+       *
+       * Le cas 11000 reste attendu : deux passes simultanées peuvent lire
+       * « rien en base » avant que l'une n'écrive. C'est l'index qui tranche,
+       * et le résultat est celui qu'on voulait — l'offre existe.
+       */
+      if (erreur?.code !== 11000) {
+        console.error('[collecte] offre ignorée :', offer.title?.slice(0, 50), erreur?.message);
+      }
+      skipped += 1;
     }
   }
 

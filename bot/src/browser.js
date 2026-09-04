@@ -183,3 +183,54 @@ export async function shutdown() {
   if (renderBrowser?.isConnected()) await renderBrowser.close().catch(() => {});
   renderBrowser = null;
 }
+
+/**
+ * Un onglet réellement utilisable, quitte à en ouvrir un neuf.
+ *
+ * Un onglet Chromium peut **planter sans se fermer** : `isClosed()` répond
+ * toujours `false`, et c'est le premier geste sur la page qui lève enfin
+ * « Target crashed ». Reprendre `pages()[0]` sans vérifier condamnait donc la
+ * connexion manuelle dès qu'un onglet était mort — sans issue, puisque le seul
+ * moyen d'en rouvrir un passait par cet écran-là.
+ *
+ * On sonde donc la page au lieu de la supposer vivante : une évaluation
+ * triviale suffit, elle échoue précisément dans le cas qu'on cherche à
+ * détecter. Le contexte, lui, survit au crash d'un de ses onglets — vérifié :
+ * `newPage()` répond encore juste après.
+ */
+export async function pageVivante(platform, user) {
+  const context = await getContext(platform, { user });
+
+  for (const page of context.pages()) {
+    if (page.isClosed()) continue;
+    try {
+      await page.evaluate(() => true);
+      return page;
+    } catch {
+      /*
+       * On laisse l'onglet mort où il est.
+       *
+       * Le refermer paraissait plus propre, et c'est le contraire : mesuré, un
+       * `close()` sur une cible plantée coince le navigateur entier, et
+       * `newPage()` répond ensuite « Failed to open a new tab ». Sans le
+       * fermer, le contexte continue d'ouvrir des onglets normalement.
+       */
+    }
+  }
+
+  try {
+    return await context.newPage();
+  } catch {
+    /*
+     * Le navigateur ne répond plus : on le recycle.
+     *
+     * Dernier recours, mais nécessaire — sans lui, un profil dont le navigateur
+     * s'est effondré ne se rouvre plus jamais, et la connexion manuelle est le
+     * seul écran par lequel on pourrait le réparer. Le profil est sur disque :
+     * fermer le contexte ne perd aucune session.
+     */
+    await closeContext(platform, user).catch(() => {});
+    const frais = await getContext(platform, { user });
+    return frais.newPage();
+  }
+}

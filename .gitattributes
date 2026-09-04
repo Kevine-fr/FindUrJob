@@ -1,0 +1,40 @@
+# Fins de ligne : LF partout, dans le dépôt comme dans la copie de travail.
+#
+# Le dépôt stockait déjà du LF, mais `core.autocrlf` convertissait en CRLF à la
+# sortie sous Windows : cent quarante-sept fichiers en LF, trente-trois en CRLF,
+# et quatre devenus **mixtes** à force d'être édités par des outils qui
+# n'écrivaient pas les mêmes retours.
+#
+# Ce n'est pas un détail de confort. Un fichier mixte casse toute recherche
+# ancrée sur une fin de ligne : un script qui cherchait une ligne valant « } »
+# ne l'a jamais trouvée — chaque ligne se terminait par « \r » — et a supprimé
+# six cents lignes en croyant s'arrêter à la première accolade. Les mêmes
+# retours partout suppriment cette classe d'erreur au lieu d'obliger chacun à
+# s'en méfier.
+#
+# `eol=lf` prime sur `core.autocrlf` : le réglage de la machine ne peut plus
+# réintroduire le mélange.
+* text=auto eol=lf
+
+# Les scripts exécutés dans les conteneurs : le LF n'est pas une préférence.
+# Un `#!/bin/sh` suivi d'un CR fait chercher un interpréteur nommé « sh\r », et
+# le conteneur s'arrête sur « no such file or directory » — un message qui ne
+# désigne pas le coupable.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Binaires : git ne doit y toucher sous aucun prétexte. Convertir des retours
+# dans un PNG ou une police le corrompt silencieusement.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.gz binary

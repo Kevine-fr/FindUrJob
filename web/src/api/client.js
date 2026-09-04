@@ -157,8 +157,20 @@ export const api = {
    */
   questions: {
     list: (query = '') => req(`/questions${query}`),
+    answerFile: (id, file) => upload('/questions/' + id + '/fichier', file),
     answer: (id, body) => req(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     remove: (id) => req(`/questions/${id}`, { method: 'DELETE' }),
+  },
+
+  /*
+   * Entretien des candidatures : relance en lot et vérification.
+   * Les deux se lancent et rendent la main tout de suite ; l'avancement se
+   * relit sur `get`, que la page scrute pendant le travail.
+   */
+  upkeep: {
+    get: () => req('/upkeep'),
+    update: (body) => req('/upkeep', { method: 'PUT', body: JSON.stringify(body) }),
+    start: (quoi, body = {}) => req('/upkeep/' + quoi, { method: 'POST', body: JSON.stringify(body) }),
   },
 
   preferences: {

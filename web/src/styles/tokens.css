@@ -355,9 +355,6 @@ img {
   font-size: 14px;
   cursor: pointer;
   white-space: nowrap;
-  /* « Supprimer définitivement mon compte » fait 306 px : sans plafond, le
-     bouton dépassait l'écran au lieu de s'y adapter. */
-  max-width: 100%;
   transition: transform var(--fast) var(--ease), border-color var(--fast) var(--ease),
     background var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
@@ -439,31 +436,15 @@ img {
 
 /* --- Cartes ------------------------------------------------------------ */
 
-/*
- * Les grilles à piste minimale fixe se plient sous leur propre minimum.
- *
- * `minmax(285px, 1fr)` promet une colonne d'au moins 285 pixels — y compris
- * dans un conteneur qui n'en fait que 280. La grille dépassait alors, et
- * c'est toute la page qui défilait latéralement : mesuré à 325 pixels de
- * large dans une fenêtre de 320. Le symptôme n'apparaît que sur les plus
- * petits téléphones, ce qui explique qu'il ait survécu si longtemps.
- *
- * `min(285px, 100%)` garde exactement le même dessin dès qu'il y a la place,
- * et laisse la piste rétrécir quand il n'y en a pas. C'est la correction
- * appliquée à toutes les grilles de ce fichier, pas seulement celle-ci.
- */
 .grid {
   display: grid;
   gap: 14px;
 }
 .grid-cards {
-  grid-template-columns: repeat(auto-fill, minmax(min(285px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
 }
 
-/* Élément de grille : sans `min-width: 0`, une carte refuse de descendre
-   sous la largeur minimale de son contenu et déborde de sa propre piste. */
 .card {
-  min-width: 0;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -531,20 +512,6 @@ img {
   background: currentColor;
   flex: 0 0 7px;
 }
-/*
- * La pastille porte du texte que la plateforme écrit, pas nous.
- *
- * Elle était en `white-space: nowrap`, taillée pour « CDI » ou « Hybride ».
- * Mais on y met aussi « Annuel de 52000.0 Euros à 58000.0 Euros » (271 px de
- * largeur minimale, mesurée) et des libellés de questions entiers. La pastille
- * imposait alors sa largeur à la carte, la carte à sa grille, et toute la page
- * défilait latéralement sur un téléphone de 320 pixels.
- *
- * Sans `nowrap`, une pastille d'un seul mot ne se coupe de toute façon jamais :
- * on ne perd rien pour « CDI », et une phrase entière s'enroule au lieu de
- * pousser l'écran. `anywhere` couvre le reste — une URL, une référence sans
- * espace, que rien d'autre ne saurait couper.
- */
 .chip {
   font-size: 12px;
   color: var(--ink-soft);
@@ -552,8 +519,7 @@ img {
   border: 1px solid var(--line);
   padding: 3px 8px;
   border-radius: 6px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 .chip-accent {
   color: var(--accent);
@@ -709,9 +675,7 @@ img {
 .filter-custom {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
-  max-width: 100%;
 }
 .filter-custom .input {
   width: 68px;
@@ -1106,7 +1070,7 @@ img {
 }
 .cv-import-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
 }
 .cv-import-option {
@@ -1249,8 +1213,6 @@ img {
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  flex-wrap: wrap;
-  max-width: 100%;
   margin-left: 4px;
 }
 .filter-custom .input {
@@ -1272,19 +1234,6 @@ img {
 }
 /* Sur mobile, l'étiquette passe au-dessus : 92 px de gouttière n'y tiennent pas. */
 @media (max-width: 620px) {
-  /*
-   * Sur les plus petits écrans, un bouton s'enroule plutôt que de dépasser.
-   *
-   * `white-space: nowrap` est le bon défaut — « Relancer l'envoi » ne doit pas
-   * se couper en deux dès qu'il reste un peu de place. Mais « Supprimer
-   * définitivement mon compte » fait 306 px : à 320, il n'y a pas de place, et
-   * le plafond de largeur ne fait que couper le texte sans l'empêcher de
-   * pousser la page. Ici, la seule issue tenable est de l'enrouler.
-   */
-  .btn {
-    white-space: normal;
-  }
-
   .filter-group {
     flex-direction: column;
     align-items: stretch;
@@ -1465,9 +1414,6 @@ img {
   font-size: 13px;
   width: auto;
   min-width: 148px;
-  /* Deux champs et une flèche font 300 px : sur un écran de 320, la ligne doit
-     pouvoir se replier plutôt que pousser la page de côté. */
-  max-width: 100%;
 }
 
 .activity-sheet {
@@ -1867,15 +1813,9 @@ img {
   border-color: color-mix(in srgb, var(--ok) 30%, transparent);
 }
 
-/* Un verdict tient parfois en trois lignes : le mot ne doit pas déborder de la
-   carte parce qu'il est long. Vrai de tous les encarts, pas seulement d'ici. */
-.callout {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Les deux gestes du panneau de relance. Ils passent l'un sous l'autre plutôt
-   que de rétrécir : « Vérifier auprès de la plateforme » ne se tronque pas. */
+/* Les deux gestes du panneau de relance, sur la fiche d'une candidature. Ils
+   passent l'un sous l'autre plutôt que de rétrécir : « Vérifier auprès de la
+   plateforme » ne se tronque pas. */
 .relance-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1883,11 +1823,23 @@ img {
   align-items: flex-start;
 }
 
-/* Le libellé d'une question de plateforme est une phrase, insérée au fil d'un
-   paragraphe : elle s'affiche en ligne plutôt qu'en bloc. L'enroulement, lui,
-   vient désormais de `.chip` — toutes les pastilles en ont besoin. */
+/*
+ * Le libellé d'une question de plateforme, sur la fiche d'une candidature.
+ *
+ * `.chip` est en `white-space: nowrap`, et c'est le bon réglage partout
+ * ailleurs : « CDI », « Hybride », « Match 62% » ne doivent pas se couper.
+ * Mais ici la pastille reçoit la question telle que la plateforme l'écrit
+ * — « Pourrais-tu me préciser tes prétentions salariales ? Merci de regarder
+ * notre fourchette budgétaire en amont » — et cette phrase-là poussait la
+ * fiche hors de l'écran.
+ *
+ * L'exception est donc portée par cette classe seule, et non par `.chip` :
+ * une pastille de plateforme est le seul endroit où le texte est une phrase.
+ */
 .chip-question {
   display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .shot {
@@ -1901,7 +1853,7 @@ img {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(178px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -1943,7 +1895,7 @@ img {
 }
 
 .admin-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   margin-bottom: 16px;
 }
 
@@ -3420,7 +3372,7 @@ img {
 
 .alert-canaux {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
   margin-top: 10px;
 }
@@ -3519,7 +3471,7 @@ img {
 
 .alert-liste {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 14px;
 }
 .alert-carte {

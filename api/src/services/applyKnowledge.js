@@ -98,6 +98,34 @@ export async function enregistrerQuestions(champs = [], { user, platform, offer 
         { upsert: true, new: false, setDefaultsOnInsert: true }
       );
 
+      /*
+       * Ce que la plateforme propose se met à jour ; ce que la personne a
+       * répondu, jamais.
+       *
+       * `options`, `forme` et `accept` décrivent le formulaire, pas la
+       * réponse. Les laisser sous `$setOnInsert` les figeait au premier
+       * passage — et une première lecture fautive devenait définitive. C'est
+       * arrivé : les boutons radio de LinkedIn n'ayant pas de `<label>`
+       * associé, les réponses possibles avaient été enregistrées comme « on »
+       * et « on ». La question restait affichée avec deux choix identiques et
+       * dénués de sens, sans aucun moyen d'y répondre ni de s'en sortir.
+       *
+       * On ne touche qu'aux questions encore sans réponse : une fois répondue,
+       * plus rien ne doit bouger sous les pieds de la personne. Le libellé
+       * reste lui aussi intact, parce que la clé en dérive — le corriger ici
+       * les ferait diverger, et la question deviendrait introuvable.
+       */
+      await PlatformQuestion.updateOne(
+        { user, platform, cle: champ.cle, statut: { $ne: 'repondue' } },
+        {
+          $set: {
+            forme: champ.forme || 'texte',
+            options: champ.options || [],
+            accept: champ.accept || '',
+          },
+        }
+      ).catch(() => {});
+
       // `new: false` rend le document d'avant : `null` signifie « créé à
       // l'instant ». Seules celles qu'on ne sait pas remplir sont à signaler.
       if (!avant && !connues.has(champ.cle)) nouvelles.push(champ.libelle || champ.cle);

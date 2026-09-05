@@ -143,6 +143,13 @@ export const api = {
       req(`/applications/${id}/retry`, { method: 'POST', body: JSON.stringify({ force }) }),
     // Demande aux plateformes ce qu elles ont recu, et promeut ce qu elles
     // reconnaissent. Long : plusieurs pages lues dans un navigateur complet.
+    /*
+     * Demande à la plateforme si CETTE candidature est arrivée.
+     * Rend un verdict — confirmee | absente | impossible | erreur — plutôt
+     * qu'un booléen : « la plateforme ne tient pas de liste » est une réponse,
+     * pas un échec, et l'interface doit pouvoir le dire.
+     */
+    verify: (id) => req(`/applications/${id}/verify`, { method: 'POST' }),
     reconcile: () => req('/applications/reconcile', { method: 'POST' }),
     remove: (id) => req(`/applications/${id}`, { method: 'DELETE' }),
   },

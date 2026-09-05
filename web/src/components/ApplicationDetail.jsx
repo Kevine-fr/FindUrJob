@@ -14,11 +14,68 @@ import { ilYA, fraicheur, candidats, concurrence } from '../lib/freshness.js';
  */
 const RELANCABLES = ['echec_envoi', 'a_verifier'];
 
+/**
+ * Ce que la plateforme a répondu.
+ *
+ * Quatre issues, et elles ne disent pas la même chose. « Absente » mérite
+ * d'être nuancée : une liste est paginée, une plateforme peut oublier. Ne pas
+ * la trouver n'est pas la preuve qu'elle ne soit pas partie — c'est ce qui
+ * autorise à relancer, pas ce qui l'ordonne.
+ */
+function VerdictVerification({ bilan }) {
+  const plateforme = SOURCE_LABELS[bilan.source] || bilan.source;
+  if (bilan.etat === 'en-cours') {
+    return (
+      <p className="callout" style={{ marginTop: 12 }}>
+        Lecture de « mes candidatures » sur la plateforme… Cela ouvre un navigateur complet et
+        parcourt la liste : compte une à deux minutes, parfois plus si elle est longue.
+      </p>
+    );
+  }
+
+  // Les autres candidatures profitent du même passage : le taire donnerait
+  // l'impression que des statuts changent tout seuls dans la liste.
+  const auPassage =
+    bilan.autres > 0
+      ? ` ${bilan.autres} autre${bilan.autres > 1 ? 's' : ''} candidature${
+          bilan.autres > 1 ? 's ont' : ' a'
+        } été confirmée${bilan.autres > 1 ? 's' : ''} au passage.`
+      : '';
+
+  const TEXTES = {
+    confirmee: {
+      ton: 'callout-ok',
+      texte: bilan.deja
+        ? 'Cette candidature est déjà marquée comme partie.'
+        : `La plateforme la liste dans « mes candidatures » : elle est bien partie.${auPassage}`,
+    },
+    absente: {
+      ton: 'callout-warn',
+      texte:
+        `${plateforme} ne la liste pas dans « mes candidatures ». Ce n’est pas une preuve — ` +
+        'une liste est paginée et peut oublier — mais rien n’indique qu’elle soit arrivée : ' +
+        `relancer est raisonnable.${auPassage}`,
+    },
+    impossible: { ton: 'callout-warn', texte: bilan.raison },
+    erreur: { ton: 'callout-warn', texte: `La vérification n’a pas abouti : ${bilan.raison}` },
+  };
+
+  const rendu = TEXTES[bilan.verdict];
+  if (!rendu) return null;
+  return (
+    <p className={`callout ${rendu.ton}`} style={{ marginTop: 12 }}>
+      {rendu.texte}
+    </p>
+  );
+}
+
 export default function ApplicationDetail({ application, onBack, onChange }) {
   const toast = useToast();
   const [app, setApp] = useState(application);
   const [busy, setBusy] = useState(false);
   const [vue, setVue] = useState('cv'); // cv | lettre — sur petit écran surtout
+  // Verdict de la dernière vérification, affiché sous les boutons.
+  const [verdict, setVerdict] = useState(null);
   const meta = STATUS_META[app.status] || { label: app.status, color: '#62667a' };
 
   const cvId = app.cvVersion?._id;
@@ -56,6 +113,34 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
       } else {
         toast.error(erreur.message);
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Demande à la plateforme si la candidature est déjà arrivée.
+   *
+   * C'est la question que « à vérifier » pose et à laquelle la fiche ne savait
+   * pas répondre : on ne pouvait que relancer, donc risquer le doublon sans
+   * savoir. Le serveur rend un verdict plutôt qu'un booléen — « cette
+   * plateforme ne tient pas de liste » est une réponse, pas une panne.
+   */
+  const verifier = async () => {
+    setBusy(true);
+    setVerdict({ etat: 'en-cours' });
+    try {
+      const bilan = await api.applications.verify(app._id);
+      setVerdict(bilan);
+      if (bilan.verdict === 'confirmee') {
+        // Le statut a changé côté serveur : on relit plutôt que de le déduire.
+        const frais = await api.applications.get(app._id);
+        setApp(frais);
+        onChange?.(frais);
+        toast.success('La plateforme confirme avoir reçu cette candidature.');
+      }
+    } catch (erreur) {
+      setVerdict({ verdict: 'erreur', raison: erreur.message });
     } finally {
       setBusy(false);
     }
@@ -130,7 +215,7 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
                 <p style={{ margin: '8px 0 0', fontSize: 13.5 }}>
                   Manquait :{' '}
                   {app.lastFailure.fields.map((champ) => (
-                    <span key={champ.cle} className="chip" style={{ marginRight: 4 }}>
+                    <span key={champ.cle} className="chip chip-question" style={{ marginRight: 4 }}>
                       {champ.libelle}
                     </span>
                   ))}
@@ -140,14 +225,29 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
                 </p>
               )}
             </div>
-            <button
-              className={`btn btn-primary btn-sm${busy ? ' is-busy' : ''}`}
-              disabled={busy}
-              onClick={() => relancer(false)}
-            >
-              Relancer l'envoi
-            </button>
+            <div className="relance-actions">
+              {/* Sur « à vérifier », vérifier vient avant relancer : c'est le
+                  geste sans risque, et il rend souvent la relance inutile. */}
+              {app.status === 'a_verifier' && (
+                <button
+                  className={`btn btn-sm${busy ? ' is-busy' : ''}`}
+                  disabled={busy}
+                  onClick={verifier}
+                >
+                  Vérifier auprès de la plateforme
+                </button>
+              )}
+              <button
+                className={`btn btn-primary btn-sm${busy ? ' is-busy' : ''}`}
+                disabled={busy}
+                onClick={() => relancer(false)}
+              >
+                Relancer l'envoi
+              </button>
+            </div>
           </div>
+
+          {verdict && <VerdictVerification bilan={verdict} />}
           {/* Sur « à vérifier », le risque est le double envoi : on le nomme
               plutôt que de laisser le bouton faire croire à un geste anodin. */}
           {app.status === 'a_verifier' && (

@@ -6,7 +6,7 @@ import User from '../models/User.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
-import { reconcilier } from './reconciliation.js';
+import { reconcilier, AVEC_LISTE } from './reconciliation.js';
 import { appliquerResultat } from './applyOutcome.js';
 import { enregistrerQuestions, reponsesPour } from './applyKnowledge.js';
 import { journaliser } from './activityLog.js';
@@ -35,8 +35,15 @@ import { infoEchec } from '../utils/applyFailure.js';
 /** Au-delà, insister ne ressemble plus à une reprise mais à de l'acharnement. */
 const MAX_REPRISES = 5;
 
-/** Plateformes dont on sait relire la liste de candidatures envoyées. */
-const RAPPROCHABLES = ['hellowork', 'linkedin'];
+/*
+ * Plateformes dont on sait relire la liste de candidatures envoyées.
+ *
+ * Cette liste était recopiée ici, et elle avait divergé : le rapprochement
+ * sait lire France Travail et Welcome to the Jungle depuis qu'on a trouvé
+ * leurs pages, mais la relance continuait de répondre « impossible de
+ * vérifier » et de réclamer une confirmation manuelle pour ces deux-là. On
+ * lit la source unique plutôt que d'en tenir une copie.
+ */
 
 class RefusReprise extends Error {
   constructor(message, code = 400, extra = {}) {
@@ -132,7 +139,7 @@ export async function retenterCandidature(user, applicationId, { force = false }
    * relance y demande un accord explicite au lieu de se décider seule.
    */
   if (application.status === 'a_verifier' && !force) {
-    if (!RAPPROCHABLES.includes(offer.source)) {
+    if (!AVEC_LISTE.includes(offer.source)) {
       throw new RefusReprise(
         `Impossible de vérifier auprès de ${offer.source} si la candidature est déjà partie. ` +
           'Vérifie sur la plateforme, puis confirme la relance si rien n’est arrivé.',

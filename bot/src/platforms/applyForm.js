@@ -48,6 +48,14 @@ const CONSENT = /cgu|cgv|condition|consent|accept|rgpd|privacy|charte|politique/
 const REFUSE = /newsletter|alerte|publicit|marketing|commercial|partenaire|offres? d/i;
 
 /**
+ * Cases que la plateforme annonce elle-même comme facultatives.
+ *
+ * Un consentement facultatif reste un choix qui appartient à la personne : on
+ * ne le coche pas en son nom. Seul l'obligatoire est franchi d'office.
+ */
+const FACULTATIF = /facultat|optionnel|optional|si vous le souhaitez/i;
+
+/**
  * Libellés qui envoient pour de bon.
  *
  * Sert de garde-fou au mode essai : quoi qu'une plateforme déclare comme
@@ -162,27 +170,142 @@ async function remplirChamps(formulaire, valeurs) {
 /**
  * Coche ce qui est obligatoire ou relève du consentement, jamais la publicité.
  * Une case marketing cochée à la place de la personne n'est pas un détail.
+ *
+ * Deux corrections, toutes deux tirées d'un blocage réel sur LinkedIn — écran
+ * « Questions supplémentaires », case « J'accepte » restée vide, candidature
+ * classée « à vérifier » sans que rien n'explique pourquoi.
+ *
+ * **Le clic.** \`check({ force: true })\` vise l'\`input\` à sa position à
+ * l'écran. Or LinkedIn masque le sien derrière son propre habillage : faute de
+ * point de contact, Playwright renonce, et le \`.catch(() => {})\` avalait
+ * l'échec en silence. On coche donc dans la page, où l'élément existe même
+ * invisible, puis on redescend sur le \`<label>\` si le premier geste n'a rien
+ * changé. Chaque tentative est **relue** : une case qu'on croit cochée sans
+ * l'avoir vérifiée est précisément ce qui a produit ce blocage.
+ *
+ * **L'énoncé.** Le libellé de la case ne vaut que « J'accepte » ; la phrase qui
+ * engage — « Vous déclarez avoir lu et compris l'avis de confidentialité… » —
+ * est un frère précédent, hors du label, et c'est elle qui porte l'astérisque
+ * du champ obligatoire. En s'en tenant au label, on ne voyait ni le
+ * consentement ni le caractère obligatoire. On soustrait donc la case de son
+ * bloc parent, comme pour les groupes de boutons radio.
  */
 async function cocherCases(formulaire) {
-  const cases = formulaire.locator('input[type="checkbox"]');
-  const total = await cases.count();
+  const aRelancer = await formulaire
+    .evaluate(
+      (form, { source, refuse, consent, facultatif }) => {
+        const { visible, propre } = new Function(`return ${source}`)()();
+        const REFUSE = new RegExp(refuse, 'i');
+        const CONSENT = new RegExp(consent, 'i');
+        const FACULTATIF = new RegExp(facultatif, 'i');
 
-  for (let i = 0; i < total; i += 1) {
-    const item = cases.nth(i);
-    const signature = await item
-      .evaluate((el) =>
-        [el.name, el.id, el.labels?.[0]?.textContent, el.getAttribute('aria-label')]
-          .filter(Boolean)
-          .join(' ')
-      )
-      .catch(() => '');
+        /*
+         * La phrase qui engage, quand elle n'est pas dans le label.
+         *
+         * On retire du bloc parent le texte de la case elle-même : ce qui reste
+         * est l'énoncé. Borné en longueur — trop court, ce n'est pas une
+         * question ; trop long, c'est l'écran entier.
+         */
+        const enonceAutour = (el) => {
+          const sien = propre(el.labels?.[0]?.textContent || el.getAttribute('aria-label'));
+          let parent = el.closest('fieldset, [role="group"]') || el.parentElement;
+          for (let n = 0; n < 4 && parent; n += 1) {
+            const autour = String(parent.textContent || '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const reste = (sien ? autour.split(sien).join(' ') : autour)
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (reste.length >= 8 && reste.length <= 300) return reste;
+            parent = parent.parentElement;
+          }
+          return '';
+        };
 
-    const obligatoire = await item.evaluate((el) => el.required).catch(() => false);
-    if (REFUSE.test(signature)) continue;
-    if (!obligatoire && !CONSENT.test(signature)) continue;
-    if (await item.isChecked().catch(() => true)) continue;
+        const restants = [];
 
-    await item.check({ force: true }).catch(() => {});
+        [...form.querySelectorAll('input[type="checkbox"]')].forEach((el, index) => {
+          const autour = enonceAutour(el);
+          const signature = [
+            el.name,
+            el.id,
+            propre(el.labels?.[0]?.textContent),
+            el.getAttribute('aria-label'),
+            autour,
+          ]
+            .filter(Boolean)
+            .join(' ');
+
+          /*
+           * Obligatoire au sens large. LinkedIn ne pose ni \`required\` ni
+           * \`aria-required\` sur ses cases : le seul signe est l'astérisque en
+           * fin d'énoncé. S'en tenir à l'attribut revenait à tout croire
+           * facultatif, donc à ne rien cocher.
+           */
+          const obligatoire =
+            el.required ||
+            el.getAttribute('aria-required') === 'true' ||
+            /\*\s*$/.test(autour) ||
+            /(champ )?obligatoire|required/i.test(autour);
+
+          // La publicité ne se coche jamais à la place de la personne, même
+          // présentée comme obligatoire : elle deviendra une question.
+          if (REFUSE.test(signature)) return;
+          // Une case annoncée facultative reste au choix de la personne.
+          if (!obligatoire && FACULTATIF.test(signature)) return;
+          if (!obligatoire && !CONSENT.test(signature)) return;
+          if (el.checked) return;
+
+          // Dans la page : un \`click()\` sur l'\`input\` bascule la case *et*
+          // émet les évènements que l'application écoute, même masqué.
+          try {
+            el.click();
+          } catch {
+            /* on tente le repli ci-dessous */
+          }
+
+          if (!el.checked) {
+            // Repli : on pose l'état et on annonce le changement nous-mêmes.
+            try {
+              el.checked = true;
+              el.dispatchEvent(new Event('click', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch {
+              /* rien de plus à tenter ici */
+            }
+          }
+
+          // Relu, pas supposé : ce qui résiste repart vers Playwright, qui
+          // saura viser le \`<label>\`, seul élément réellement cliquable.
+          if (!el.checked) restants.push({ index, visible: visible(el) });
+        });
+
+        return restants;
+      },
+      {
+        source: OUTILS,
+        refuse: REFUSE.source,
+        consent: CONSENT.source,
+        facultatif: FACULTATIF.source,
+      }
+    )
+    .catch(() => []);
+
+  // Dernier recours : le clic humain sur l'étiquette. C'est ce que vise une
+  // personne, et c'est ce qui marche quand l'\`input\` n'est que décoratif.
+  for (const { index } of aRelancer) {
+    const item = formulaire.locator('input[type="checkbox"]').nth(index);
+    const pour = await item.evaluate((el) => el.id || '').catch(() => '');
+
+    if (pour) {
+      await formulaire
+        .locator(`label[for="${pour}"]`)
+        .first()
+        .click({ timeout: 3000 })
+        .catch(() => {});
+    }
+    if (await item.isChecked().catch(() => false)) continue;
+    await item.check({ force: true, timeout: 3000 }).catch(() => {});
   }
 }
 
@@ -1014,12 +1137,34 @@ export async function applyForm(
     };
   }
 
-  // Plusieurs écrans possibles : on avance tant qu'un bouton d'envoi répond,
-  // et on s'arrête net à la confirmation.
+  /*
+   * Plusieurs écrans possibles : on avance tant qu'un bouton d'envoi répond,
+   * et on s'arrête net à la confirmation.
+   *
+   * Le plafond était de cinq. Relevé sur une candidature réelle : LinkedIn
+   * annonçait « 6/7 pages » et le robot n'avait plus de tours — il rendait
+   * « formulaire soumis sans confirmation visible » alors que rien n'était
+   * bloqué, seulement inachevé. Le diagnostic était donc faux, et la relance
+   * rejouait le même mur. Dix couvre les questionnaires les plus longs vus
+   * jusqu'ici, avec la marge d'un écran de confirmation.
+   *
+   * Relever un plafond sans garde-fou reviendrait à recliquer un bouton d'envoi
+   * qui ne répond pas — le pire des risques, puisqu'il produit des doublons. On
+   * compare donc l'écran avant et après : s'il n'a pas bougé, insister ne sert
+   * à rien et on sort. C'est l'absence de progression qui arrête la boucle, pas
+   * un compteur.
+   */
+  const empreinteEcran = () =>
+    page
+      .innerText('body')
+      .then((t) => `${t.length}|${t.slice(0, 300)}`)
+      .catch(() => '');
+
   let texte = '';
-  for (let etape = 0; etape < 5; etape += 1) {
+  for (let etape = 0; etape < 10; etape += 1) {
     if (!(await (await bouton()).isVisible().catch(() => false))) break;
 
+    const avant = await empreinteEcran();
     await (await bouton()).click().catch(() => {});
     await humanPause(2500, 4000);
 
@@ -1030,6 +1175,10 @@ export async function applyForm(
         message: cvJoint ? 'Candidature envoyée, CV joint.' : 'Candidature envoyée.',
       };
     }
+
+    // Rien n'a changé : le bouton ne répond pas. Recliquer n'avancerait pas et
+    // risquerait, sur un bouton d'envoi, de candidater deux fois.
+    if ((await empreinteEcran()) === avant) break;
 
     // Écran suivant : il peut porter le champ CV, ou ses propres questions.
     const suivant = await trouverFormulaire(page);

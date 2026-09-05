@@ -392,6 +392,29 @@ function outilsDom() {
          * reste est l'énoncé — « Êtes-vous légalement autorisé(e) à travailler
          * dans le pays suivant ? France ».
          */
+        /*
+         * D'abord le frère qui précède immédiatement le groupe.
+         *
+         * C'est là que LinkedIn écrit sa question, et le lire directement rend
+         * un texte intact. La soustraction, elle, découpe : relevé en vrai, une
+         * annonce affichait la question dans les deux langues à la fois, et le
+         * retranchement du groupe avait produit « Are you legally authorized to
+         * work in vailler dans le pays suivant ? Franc? » — un énoncé
+         * illisible, donc une question à laquelle personne ne pouvait
+         * répondre. On ne coupe plus quand on peut simplement lire.
+         */
+        let frere = groupe.previousElementSibling;
+        for (let n = 0; n < 3 && frere && !enonce; n += 1) {
+          const texte = nettoyer(frere.textContent);
+          if (texte.length >= 8 && texte.length <= 200) enonce = texte;
+          frere = frere.previousElementSibling;
+        }
+
+        /*
+         * À défaut seulement, la soustraction : le groupe retranché de son
+         * parent. Elle dépanne quand la question et les boutons partagent le
+         * même conteneur, sans frère à lire.
+         */
         const dansLeGroupe = nettoyer(groupe.textContent);
         let parent = groupe.parentElement;
         for (let n = 0; n < 3 && parent && !enonce; n += 1) {
@@ -418,6 +441,36 @@ function outilsDom() {
     ).slice(0, 120);
   };
 
+  /**
+   * Le libellé visible d'un bouton radio — « Yes », « Non ».
+   *
+   * `value` ne peut pas servir de repli : un radio sans attribut `value` vaut
+   * « on » pour le navigateur. Relevé en production, l'onglet Informations
+   * proposait donc « on » et « on » comme seules réponses possibles à une
+   * question dont l'écran affichait pourtant « Yes » et « No » — LinkedIn
+   * n'associe pas ses `<label>`, si bien que `labels` est vide et que le repli
+   * prenait la main.
+   *
+   * Écrit ici parce que deux traitements en dépendent : celui qui **propose**
+   * les réponses possibles et celui qui **retrouve** le bon bouton une fois la
+   * réponse donnée. Deux dérivations différentes, et répondre « Yes » ne
+   * cocherait jamais rien.
+   */
+  const libelleOption = (el) => {
+    const direct =
+      propre(el.labels?.[0]?.textContent) ||
+      propre(el.getAttribute('aria-label')) ||
+      propre(el.closest('label')?.textContent) ||
+      propre(el.nextElementSibling?.textContent);
+    if (direct) return direct.slice(0, 60);
+
+    // Le parent immédiat n'enveloppe en général que ce bouton et son texte.
+    const parent = propre(el.parentElement?.textContent);
+    if (parent && parent.length <= 60) return parent;
+
+    return el.value && el.value !== 'on' ? propre(el.value).slice(0, 60) : '';
+  };
+
   const decrire = (el) => {
     const groupe = groupeDe(el);
     let options = [];
@@ -431,7 +484,7 @@ function outilsDom() {
       // Les réponses possibles sont les autres boutons du groupe : sans elles,
       // on demanderait en texte libre ce qui n'accepte que « Oui » ou « Non ».
       options = [...groupe.querySelectorAll('input[type="radio"]')]
-        .map((r) => propre(r.labels?.[0]?.textContent || r.value))
+        .map(libelleOption)
         .filter(Boolean)
         .slice(0, 25);
     }
@@ -448,7 +501,7 @@ function outilsDom() {
     return { libelle: nommer(el), forme, options };
   };
 
-  return { visible, nommer, decrire, groupeDe, propre };
+  return { visible, nommer, decrire, groupeDe, propre, libelleOption };
 }
 
 /** La source de l'outil, pour l'injecter dans la page. */
@@ -543,7 +596,7 @@ async function remplirDepuisReponses(formulaire, reponses) {
          * du bouton (« Oui ») ne se retrouverait jamais, et la réponse donnée
          * dans l'onglet Informations resterait sans effet.
          */
-        const { nommer, groupeDe, propre } = new Function(`return ${source}`)()();
+        const { nommer, groupeDe, propre, libelleOption } = new Function(`return ${source}`)()();
 
         const cle = (texte) =>
           String(texte || '')
@@ -581,7 +634,7 @@ async function remplirDepuisReponses(formulaire, reponses) {
               : [...form.querySelectorAll(`input[type="radio"][name="${el.name}"]`)];
 
             const cible = boutons.find(
-              (r) => cle(propre(r.labels?.[0]?.textContent || r.value)) === cle(choix)
+              (r) => cle(libelleOption(r)) === cle(choix)
             );
             if (!cible || cible.checked) continue;
 

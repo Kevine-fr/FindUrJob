@@ -835,7 +835,28 @@ export async function applyForm(
     };
   }
 
-  const premier = await trouverFormulaire(page);
+  /*
+   * On attend le formulaire, on ne l'échantillonne pas.
+   *
+   * `trouverFormulaire` regardait la page une seule fois. Sur une modale qui
+   * met une seconde de plus à se peindre — LinkedIn en est coutumier — elle
+   * existe déjà dans le DOM mais aucun de ses champs n'est encore visible : le
+   * verdict tombait en « aucun formulaire de candidature sur la page », sur une
+   * annonce dont le bouton « Candidature simplifiée » était bien là. Le défaut
+   * était intermittent, ce qui est la signature d'une course, pas d'un
+   * sélecteur.
+   *
+   * Douze secondes suffisent largement, et on rend la main dès que le
+   * formulaire paraît : dans le cas courant, cela ne coûte rien.
+   */
+  let premier = null;
+  const limite = Date.now() + 12_000;
+  do {
+    premier = await trouverFormulaire(page);
+    if (premier) break;
+    await page.waitForTimeout(600);
+  } while (Date.now() < limite);
+
   if (!premier) {
     return {
       status: 'manual',

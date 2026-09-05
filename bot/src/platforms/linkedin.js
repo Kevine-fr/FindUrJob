@@ -262,7 +262,11 @@ export async function apply(context, offer, options = {}) {
     // L'identifiant numérique est la seule partie fiable : le slug change.
     const id = offer.externalId || offer.sourceUrl?.match(/-(\d+)(?:\?|$)/)?.[1];
     if (!id) {
-      return { status: 'manual', message: "Offre LinkedIn sans identifiant exploitable." };
+      return {
+        status: 'manual',
+        reason: RAISONS.OFFRE_DISPARUE,
+        message: "Offre LinkedIn sans identifiant exploitable.",
+      };
     }
 
     await page.goto(`https://www.linkedin.com/jobs/view/${id}/`, {
@@ -333,6 +337,16 @@ export async function apply(context, offer, options = {}) {
     if (!(await modale.count())) {
       return {
         status: 'manual',
+        /*
+         * Une cause nommée, sinon la candidature reste inclassable.
+         *
+         * Ce retour n'en portait aucune : elle ressortait en « cause non
+         * identifiée » dans le diagnostic, et la relance ne savait pas quoi en
+         * faire. Le formulaire n'a pas paru — c'est bien « formulaire
+         * introuvable », et cette cause-là se relance : la modale peut très
+         * bien s'ouvrir au passage suivant.
+         */
+        reason: RAISONS.FORMULAIRE_ABSENT,
         message:
           "LinkedIn n'a pas ouvert sa candidature simplifiée (page modifiée, ou " +
           'vérification de sécurité). Reprends la main depuis l’onglet Comptes.',

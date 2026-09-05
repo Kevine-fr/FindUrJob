@@ -1,5 +1,5 @@
 import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
-import { applyForm } from './applyForm.js';
+import { applyForm, postulerSurSiteExterne } from './applyForm.js';
 import { RAISONS } from './failures.js';
 import { lireBlocs } from './mesCandidatures.js';
 
@@ -254,13 +254,24 @@ export async function apply(context, offer, options = {}) {
        * autres plateformes le disent déjà avec `external` ; HelloWork était le
        * dernier à ne pas le faire.
        */
+      /*
+       * On tente le formulaire de l'employeur au lieu de s'arrêter là.
+       *
+       * Les autres plateformes le font déjà ; HelloWork était resté en arrière,
+       * et ses annonces à redirection revenaient donc en « envoi échoué » sans
+       * qu'aucune tentative n'ait eu lieu — même pas l'adresse à suivre quand
+       * le lien n'était qu'une ancre.
+       */
+      if (externeUtile) return await postulerSurSiteExterne(page, externeUtile, options);
+
+      // Le lien n'est qu'une ancre (« #postuler ») : la vraie adresse ne se
+      // révèle qu'au clic, et l'afficher n'apprendrait rien.
       return {
         status: 'external',
         reason: RAISONS.REDIRECTION_EXTERNE,
-        message: `L'employeur reçoit les candidatures sur son propre site${
-          externeUtile ? ` : ${externeUtile}` : ''
-        } — rien à remplir sur HelloWork.`,
-        ...(externeUtile ? { externalUrl: externeUtile } : {}),
+        message:
+          "L'employeur reçoit les candidatures sur son propre site — HelloWork n'en " +
+          "publie pas l'adresse, il faut passer par l'annonce.",
       };
     }
 

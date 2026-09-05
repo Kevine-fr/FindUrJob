@@ -1,5 +1,5 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
-import { applyForm, externalApplyUrl } from './applyForm.js';
+import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
 import { RAISONS } from './failures.js';
 import { lireBlocs, deroulerListe } from './mesCandidatures.js';
 
@@ -301,13 +301,15 @@ export async function apply(context, offer, options = {}) {
        * écrit dans la page.
        */
       const versEmployeur = await externalApplyUrl(page, 'linkedin.com');
+      // Adresse connue : on tente le formulaire plutôt que de rendre la main.
+      if (versEmployeur) return await postulerSurSiteExterne(page, versEmployeur, options);
+
       return {
         status: 'external',
         reason: RAISONS.REDIRECTION_EXTERNE,
-        message: versEmployeur
-          ? `L'employeur reçoit les candidatures sur son propre site : ${versEmployeur}`
-          : "Cette offre n'a pas de candidature simplifiée : elle se postule sur le site de l'employeur.",
-        ...(versEmployeur ? { externalUrl: versEmployeur } : {}),
+        message:
+          "Cette offre n'a pas de candidature simplifiée, et LinkedIn n'écrit pas " +
+          "l'adresse de l'employeur dans la page : à ouvrir depuis l'annonce.",
       };
     }
 

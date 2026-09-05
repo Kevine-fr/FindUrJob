@@ -1096,8 +1096,17 @@ export async function externalApplyUrl(page, hote) {
        * jusqu'au corps de page, où le mot « postuler » finit toujours par
        * apparaître quelque part.
        */
+      /*
+       * « Choisissez le partenaire » compte autant que « site du recruteur ».
+       *
+       * France Travail a deux bulles, pas une : celle qui nomme l'employeur, et
+       * celle qui propose un partenaire de diffusion — DIRECTEMPLOI, PMEJOB.
+       * La seconde n'était pas reconnue, et l'annonce repartait en « aucun
+       * formulaire de candidature sur la page » alors que le lien de
+       * candidature était affiché juste sous le curseur.
+       */
       const INTENTION =
-        /postuler sur|candidater sur|site du recruteur|site de l['’]employeur|site de l['’]entreprise|apply on (the )?(company|employer)/i;
+        /postuler sur|candidater sur|site du recruteur|site de l['’]employeur|site de l['’]entreprise|choisissez le partenaire|apply on (the )?(company|employer)/i;
 
       /*
        * On part de la phrase, pas du lien.
@@ -1166,8 +1175,35 @@ export async function postulerSurSiteExterne(page, url, options = {}) {
   await dismissConsent(page).catch(() => {});
   await humanPause(1500, 2500);
 
-  // Un anti-robot se constate et ne se force pas.
-  if (await captchaPresent(page)) {
+  /*
+   * Les écrans « vérification de sécurité » se lèvent parfois d'eux-mêmes.
+   *
+   * DirectEmploi, comme beaucoup d'ATS, sert d'abord une page d'attente — « Un
+   * instant… », « Vérification de sécurité en cours » — avant de rendre
+   * l'annonce. Conclure tout de suite y voyait une page sans formulaire, et
+   * l'annonce repartait en redirection alors que le mur n'était peut-être que
+   * temporaire. On lui laisse une dizaine de secondes, pas plus : au-delà, il
+   * ne se lèvera pas pour un navigateur piloté.
+   */
+  const ATTENTE = /v[ée]rification de s[ée]curit[ée]|un instant|checking your browser|just a moment|security check/i;
+  await page
+    .waitForFunction(
+      (motif) => !new RegExp(motif, 'i').test(document.body?.innerText || ''),
+      ATTENTE.source,
+      { timeout: 10_000 }
+    )
+    .catch(() => {});
+
+  /*
+   * Un anti-robot se constate et ne se force pas.
+   *
+   * Le contrôle de `captchaPresent` cherche des cadres connus (reCAPTCHA,
+   * hCaptcha, DataDome) ; certaines protections n'affichent qu'un texte. On
+   * lit donc aussi la page, sinon le mur ressortait en « redirection », un
+   * diagnostic qui invite à réessayer ce qui ne passera jamais.
+   */
+  const texteAttente = await page.innerText('body').catch(() => '');
+  if (ATTENTE.test(texteAttente) || (await captchaPresent(page))) {
     return {
       status: 'manual',
       reason: RAISONS.CAPTCHA,

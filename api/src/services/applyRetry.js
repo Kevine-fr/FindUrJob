@@ -3,6 +3,7 @@ import CVVersion from '../models/CVVersion.js';
 import JobOffer from '../models/JobOffer.js';
 import Profile from '../models/Profile.js';
 import User from '../models/User.js';
+import PlatformQuestion from '../models/PlatformQuestion.js';
 import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
@@ -123,7 +124,34 @@ export async function retenterCandidature(user, applicationId, { force = false }
    * recruteur n'a rien à recevoir ici. On le dit plutôt que de faire semblant.
    */
   const cause = infoEchec(application.lastFailure?.reason);
-  if (application.lastFailure?.reason && !cause.retentable && !force) {
+
+  /*
+   * Une cause réparable cesse de l'être une fois qu'on l'a réparée.
+   *
+   * `post_envoi_incomplet` — le questionnaire qui suit l'envoi — est marqué non
+   * retentable, et à juste titre tant qu'il manque une réponse : réessayer
+   * buterait sur la même question. Mais dès que la personne l'a renseignée dans
+   * l'onglet Informations, la cause a disparu, et refuser la relance enferme
+   * dans une boucle : le message revient à l'identique, sans qu'aucun geste ne
+   * puisse en sortir. C'est exactement ce que la relance existe pour éviter.
+   *
+   * On regarde donc si les champs qui bloquaient ont désormais une réponse. Le
+   * rapprochement se fait sur la clé normalisée, la même que celle sous
+   * laquelle la question a été posée.
+   */
+  const bloquants = application.lastFailure?.fields || [];
+  let reparee = false;
+  if (bloquants.length) {
+    const repondues = await PlatformQuestion.countDocuments({
+      user,
+      cle: { $in: bloquants.map((c) => c.cle).filter(Boolean) },
+      statut: 'repondue',
+      reponse: { $ne: '' },
+    });
+    reparee = repondues >= bloquants.filter((c) => c.cle).length;
+  }
+
+  if (application.lastFailure?.reason && !cause.retentable && !reparee && !force) {
     throw new RefusReprise(
       `${cause.label} : relancer ne changera rien. ${cause.action}`,
       409,

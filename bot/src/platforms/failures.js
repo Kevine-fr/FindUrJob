@@ -138,3 +138,38 @@ export function raisonTechnique(error) {
   const texte = String(error?.message || error || '');
   return TECHNIQUES.find(([motif]) => motif.test(texte))?.[1] || RAISONS.INCONNU;
 }
+
+/**
+ * Garder l'écran tel qu'il était à l'instant où le robot a renoncé.
+ *
+ * Chaque plateforme prenait sa capture à ses propres points de sortie, et la
+ * liste avait divergé : APEC et Welcome to the Jungle n'en prenaient aucune.
+ * Résultat, les blocages les plus opaques — précisément ceux qu'on voulait
+ * voir — arrivaient sans image. Ajouter la capture à chaque `return` manquant
+ * n'aurait fait que repousser la prochaine divergence : il y a une trentaine
+ * de sorties, et rien n'oblige la suivante à y penser.
+ *
+ * D'où l'endroit choisi : le `finally` de `apply`. C'est le seul point que
+ * tous les `return` traversent, quel que soit le chemin, y compris ceux qu'on
+ * écrira plus tard. La capture y précède la fermeture de l'onglet — après, il
+ * n'y a plus rien à photographier.
+ *
+ * On la dépose dans `options.preuve`, que l'appelant a fourni : le `finally`
+ * ne connaît pas la valeur de retour, il ne peut donc pas la compléter
+ * lui-même. C'est `/apply` qui rapproche les deux, et seulement si l'issue le
+ * justifie — une candidature partie n'a pas besoin de photo.
+ *
+ * L'échec de la capture n'est jamais fatal : une page morte ou déjà partie ne
+ * doit pas transformer un diagnostic exploitable en exception.
+ */
+export async function capturerPreuve(page, options = {}) {
+  if (!options?.preuve) return;
+  try {
+    options.preuve.png = (await page.screenshot({ type: 'png', timeout: 8000 })).toString('base64');
+  } catch {
+    /* onglet mort, page fermée, capture trop lente : on se passe de la preuve */
+  }
+}
+
+/** Issues qui n'ont rien à montrer : la candidature est partie, ou rien n'a été tenté. */
+export const SANS_PREUVE = new Set(['sent', 'dry-run', 'session']);

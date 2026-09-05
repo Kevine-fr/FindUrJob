@@ -1,4 +1,5 @@
 import { normalize, humanPause, dismissConsent, parseRelativeDate } from './common.js';
+import { capturerPreuve } from './failures.js';
 
 /**
  * Indeed.
@@ -184,7 +185,7 @@ export async function login(context, { email, password }) {
   }
 }
 
-export async function apply(context, offer) {
+export async function apply(context, offer, options = {}) {
   const page = await context.newPage();
   try {
     await page.goto(offer.sourceUrl, { waitUntil: 'domcontentloaded' });
@@ -205,6 +206,8 @@ export async function apply(context, offer) {
       screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
     };
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }

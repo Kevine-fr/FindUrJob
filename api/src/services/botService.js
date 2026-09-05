@@ -61,6 +61,9 @@ async function json(path, options) {
     // Le robot nomme la panne quand il la reconnaît : la perdre ici obligerait
     // à la redeviner depuis le message, moins bien.
     if (data.reason) err.reason = data.reason;
+    // L'écran du blocage voyage avec l'échec : c'est sur ce chemin-là qu'il
+    // manquait, et c'est celui où il renseigne le plus.
+    if (data.screenshot) err.screenshot = data.screenshot;
     throw err;
   }
   return data;

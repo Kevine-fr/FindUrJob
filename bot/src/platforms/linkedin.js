@@ -1,6 +1,6 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS } from './failures.js';
+import { RAISONS, capturerPreuve } from './failures.js';
 import { lireBlocs, deroulerListe } from './mesCandidatures.js';
 
 /**
@@ -382,6 +382,8 @@ export async function apply(context, offer, options = {}) {
         /candidature (bien )?(envoy|transmis)|votre candidature a été envoyée|application sent|candidature envoyée/i,
     });
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }

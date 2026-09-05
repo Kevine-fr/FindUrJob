@@ -8,7 +8,7 @@ import { botApply, botConfigured, renderCvPdf } from './botService.js';
 import { buildTailoredCvHtml } from './cvDocument.js';
 import { tryRevive } from './sessionRevival.js';
 import { reconcilier, AVEC_LISTE } from './reconciliation.js';
-import { appliquerResultat } from './applyOutcome.js';
+import { appliquerResultat, rangerCapture } from './applyOutcome.js';
 import { enregistrerQuestions, reponsesPour } from './applyKnowledge.js';
 import { journaliser } from './activityLog.js';
 import { infoEchec } from '../utils/applyFailure.js';
@@ -225,6 +225,10 @@ export async function retenterCandidature(user, applicationId, { force = false }
       application.retryCount += 1;
       application.lastRetryAt = new Date();
       application.timeline.push({ status: application.status, note: `Relance impossible : ${erreur.message}` });
+      // La candidature reste en « échec d'envoi » ou « à vérifier » : elle doit
+      // donc repartir avec l'écran de ce qui vient d'échouer, pas celui du
+      // blocage précédent.
+      rangerCapture(application, erreur.screenshot);
       await application.save();
       throw new RefusReprise(erreur.message, erreur.status || 502);
     }

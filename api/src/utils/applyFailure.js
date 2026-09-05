@@ -182,9 +182,23 @@ const EMPREINTES = [
   [/sans confirmation/i, 'sans_confirmation'],
 ];
 
-export function deviner(message) {
+/**
+ * Le code que le message trahit, ou `null` si aucun motif ne colle.
+ *
+ * La distinction compte. `deviner` repliait sur `'inconnu'`, qui est truthy :
+ * un appelant écrivant `deviner(message) || defaut` n'atteignait donc jamais
+ * son défaut, et le rendait mort sans que rien ne le signale. C'est ce qui
+ * classait « cause non identifiée » des issues pourtant nommées — un « à
+ * vérifier » devenait `inconnu` au lieu de `sans_confirmation`, et la relance
+ * ne s'appuyait plus sur la bonne règle.
+ */
+export function devinerOuRien(message) {
   const texte = String(message || '');
-  return EMPREINTES.find(([motif]) => motif.test(texte))?.[1] || 'inconnu';
+  return EMPREINTES.find(([motif]) => motif.test(texte))?.[1] || null;
+}
+
+export function deviner(message) {
+  return devinerOuRien(message) || 'inconnu';
 }
 
 /** Les métadonnées d'un code, avec repli sur « inconnu ». */

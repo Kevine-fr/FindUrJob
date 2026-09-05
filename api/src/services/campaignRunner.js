@@ -13,7 +13,7 @@ import { tryRevive } from './sessionRevival.js';
 import { reconcilier } from './reconciliation.js';
 import { journaliser } from './activityLog.js';
 import { enregistrerQuestions, reponsesPour } from './applyKnowledge.js';
-import { appliquerResultat } from './applyOutcome.js';
+import { appliquerResultat, rangerCapture } from './applyOutcome.js';
 import { deviner } from '../utils/applyFailure.js';
 import { BOT_PLATFORMS } from '../utils/constants.js';
 
@@ -693,6 +693,9 @@ export async function runCampaign({ user, trigger = 'planifié', dryRun = false 
               at: new Date(),
               fields: [],
             };
+            // Même exigence que sur un refus propre : une candidature en
+            // « envoi échoué » montre toujours où ça a bloqué.
+            rangerCapture(application, sendError.screenshot);
             summary.prepared += 1;
             summary.perSource[source].prepared += 1;
             summary.errors.push(`${source} : ${sendError.message}`);

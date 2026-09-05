@@ -405,7 +405,9 @@ function outilsDom() {
       }
 
       // Un groupe sans énoncé ne vaut pas mieux que le libellé du bouton.
-      if (enonce) return enonce.slice(0, 120);
+      // L'astérisque du champ obligatoire s'en va : la question est posée à une
+      // personne, qui n'a que faire de la convention de balisage.
+      if (enonce) return enonce.replace(/\s*\*+\s*$/, '').slice(0, 120);
     }
     return (
       propre(el.labels?.[0]?.textContent) ||
@@ -583,10 +585,28 @@ async function remplirDepuisReponses(formulaire, reponses) {
             );
             if (!cible || cible.checked) continue;
 
-            cible.checked = true;
-            cible.dispatchEvent(new Event('click', { bubbles: true }));
-            cible.dispatchEvent(new Event('change', { bubbles: true }));
-            remplis.push(enonce);
+            /*
+             * Un vrai clic d'abord, l'assignation seulement en repli.
+             *
+             * Poser `checked` court-circuite le mutateur natif : une interface
+             * qui pilote ses champs depuis son propre état ne voit alors rien
+             * passer, et considère la question toujours sans réponse — c'est
+             * la panne déjà constatée sur les cases à cocher, au même endroit.
+             * `click()` bascule le bouton *et* émet l'évènement que
+             * l'application écoute, y compris sur un radio habillé donc
+             * invisible.
+             */
+            try {
+              cible.click();
+            } catch {
+              /* on tente le repli ci-dessous */
+            }
+            if (!cible.checked) {
+              cible.checked = true;
+              cible.dispatchEvent(new Event('click', { bubbles: true }));
+              cible.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (cible.checked) remplis.push(enonce);
             continue;
           }
 
@@ -600,9 +620,19 @@ async function remplirDepuisReponses(formulaire, reponses) {
             // en douce : on respecte le refus et le champ restera signalé.
             if (!/^(oui|yes|true|1)$/i.test(String(valeur))) continue;
             if (!el.checked) {
-              el.checked = true;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              remplis.push(nommer(el));
+              // Même raison que pour les boutons radio : le clic natif est vu
+              // par l'application, l'assignation seule ne l'est pas toujours.
+              try {
+                el.click();
+              } catch {
+                /* on tente le repli ci-dessous */
+              }
+              if (!el.checked) {
+                el.checked = true;
+                el.dispatchEvent(new Event('click', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              if (el.checked) remplis.push(nommer(el));
             }
             continue;
           }
@@ -1161,11 +1191,28 @@ export async function applyForm(
       .catch(() => '');
 
   let texte = '';
+  /*
+   * Un libellé d'envoi a-t-il déjà été actionné ?
+   *
+   * C'est ce qui sépare « la plateforme a refusé l'écran » de « la candidature
+   * est peut-être partie ». Tant qu'on n'a cliqué que « Suivant » ou
+   * « Vérifier », rien n'a pu partir : un champ refusé est alors une simple
+   * information manquante, qu'on nomme et qu'on demande. Après un « Envoyer »,
+   * la même erreur ne se lit plus pareil — HelloWork enregistre la candidature
+   * dès le premier écran, puis pose un questionnaire complémentaire, et
+   * conclure à l'échec y pousserait à candidater deux fois.
+   */
+  let envoiTente = false;
+
   for (let etape = 0; etape < 10; etape += 1) {
-    if (!(await (await bouton()).isVisible().catch(() => false))) break;
+    const cible = await bouton();
+    if (!(await cible.isVisible().catch(() => false))) break;
+
+    const libelleClic = await cible.innerText().catch(() => '');
+    envoiTente = envoiTente || ENVOI_FINAL.test(libelleClic);
 
     const avant = await empreinteEcran();
-    await (await bouton()).click().catch(() => {});
+    await cible.click().catch(() => {});
     await humanPause(2500, 4000);
 
     texte = await page.innerText('body').catch(() => '');
@@ -1173,6 +1220,37 @@ export async function applyForm(
       return {
         status: 'sent',
         message: cvJoint ? 'Candidature envoyée, CV joint.' : 'Candidature envoyée.',
+      };
+    }
+
+    /*
+     * L'écran est refusé, et la plateforme dit lequel de ses champs manque.
+     *
+     * Ce message n'était lu que dans l'essai à blanc, jamais dans le vrai
+     * parcours. Or LinkedIn valide côté application : ses groupes de boutons
+     * radio ne portent ni `required` ni `aria-required`, si bien que `manquants`
+     * ne voyait rien à signaler. On recliquait « Vérifier » sur un écran qui
+     * affichait pourtant « Ce champ est obligatoire » en rouge, jusqu'à ce que
+     * plus rien ne bouge — et la candidature finissait en « à vérifier », sans
+     * qu'aucune question n'ait été posée. Relevé sur une candidature réelle :
+     * deux questions à choix, « Êtes-vous légalement autorisé(e) à travailler
+     * dans le pays suivant ? » et « Accepteriez-vous de travailler à distance
+     * et sur site ? », restées sans réponse possible.
+     *
+     * On lit donc ce que la plateforme reproche, on le nomme, et ces champs
+     * partent dans l'onglet Informations avec leurs réponses possibles. Une
+     * fois renseignés, la relance repasse.
+     */
+    const refuses = await erreurAffichee(page);
+    if (refuses.length && !envoiTente) {
+      return {
+        status: 'manual',
+        reason: RAISONS.CHAMPS_MANQUANTS,
+        fields: refuses,
+        message: `Écran ${etape + 1} refusé par la plateforme : ${refuses
+          .map((c) => c.libelle)
+          .join(', ')}.`,
+        screenshot: await capture(),
       };
     }
 

@@ -287,7 +287,7 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
         </div>
       )}
 
-      <div className="detail">
+      <div className="detail detail-candidature">
         {/* ---- Le dossier envoyé ---- */}
         <div className="panel dossier">
           <div className="dossier-head">

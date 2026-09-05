@@ -3739,3 +3739,35 @@ img {
 .entretien-plafond .input {
   max-width: 110px;
 }
+
+/* --- Fiche d'une candidature : la colonne qui portait l'aperçu PDF -------- */
+
+/*
+ * Les pistes de cette grille-là ne montent jamais au-dessus de la place
+ * disponible.
+ *
+ * L'aperçu du PDF est un `aspect-ratio: 210/297` borné par `max-height: 70vh`.
+ * Sur un écran de 844 px de haut, ce plafond se transmet par le rapport en une
+ * largeur **minimale** d'environ 445 px : la piste `1fr` s'élargit pour
+ * l'accueillir, et toute la fiche déborde de l'écran — mesuré à 463 px de large
+ * dans une fenêtre de 390. Le défaut est intermittent, parce qu'il dépend du
+ * moment où le lecteur PDF intégré s'initialise, ce qui l'a rendu difficile à
+ * attraper autrement qu'en le mesurant plusieurs fois de suite.
+ *
+ * `minmax(0, …)` retire ce plancher : la piste suit son conteneur, et c'est
+ * l'aperçu qui se réduit. Trois autres pistes ont été essayées avant celle-ci
+ * — `min-width: 0` sur le cadre, sur le panneau, la suppression de la
+ * hauteur maximale, `contain` — et aucune ne changeait quoi que ce soit.
+ *
+ * La règle porte une classe propre à cette fiche : `.detail` sert aussi au
+ * détail d'une offre, qui n'a pas d'aperçu PDF et n'a rien demandé.
+ */
+.detail-candidature {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .detail-candidature {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

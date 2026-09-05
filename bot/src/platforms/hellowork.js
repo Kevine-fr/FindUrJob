@@ -1,6 +1,6 @@
 import { normalize, humanPause, jsonLdJobs, dismissConsent, parseRelativeDate } from './common.js';
 import { applyForm, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS } from './failures.js';
+import { RAISONS, capturerPreuve } from './failures.js';
 import { lireBlocs } from './mesCandidatures.js';
 
 /**
@@ -295,6 +295,8 @@ export async function apply(context, offer, options = {}) {
 
     return await applyForm(page, options);
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }

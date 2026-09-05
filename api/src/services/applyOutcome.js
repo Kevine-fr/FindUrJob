@@ -1,4 +1,31 @@
-import { deviner } from '../utils/applyFailure.js';
+import { devinerOuRien } from '../utils/applyFailure.js';
+
+/**
+ * Ranger l'écran du blocage sur la candidature.
+ *
+ * Une capture remplace dix minutes d'enquête : le champ refusé, la fenêtre de
+ * vérification, la page vide — tout se voit d'un coup. Elle remplace la
+ * précédente plutôt que de s'y ajouter : c'est le dernier essai qui renseigne,
+ * et empiler les images ferait grossir la candidature sans rien apprendre.
+ *
+ * Exportée parce que les envois qui **cassent en vol** n'arrivent jamais
+ * jusqu'ici : la campagne et la relance les rattrapent dans leur `catch` et
+ * écrivent `lastFailure` à la main. Ces candidatures-là finissent pourtant en
+ * « envoi échoué » comme les autres, et sont même les plus obscures — il ne
+ * reste qu'un message d'exception pour comprendre. Laisser le rangement ici et
+ * le recopier là-bas aurait garanti la divergence.
+ *
+ * Le plafond protège la base d'une page anormalement lourde ; au-delà, on
+ * préfère ne rien garder plutôt que d'alourdir chaque lecture du document.
+ */
+export function rangerCapture(application, brut) {
+  if (typeof brut !== 'string' || !brut.length) return false;
+  const octets = Buffer.from(brut, 'base64');
+  if (!octets.length || octets.length > 3 * 1024 * 1024) return false;
+  application.failureShot = octets;
+  application.failureShotAt = new Date();
+  return true;
+}
 
 /**
  * Traduire ce que le robot a rendu en état de candidature.
@@ -31,33 +58,14 @@ export function appliquerResultat(application, outcome = {}, { platform = '', no
   /** Range la cause sur la candidature, sous une forme comptable. */
   const marquerEchec = (codeParDefaut) => {
     application.lastFailure = {
-      reason: outcome.reason || deviner(message) || codeParDefaut,
+      reason: outcome.reason || devinerOuRien(message) || codeParDefaut,
       message,
       platform,
       at: new Date(),
       fields: champs.map(({ cle, libelle, forme }) => ({ cle, libelle, forme })),
     };
 
-    /*
-     * On garde l'écran tel qu'il était au moment du blocage.
-     *
-     * Une capture remplace dix minutes d'enquête : le champ refusé, la fenêtre
-     * de vérification, la page vide — tout se voit d'un coup. Elle remplace la
-     * précédente plutôt que de s'y ajouter : c'est le dernier essai qui
-     * renseigne, et empiler les images ferait grossir la candidature sans rien
-     * apprendre.
-     *
-     * Le plafond protège la base d'une page anormalement lourde ; au-delà, on
-     * préfère ne rien garder plutôt que d'alourdir chaque lecture du document.
-     */
-    const brut = outcome.screenshot;
-    if (typeof brut === 'string' && brut.length) {
-      const octets = Buffer.from(brut, 'base64');
-      if (octets.length && octets.length <= 3 * 1024 * 1024) {
-        application.failureShot = octets;
-        application.failureShotAt = new Date();
-      }
-    }
+    rangerCapture(application, outcome.screenshot);
   };
 
   if (outcome.status === 'sent') {

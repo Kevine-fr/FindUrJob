@@ -1,6 +1,6 @@
 import { normalize, cleanHtml, humanPause, dismissConsent, parseRelativeDate, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS } from './failures.js';
+import { RAISONS, capturerPreuve } from './failures.js';
 import { lireBlocs, deroulerListe } from './mesCandidatures.js';
 
 /**
@@ -279,6 +279,20 @@ export async function apply(context, offer, options = {}) {
     const easyApply = page.getByRole('button', { name: /candidature simplifiée|easy apply/i }).first();
     await easyApply.waitFor({ state: 'visible', timeout: 25_000 }).catch(() => {});
 
+    /*
+     * La candidature simplifiée s'ouvre dans une boîte de dialogue.
+     *
+     * Elle est bâtie sur la balise `<dialog>`, **sans** attribut `role` — ses
+     * classes sont par ailleurs des empreintes illisibles, régénérées à chaque
+     * déploiement. Ne chercher que `[role="dialog"]` ne trouvait donc jamais
+     * rien, et le robot concluait à tort que LinkedIn refusait d'ouvrir son
+     * module dans un navigateur piloté. Il l'ouvre parfaitement : c'était le
+     * sélecteur qui regardait à côté.
+     */
+    const modale = page
+      .locator('dialog, [role="dialog"], [data-testid*="modal"]')
+      .filter({ has: page.locator('input, textarea, select') });
+
     if (!(await easyApply.count())) {
       // Distinguer « pas de candidature simplifiée » de « session fermée » :
       // les deux donnent une page sans bouton, mais ne se règlent pas pareil.
@@ -317,24 +331,66 @@ export async function apply(context, offer, options = {}) {
       };
     }
 
-    await easyApply.click().catch(() => {});
-
     /*
-     * La candidature simplifiée s'ouvre dans une boîte de dialogue.
+     * Le premier clic reste souvent sans effet.
      *
-     * Elle est bâtie sur la balise `<dialog>`, **sans** attribut `role` — ses
-     * classes sont par ailleurs des empreintes illisibles, régénérées à chaque
-     * déploiement. Ne chercher que `[role="dialog"]` ne trouvait donc jamais
-     * rien, et le robot concluait à tort que LinkedIn refusait d'ouvrir son
-     * module dans un navigateur piloté. Il l'ouvre parfaitement : c'était le
-     * sélecteur qui regardait à côté.
+     * Constaté à répétition : le bouton est bien là, visible, et le clic
+     * n'ouvre rien. LinkedIn re-monte son bloc d'action après l'hydratation —
+     * le nœud visé au moment du clic est remplacé juste après, et le geste part
+     * dans le vide. Un deuxième clic, une seconde plus tard, ouvre la modale.
+     *
+     * Le robot, lui, concluait « LinkedIn n'a pas ouvert sa candidature
+     * simplifiée » et rendait un échec d'envoi, sur une offre parfaitement
+     * candidatable. C'était la panne la plus fréquente et la plus trompeuse :
+     * la capture montrait le bouton, bien en évidence, intact.
+     *
+     * On réessaie donc jusqu'à trois fois, en relocalisant le bouton à chaque
+     * tour — c'est le point : garder l'ancien `locator` reviendrait à viser le
+     * nœud détaché. Le second essai passe par `dispatchEvent`, qui atteint le
+     * gestionnaire même si un habillage recouvre le bouton.
+     *
+     * Rouvrir n'a rien de risqué : ce bouton n'envoie pas, il ouvre. Et on
+     * s'arrête dès que la modale est là, sans jamais recliquer par-dessus.
      */
-    const modale = page
-      .locator('dialog, [role="dialog"], [data-testid*="modal"]')
-      .filter({ has: page.locator('input, textarea, select') });
-    await modale.first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
+    const modaleVisible = (attente) =>
+      modale
+        .first()
+        .waitFor({ state: 'visible', timeout: attente })
+        .then(() => true)
+        .catch(() => false);
 
-    if (!(await modale.count())) {
+    let ouverte = false;
+    for (let essai = 0; essai < 3 && !ouverte; essai += 1) {
+      /*
+       * Ne jamais recliquer par-dessus une modale déjà là.
+       *
+       * Elle peut s'ouvrir plus lentement que l'attente accordée — le serveur
+       * est moins rapide que cette machine. Le tour suivant viserait alors le
+       * bouton d'arrière-plan et refermerait ce qui venait de s'ouvrir : on
+       * aurait fabriqué la panne qu'on cherche à corriger.
+       */
+      if (await modale.count()) {
+        ouverte = await modaleVisible(3000);
+        if (ouverte) break;
+      }
+
+      const bouton = page
+        .getByRole('button', { name: /candidature simplifiée|easy apply/i })
+        .first();
+
+      await bouton.scrollIntoViewIfNeeded().catch(() => {});
+      if (essai === 0) await bouton.click({ timeout: 8000 }).catch(() => {});
+      // Au deuxième tour, on vise le gestionnaire plutôt que le pixel : un
+      // recouvrement invisible suffit à absorber un clic ordinaire.
+      else await bouton.dispatchEvent('click').catch(() => {});
+
+      // Large au premier tour : mesuré à treize offres réelles, la modale
+      // s'ouvre toujours du premier coup ici, mais le serveur est plus lent.
+      ouverte = await modaleVisible(essai === 0 ? 15_000 : 8000);
+      if (!ouverte) await humanPause(900, 1600);
+    }
+
+    if (!ouverte && !(await modale.count())) {
       return {
         status: 'manual',
         /*
@@ -348,8 +404,9 @@ export async function apply(context, offer, options = {}) {
          */
         reason: RAISONS.FORMULAIRE_ABSENT,
         message:
-          "LinkedIn n'a pas ouvert sa candidature simplifiée (page modifiée, ou " +
-          'vérification de sécurité). Reprends la main depuis l’onglet Comptes.',
+          "LinkedIn n'a pas ouvert sa candidature simplifiée après trois tentatives " +
+          "(page modifiée, ou vérification de sécurité). Reprends la main depuis " +
+          "l’onglet Comptes.",
         screenshot: (await page.screenshot({ type: 'png' })).toString('base64'),
       };
     }
@@ -382,6 +439,8 @@ export async function apply(context, offer, options = {}) {
         /candidature (bien )?(envoy|transmis)|votre candidature a été envoyée|application sent|candidature envoyée/i,
     });
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }

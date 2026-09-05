@@ -1,6 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS, raisonTechnique } from './failures.js';
+import { RAISONS, raisonTechnique, capturerPreuve } from './failures.js';
 
 /**
  * Welcome to the Jungle.
@@ -236,6 +236,8 @@ export async function apply(context, offer, options = {}) {
       message: `Candidature WTTJ : ${error.message}`,
     };
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }

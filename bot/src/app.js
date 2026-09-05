@@ -4,7 +4,7 @@ import morgan from 'morgan';
 import { renderPdf } from './pdf.js';
 import { getContext, closeContext, forgetContext, knownProfiles, pageVivante } from './browser.js';
 import { getPlatform, PLATFORM_NAMES } from './platforms/index.js';
-import { raisonTechnique } from './platforms/failures.js';
+import { raisonTechnique, SANS_PREUVE } from './platforms/failures.js';
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -316,13 +316,51 @@ export function createApp() {
           }
         : null;
 
-      const resultat = await platform.apply(context, offer, {
-        cvFile: fichier,
-        applicant,
-        coverLetter,
-        dryRun,
-        answers: answers || {},
-      });
+      /*
+       * Le porte-preuve.
+       *
+       * Chaque `apply` y dépose, dans son `finally`, l'écran tel qu'il était
+       * juste avant que l'onglet se ferme. Il faut ce détour : le `finally` ne
+       * voit pas la valeur de retour, il ne peut donc pas la compléter. C'est
+       * ici qu'on rapproche les deux — et seulement ici qu'on sait enfin si
+       * l'image sert à quelque chose.
+       */
+      const preuve = {};
+
+      let resultat;
+      try {
+        resultat = await platform.apply(context, offer, {
+          cvFile: fichier,
+          applicant,
+          coverLetter,
+          dryRun,
+          answers: answers || {},
+          preuve,
+        });
+      } catch (error) {
+        /*
+         * Une candidature qui casse en vol finit quand même en « envoi
+         * échoué » côté API. Elle mérite donc son image autant qu'un refus
+         * propre — c'est même là qu'elle manque le plus, puisqu'il ne reste
+         * qu'un message d'exception pour comprendre.
+         */
+        if (preuve.png) error.screenshot = preuve.png;
+        throw error;
+      }
+
+      /*
+       * Toute issue qui laissera la candidature en « envoi échoué » ou « à
+       * vérifier » repart avec une capture, sans exception.
+       *
+       * Celle que la plateforme a prise elle-même l'emporte : elle vise le
+       * moment précis du blocage — la fenêtre de questions, le champ refusé —
+       * là où celle du `finally` montre l'état final. Le repli ne sert que
+       * lorsqu'il n'y a rien, ce qui était le cas de toutes les sorties d'APEC
+       * et de Welcome to the Jungle.
+       */
+      if (resultat && !SANS_PREUVE.has(resultat.status) && !resultat.screenshot && preuve.png) {
+        resultat.screenshot = preuve.png;
+      }
 
       /*
        * Session découverte fermée **pendant** la candidature.
@@ -374,6 +412,9 @@ export function createApp() {
     res.status(err.status || 500).json({
       error: err.message || 'Erreur du navigateur piloté',
       reason: raisonTechnique(err),
+      // La capture prise avant la fermeture de l'onglet suit l'exception : sans
+      // elle, un plantage en vol ne laisse qu'un message de Playwright.
+      ...(err.screenshot ? { screenshot: err.screenshot } : {}),
     });
   });
 

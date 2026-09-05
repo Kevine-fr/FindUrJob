@@ -150,7 +150,9 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
     if (status === app.status) return;
     setBusy(true);
     try {
-      const updated = await api.applications.setStatus(app._id, status);
+      // Sans note, l'évènement d'historique était vide et se confondait avec
+      // ceux du robot. Savoir qu'un état a été posé à la main change sa lecture.
+      const updated = await api.applications.setStatus(app._id, status, 'État posé à la main.');
       setApp(updated);
       onChange?.(updated);
     } catch (e) {
@@ -392,6 +394,18 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
         <div>
           <div className="panel">
             <h2>Statut</h2>
+            {/*
+              Ces pastilles ont toujours été des boutons, mais elles portaient
+              la classe des filtres : une rangée d'états dont un seul est
+              allumé se lit comme un affichage, pas comme une commande. On ne
+              trouvait donc pas comment noter à la main un entretien décroché,
+              alors que le clic marchait déjà. La phrase le dit, et la pastille
+              active prend la couleur de son état plutôt que l'accent général.
+            */}
+            <p className="muted" style={{ margin: '0 0 10px', fontSize: 13 }}>
+              Clique pour corriger l’état à la main — un entretien décroché, une offre reçue, un
+              refus. Le robot ne revient jamais sur ce que tu as posé ici.
+            </p>
             <div className="filter-chips">
               {STATUS_ORDER.map((status) => {
                 const info = STATUS_META[status];
@@ -400,8 +414,11 @@ export default function ApplicationDetail({ application, onBack, onChange }) {
                   <button
                     key={status}
                     className={`filter-chip${actif ? ' active' : ''}`}
+                    style={actif ? { background: info.color, borderColor: info.color } : undefined}
                     onClick={() => changeStatus(status)}
                     disabled={busy}
+                    aria-pressed={actif}
+                    title={actif ? `État actuel : ${info.label}` : `Passer en « ${info.label} »`}
                   >
                     {info.label}
                   </button>

@@ -1,6 +1,6 @@
 import { normalize, humanPause, dismissConsent, sessionOuverte } from './common.js';
 import { applyForm, externalApplyUrl, postulerSurSiteExterne } from './applyForm.js';
-import { RAISONS, raisonTechnique } from './failures.js';
+import { RAISONS, raisonTechnique, capturerPreuve } from './failures.js';
 
 /**
  * APEC.
@@ -200,6 +200,9 @@ export async function apply(context, offer, options = {}) {
    */
   const refus = () => ({
     status: 'blocked',
+    // Nommé explicitement : le classement se déduisait du texte du message, si
+    // bien qu'une reformulation l'aurait fait basculer en « cause inconnue ».
+    reason: RAISONS.PLATEFORME_BLOQUEE,
     message:
       "L'APEC bloque l'accès au détail de ses offres depuis un navigateur piloté " +
       '(anti-bot DataDome) — la session, elle, est bien ouverte. Candidature à ' +
@@ -295,6 +298,8 @@ export async function apply(context, offer, options = {}) {
       message: `Candidature APEC : ${error.message}`,
     };
   } finally {
+    // Dernier instant où l'onglet existe encore : après, plus rien à photographier.
+    await capturerPreuve(page, options);
     await page.close().catch(() => {});
   }
 }
